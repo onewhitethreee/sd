@@ -1,0 +1,31 @@
+"""
+Módulo que recibe la información de los sensores y se conecta al sistema central
+"""
+
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from Common.tools import AppArgumentParser, ip_port_type
+
+class EV_CP_E:
+    def __init__(self):
+        self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")
+        
+        self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
+        self.tools.add_argument("ip_port_ev_m", type=ip_port_type, help="IP y puerto del EV_M (formato IP:PORT)")
+        self.args = self.tools.parse_args()
+    
+    def start(self):
+        print(f"Starting EV_CP_E module")
+        print(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        print(f"Connecting to EV_M at {self.args.ip_port_ev_m[0]}:{self.args.ip_port_ev_m[1]}")
+        # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
+        try:
+            while True:
+                pass  # Simulación de la ejecución continua del servicio
+        except KeyboardInterrupt:
+            print("Shutting down EV Central")
+            sys.exit(0)
+if __name__ == "__main__":
+    ev_cp_e = EV_CP_E()
+    ev_cp_e.start()
