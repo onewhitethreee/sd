@@ -4,7 +4,7 @@ Módulo que representa la central de control de toda la solución. Implementa la
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from Common.tools import AppArgumentParser, ip_port_type
+from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class EV_Central:
     def __init__(self):

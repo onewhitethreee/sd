@@ -5,7 +5,7 @@ Aplicación que usan los consumidores para usar los puntos de recarga
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from Common.tools import AppArgumentParser, ip_port_type
+from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class Driver:
     def __init__(self):

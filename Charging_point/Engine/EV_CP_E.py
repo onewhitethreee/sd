@@ -5,7 +5,7 @@ Módulo que recibe la información de los sensores y se conecta al sistema centr
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from Common.tools import AppArgumentParser, ip_port_type
+from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class EV_CP_E:
     def __init__(self):
