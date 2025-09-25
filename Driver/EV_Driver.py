@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-
+from Common.CustomLogger import CustomLogger
 class Driver:
     def __init__(self, debug_mode=False):
         if not debug_mode:
@@ -22,16 +22,17 @@ class Driver:
             self.args = Args()
     
     def start(self):
-        print(f"Starting Driver module")
-        print(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
-        print(f"Client ID: {self.args.id_client}")
+        logger.info(f"Starting Driver module")
+        logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        logger.info(f"Client ID: {self.args.id_client}")
         # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            print("Shutting down EV Central")
+            logger.info("Shutting down EV Central")
             sys.exit(0)
 if __name__ == "__main__":
+    logger = CustomLogger.get_logger()
     driver = Driver(debug_mode=True)
     driver.start()

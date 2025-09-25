@@ -5,9 +5,12 @@ Módulo que representa la central de control de toda la solución. Implementa la
 import sys
 import os
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-
+from Common.SqliteConnection import SqliteConnection
+from Common.MessageFormatter import MessageFormatter
+from Common.CustomLogger import CustomLogger
 
 class EV_Central:
     def __init__(self, debug_mode=False):
@@ -39,19 +42,24 @@ class EV_Central:
 
             self.args = Args()
 
+    def _init_database(self):
+        logger.debug("Initializing database connection")
+
+
     def start(self):
-        print(f"Starting EV Central on port {self.args.listen_port}")
-        print(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
-        print(f"Connecting to Database at {self.args.db[0]}:{self.args.db[1]}")
+        logger.info(f"Starting EV Central on port {self.args.listen_port}")
+        logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        logger.info(f"Connecting to Database at {self.args.db[0]}:{self.args.db[1]}")
         # Aquí iría la lógica para iniciar la central, escuchar en el puerto, conectar a la base de datos, etc.
         try:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            print("Shutting down EV Central")
+            logger.info("Shutting down EV Central")
             sys.exit(0)
 
 
 if __name__ == "__main__":
+    logger = CustomLogger.get_logger()
     ev_central = EV_Central(debug_mode=True)
     ev_central.start()

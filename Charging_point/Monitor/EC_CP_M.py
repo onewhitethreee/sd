@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-
+from Common.CustomLogger import CustomLogger
 class EV_CP_M:
     def __init__(self, debug_mode=False):
         if not debug_mode:
@@ -23,18 +23,19 @@ class EV_CP_M:
             self.args = Args()
     
     def start(self):
-        print(f"Starting EV_CP_M module")
-        print(f"Connecting to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}")
-        print(f"Connecting to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}")
-        print(f"Point ID: {self.args.id_cp}")
+        logger.info(f"Starting EV_CP_M module")
+        logger.info(f"Connecting to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}")
+        logger.info(f"Connecting to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}")
+        logger.info(f"Point ID: {self.args.id_cp}")
 
         # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            print("Shutting down EV Central")
+            logger.info("Shutting down EV CP M")
             sys.exit(0)
 if __name__ == "__main__":
+    logger = CustomLogger.get_logger()
     ev_cp_m = EV_CP_M(debug_mode=True)
     ev_cp_m.start()
