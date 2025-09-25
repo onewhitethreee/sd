@@ -8,12 +8,18 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class Driver:
-    def __init__(self):
-        self.tools = AppArgumentParser("Driver", "Módulo de control del punto de recarga")
-        
-        self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
-        self.tools.add_argument("id_client", type=str, help="Identificador único del cliente")
-        self.args = self.tools.parse_args()
+    def __init__(self, debug_mode=False):
+        if not debug_mode:
+
+            self.tools = AppArgumentParser("Driver", "Módulo de control del punto de recarga")            
+            self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
+            self.tools.add_argument("id_client", type=str, help="Identificador único del cliente")
+            self.args = self.tools.parse_args()
+        else:
+            class Args:
+                broker = ("localhost", 9092)
+                id_client = "client_001"
+            self.args = Args()
     
     def start(self):
         print(f"Starting Driver module")
@@ -27,5 +33,5 @@ class Driver:
             print("Shutting down EV Central")
             sys.exit(0)
 if __name__ == "__main__":
-    driver = Driver()
+    driver = Driver(debug_mode=True)
     driver.start()

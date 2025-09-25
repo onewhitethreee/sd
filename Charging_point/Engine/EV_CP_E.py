@@ -8,13 +8,19 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class EV_CP_E:
-    def __init__(self):
-        self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")
+    def __init__(self, debug_mode=False):
+        if not debug_mode:
+
+            self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")            
+            self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
+            self.tools.add_argument("ip_port_ev_m", type=ip_port_type, help="IP y puerto del EV_M (formato IP:PORT)")
+            self.args = self.tools.parse_args()
+        else:
+            class Args:
+                broker = ("localhost", 9092)
+                ip_port_ev_m = ("localhost", 6000)
+            self.args = Args()
         
-        self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
-        self.tools.add_argument("ip_port_ev_m", type=ip_port_type, help="IP y puerto del EV_M (formato IP:PORT)")
-        self.args = self.tools.parse_args()
-    
     def start(self):
         print(f"Starting EV_CP_E module")
         print(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
@@ -27,5 +33,5 @@ class EV_CP_E:
             print("Shutting down EV Central")
             sys.exit(0)
 if __name__ == "__main__":
-    ev_cp_e = EV_CP_E()
+    ev_cp_e = EV_CP_E(debug_mode=True)
     ev_cp_e.start()

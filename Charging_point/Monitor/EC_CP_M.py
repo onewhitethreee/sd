@@ -8,13 +8,19 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 
 class EV_CP_M:
-    def __init__(self):
-        self.tools = AppArgumentParser("EV_CP_M", "Módulo de monitorización del punto de recarga")
-        
-        self.tools.add_argument("ip_port_ev_cp_e", type=ip_port_type, help="IP y puerto del EV_CP_E (formato IP:PORT)")
-        self.tools.add_argument("ip_port_ev_central", type=ip_port_type, help="IP y puerto del EV_CP_Central (formato IP:PORT)")
-        self.tools.add_argument("id_cp", type=str, help="Identificador único del punto de recarga")
-        self.args = self.tools.parse_args()
+    def __init__(self, debug_mode=False):
+        if not debug_mode:
+            self.tools = AppArgumentParser("EV_CP_M", "Módulo de monitorización del punto de recarga")
+            self.tools.add_argument("ip_port_ev_cp_e", type=ip_port_type, help="IP y puerto del EV_CP_E (formato IP:PORT)")
+            self.tools.add_argument("ip_port_ev_central", type=ip_port_type, help="IP y puerto del EV_CP_Central (formato IP:PORT)")
+            self.tools.add_argument("id_cp", type=str, help="Identificador único del punto de recarga")
+            self.args = self.tools.parse_args()
+        else:
+            class Args:
+                ip_port_ev_cp_e = ("localhost", 6000)
+                ip_port_ev_central = ("localhost", 5000)
+                id_cp = "cp_001"
+            self.args = Args()
     
     def start(self):
         print(f"Starting EV_CP_M module")
@@ -30,5 +36,5 @@ class EV_CP_M:
             print("Shutting down EV Central")
             sys.exit(0)
 if __name__ == "__main__":
-    ev_cp_m = EV_CP_M()
+    ev_cp_m = EV_CP_M(debug_mode=True)
     ev_cp_m.start()
