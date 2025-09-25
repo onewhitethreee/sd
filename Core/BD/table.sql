@@ -25,6 +25,4 @@ CREATE TABLE IF NOT EXISTS `ChargingSessions` (
   FOREIGN KEY (`driver_id`) REFERENCES `Drivers` (`driver_id`)
 );
 
--- Removed unsupported ALTER TABLE statements; SQLite does not support adding foreign keys via ALTER
-
 

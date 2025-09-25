@@ -49,8 +49,7 @@ class SqliteConnection:
             logging.error(f"SQLite error during schema execution: {e}")
             if self.connection:
                 self.connection.rollback() 
-        except FileNotFoundError:
-            logging.error(f"SQL schema file '{self.sql_schema_file}' not found during read operation.")
+        
         except Exception as e: 
             logging.error(f"An unexpected error occurred: {e}")
         finally:
@@ -108,9 +107,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     db_file = "test.db"
-    sql_schema_file_path = (
-        r"Core\BD\table.sql"
-    )
+    sql_schema_file_path = os.path.join("Core", "BD", "table.sql")
 
     db_manager_new = SqliteConnection(db_path=db_file, sql_schema_file=sql_schema_file_path, create_tables_if_not_exist=True)
 
