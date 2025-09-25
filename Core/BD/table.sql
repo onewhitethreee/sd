@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS `ChargingPoints` (
   `cp_id` integer PRIMARY KEY AUTOINCREMENT, 
-  `location_address` varchar(255),
+  `location` varchar(255),
   `price_per_kwh` decimal(10,4),
   `status` TEXT NOT NULL DEFAULT 'unknown' CHECK (`status` IN ('active', 'stopped', 'supplying', 'faulty', 'disconnected')),
   `last_connection_time` DATETIME 

@@ -55,7 +55,6 @@ class SqliteConnection:
         finally:
             if self.connection:
                 self.connection.close()
-                logging.debug(f"Connection to database '{self.db_path}' closed.")
 
 
 
@@ -97,6 +96,33 @@ class SqliteConnection:
             if self.connection:
                 self.connection.close()
                 logging.debug(f"Connection to database '{self.db_path}' closed after availability check.")
+
+    @staticmethod
+    def get_all_charging_points(connection):
+        """
+        Retrieve all registered charging points from the database.
+        Returns a list of dictionaries with charging point details.
+        """
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints")
+            rows = cursor.fetchall()
+            charging_points = []
+            for row in rows:
+                charging_points.append({
+                    "id": row[0],
+                    "location": row[1],
+                    "price_per_kwh": row[2],
+                    "status": row[3],
+                    "last_connection_time": row[4]
+                })
+            return charging_points
+        except sqlite3.Error as e:
+            logging.error(f"SQLite error while fetching charging points: {e}")
+            return []
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while fetching charging points: {e}")
+            return []
 
     def clean_database(self):
         if os.path.exists(self.db_path):
