@@ -40,14 +40,14 @@ class EV_Central:
             
         else:
             class Args:
-                listen_port = 5000
-                broker = ("localhost", 9092)
-                db = ("localhost", 5432)
+                listen_port = self.config.get_listen_port()
+                broker = self.config.get_broker_address(), self.config.get_broker_port()
+                db = self.config.get_db_address(), self.config.get_db_port()
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
         self.db_connection = None
-        self.db_path = "ev_central.db"
+        self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.charging_points = {}
 
