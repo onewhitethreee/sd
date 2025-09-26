@@ -31,7 +31,7 @@ class ConfigManager:
                 print(f"Warning: Config file '{file_path}' not found.")
         else:
             print(f"Warning: Config file '{file_path}' not found.")
-
+    @classmethod
     def get(cls, key, default=None):
         """
         get the value of a configuration item by key.
@@ -58,3 +58,4 @@ if __name__ == "__main__":
     print(type(debug_mode))
     if debug_mode:
         print("Debug mode is enabled.")
+        print(config.get_debug_mode())

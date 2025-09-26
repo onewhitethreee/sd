@@ -9,7 +9,7 @@ class CustomLogger:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         color_formatter = colorlog.ColoredFormatter(
-            "%(log_color)s%(levelname)s:%(asctime)s: %(message)s",  # 在这里加入了%(asctime)s
+            "%(log_color)s%(levelname)s:%(asctime)s: %(message)s",  #  custom log format
             log_colors={
                 "DEBUG": "cyan",
                 "INFO": "green",
@@ -17,7 +17,7 @@ class CustomLogger:
                 "ERROR": "red",
                 "CRITICAL": "red,bg_white",
             },
-            datefmt="%Y-%m-%d %H:%M:%S",  # 可以设置时间的显示格式
+            datefmt="%Y-%m-%d %H:%M:%S",  #  custom date format
         )
 
         console_handler.setFormatter(color_formatter)
