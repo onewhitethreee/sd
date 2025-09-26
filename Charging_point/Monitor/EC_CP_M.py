@@ -9,9 +9,10 @@ from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 class EV_CP_M:
-    def __init__(self, debug_mode=False, logger=None):
-        self.debug_mode = debug_mode
+    def __init__(self, logger=None):
         self.logger = logger
+        self.config = ConfigManager()
+        self.debug_mode = self.config.get_debug_mode()
         if not self.debug_mode:
             self.tools = AppArgumentParser("EV_CP_M", "Módulo de monitorización del punto de recarga")
             self.tools.add_argument("ip_port_ev_cp_e", type=ip_port_type, help="IP y puerto del EV_CP_E (formato IP:PORT)")
@@ -41,8 +42,6 @@ class EV_CP_M:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    config = ConfigManager()
-    debug_mode = config.get_debug_mode()
 
-    ev_cp_m = EV_CP_M(debug_mode=debug_mode, logger=logger)
+    ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()

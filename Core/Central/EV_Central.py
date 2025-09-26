@@ -6,6 +6,7 @@ import sys
 import os
 from datetime import datetime
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.SqliteConnection import SqliteConnection
@@ -14,9 +15,10 @@ from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 
 class EV_Central:
-    def __init__(self, debug_mode=False, logger=None):
-        self.debug_mode = debug_mode
-        self.logger = logger 
+    def __init__(self, logger=None):
+        self.logger = logger
+        self.config = ConfigManager() 
+        self.debug_mode = self.config.get_debug_mode()
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_Central",
@@ -122,7 +124,7 @@ class EV_Central:
 
         self.initialize_systems()
 
-        # Aquí iría la lógica para iniciar la central, escuchar en el puerto, conectar a la base de datos, etc.
+        
         try:
             ## SOCKET HERE ##
             while True:
@@ -133,9 +135,7 @@ class EV_Central:
 
 
 if __name__ == "__main__":
-    config = ConfigManager()
 
     logger = CustomLogger.get_logger()
-    debug_mode = config.get_debug_mode()
-    ev_central = EV_Central(debug_mode=debug_mode, logger=logger)
+    ev_central = EV_Central(logger=logger)
     ev_central.start()
