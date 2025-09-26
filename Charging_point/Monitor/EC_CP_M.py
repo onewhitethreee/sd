@@ -11,7 +11,7 @@ from Common.ConfigManager import ConfigManager
 class EV_CP_M:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        if self.debug_mode == "False":
+        if not self.debug_mode:
             self.tools = AppArgumentParser("EV_CP_M", "Módulo de monitorización del punto de recarga")
             self.tools.add_argument("ip_port_ev_cp_e", type=ip_port_type, help="IP y puerto del EV_CP_E (formato IP:PORT)")
             self.tools.add_argument("ip_port_ev_central", type=ip_port_type, help="IP y puerto del EV_CP_Central (formato IP:PORT)")
@@ -41,5 +41,7 @@ class EV_CP_M:
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     config = ConfigManager()
-    ev_cp_m = EV_CP_M(debug_mode=config.get("DEBUG_MODE"))
+    debug_mode = config.get_debug_mode()
+
+    ev_cp_m = EV_CP_M(debug_mode=debug_mode)
     ev_cp_m.start()

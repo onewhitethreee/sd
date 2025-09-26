@@ -16,7 +16,7 @@ from Common.ConfigManager import ConfigManager
 class EV_Central:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        if self.debug_mode == "False":
+        if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_Central",
                 "Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
@@ -135,5 +135,6 @@ if __name__ == "__main__":
     config = ConfigManager()
 
     logger = CustomLogger.get_logger()
-    ev_central = EV_Central(debug_mode=config.get("DEBUG_MODE"))
+    debug_mode = config.get_debug_mode()
+    ev_central = EV_Central(debug_mode=debug_mode)
     ev_central.start()

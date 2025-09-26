@@ -19,7 +19,6 @@ class ConfigManager:
     def _load(self, file_path=".env"):
         if os.path.exists(file_path):
             load_dotenv(file_path)
-
             try:
                 with open(file_path, "r") as f:
                     for line in f:
@@ -47,13 +46,15 @@ class ConfigManager:
     def load_all(cls):
         return cls._config_data.copy()
 
+    def get_debug_mode(self):
+        return self.get("DEBUG_MODE", "False").lower() in ("true", "1", "yes")
 
 if __name__ == "__main__":
 
     config = ConfigManager()
 
-    debug_mode = config.get("DEBUG_MODE")
+    debug_mode = config.get("DEBUG_MODE") == "True"
     print(f"DEBUG_MODE: {debug_mode}")
     print(type(debug_mode))
-    if debug_mode == True:
+    if debug_mode:
         print("Debug mode is enabled.")

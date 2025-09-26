@@ -13,7 +13,7 @@ from Common.CustomLogger import CustomLogger
 class EV_CP_E:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        if self.debug_mode == "False":
+        if not self.debug_mode :
 
             self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")            
             self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
@@ -39,5 +39,6 @@ class EV_CP_E:
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     config = ConfigManager()
-    ev_cp_e = EV_CP_E(debug_mode=config.get("DEBUG_MODE"))
+    debug_mode = config.get_debug_mode()
+    ev_cp_e = EV_CP_E(debug_mode=debug_mode)
     ev_cp_e.start()

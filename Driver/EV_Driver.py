@@ -11,7 +11,7 @@ from Common.ConfigManager import ConfigManager
 class Driver:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        if self.debug_mode == "False":
+        if not self.debug_mode:
 
             self.tools = AppArgumentParser("Driver", "Módulo de control del punto de recarga")            
             self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
@@ -38,5 +38,6 @@ class Driver:
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     config = ConfigManager()
-    driver = Driver(debug_mode=config.get("DEBUG_MODE"))
+    debug_mode = config.get_debug_mode()
+    driver = Driver(debug_mode=debug_mode)
     driver.start()
