@@ -11,8 +11,9 @@ from Common.ConfigManager import ConfigManager
 from Common.CustomLogger import CustomLogger
 
 class EV_CP_E:
-    def __init__(self, debug_mode=False):
+    def __init__(self, debug_mode=False, logger=None):
         self.debug_mode = debug_mode
+        self.logger = logger
         if not self.debug_mode :
 
             self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")            
@@ -24,21 +25,21 @@ class EV_CP_E:
                 broker = ("localhost", 9092)
                 ip_port_ev_m = ("localhost", 6000)
             self.args = Args()
-            logger.debug("Debug mode is ON. Using default arguments.")
+            self.logger.debug("Debug mode is ON. Using default arguments.")
     def start(self):
-        logger.info(f"Starting EV_CP_E module")
-        logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
-        logger.info(f"Connecting to EV_M at {self.args.ip_port_ev_m[0]}:{self.args.ip_port_ev_m[1]}")
+        self.logger.info(f"Starting EV_CP_E module")
+        self.logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        self.logger.info(f"Connecting to EV_M at {self.args.ip_port_ev_m[0]}:{self.args.ip_port_ev_m[1]}")
         # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            logger.info("Shutting down EV CP E")
+            self.logger.info("Shutting down EV CP E")
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     config = ConfigManager()
     debug_mode = config.get_debug_mode()
-    ev_cp_e = EV_CP_E(debug_mode=debug_mode)
+    ev_cp_e = EV_CP_E(debug_mode=debug_mode, logger=logger)
     ev_cp_e.start()

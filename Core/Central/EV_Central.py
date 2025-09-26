@@ -14,8 +14,9 @@ from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 
 class EV_Central:
-    def __init__(self, debug_mode=False):
+    def __init__(self, debug_mode=False, logger=None):
         self.debug_mode = debug_mode
+        self.logger = logger 
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_Central",
@@ -41,7 +42,7 @@ class EV_Central:
                 broker = ("localhost", 9092)
                 db = ("localhost", 5432)
             self.args = Args()
-            logger.debug("Debug mode is ON. Using default arguments.")
+            self.logger.debug("Debug mode is ON. Using default arguments.")
 
         self.db_connection = None
         self.db_path = "ev_central.db"
@@ -49,7 +50,7 @@ class EV_Central:
         self.charging_points = {}
 
     def _init_database(self):
-        logger.debug("Initializing database connection")
+        self.logger.debug("Initializing database connection")
         try:
             self.db_connection = self.db_connection_manager = SqliteConnection(
                 db_path=self.db_path,
@@ -57,18 +58,18 @@ class EV_Central:
                 create_tables_if_not_exist=True,
             )
             if not self.db_connection.is_sqlite_available():
-                logger.error("Database is not available or not properly initialized.")
+                self.logger.error("Database is not available or not properly initialized.")
                 sys.exit(1)
-            logger.debug("Database connection initialized successfully")
+            self.logger.debug("Database connection initialized successfully")
 
             self.charging_points = self.get_all_registered_charging_points()
             for cp in self.charging_points:
-                logger.info(
+                self.logger.info(
                     f"Registered Charging Point: ID={cp['id']}, Location={cp['location']}, Price={cp['price_per_kwh']}, Status={cp['status']}, Last Connection={cp['last_connection_time']}"
                 )
                 
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
+            self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
 
     def get_all_registered_charging_points(self):
@@ -77,7 +78,7 @@ class EV_Central:
         Returns a list of dictionaries with charging point details.
         """
         if not self.db_connection:
-            logger.error("Database connection is not initialized.")
+            self.logger.error("Database connection is not initialized.")
             return []
         
         if not self.debug_mode:
@@ -86,7 +87,7 @@ class EV_Central:
             """
             Simulated data for debug mode.
             """
-            logger.debug("Fetching all registered charging points from the debug mode database")
+            self.logger.debug("Fetching all registered charging points from the debug mode database")
             return [
                 {"id": "CP001", "location": "Calle Mayor 1", "price_per_kwh": 0.15, "status": "DESCONECTADO", "last_connection_time": None},
                 {
@@ -100,24 +101,24 @@ class EV_Central:
             ]
 
     def _init_kafka_producer(self):
-        logger.debug("Initializing Kafka producer")
+        self.logger.debug("Initializing Kafka producer")
         pass
 
     def _init_kafka_consumer(self):
-        logger.debug("Initializing Kafka consumer")
+        self.logger.debug("Initializing Kafka consumer")
         pass
 
     def initialize_systems(self):
-        logger.info("Initializing systems...")
+        self.logger.info("Initializing systems...")
         self._init_database()
         
         self._init_kafka_producer()
         self._init_kafka_consumer()
 
     def start(self):
-        logger.debug(f"Starting EV Central on port {self.args.listen_port}")
-        logger.debug(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
-        logger.debug(f"Connecting to Database at {self.args.db[0]}:{self.args.db[1]}")
+        self.logger.debug(f"Starting EV Central on port {self.args.listen_port}")
+        self.logger.debug(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        self.logger.debug(f"Connecting to Database at {self.args.db[0]}:{self.args.db[1]}")
 
         self.initialize_systems()
 
@@ -127,7 +128,7 @@ class EV_Central:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            logger.info("Shutting down EV Central")
+            self.logger.info("Shutting down EV Central")
             sys.exit(0)
 
 
@@ -136,5 +137,5 @@ if __name__ == "__main__":
 
     logger = CustomLogger.get_logger()
     debug_mode = config.get_debug_mode()
-    ev_central = EV_Central(debug_mode=debug_mode)
+    ev_central = EV_Central(debug_mode=debug_mode, logger=logger)
     ev_central.start()
