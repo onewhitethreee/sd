@@ -7,12 +7,13 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
+from Common.CustomLogger import CustomLogger
 
 class EV_CP_E:
     def __init__(self, debug_mode=False):
-        if not debug_mode:
+        self.debug_mode = debug_mode
+        if self.debug_mode == "False":
 
             self.tools = AppArgumentParser("EV_CP_E", "Módulo de gestión de sensores y comunicación con la central")            
             self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
@@ -37,5 +38,6 @@ class EV_CP_E:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    ev_cp_e = EV_CP_E(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
+    config = ConfigManager()
+    ev_cp_e = EV_CP_E(debug_mode=config.get("DEBUG_MODE"))
     ev_cp_e.start()

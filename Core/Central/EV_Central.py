@@ -16,7 +16,7 @@ from Common.ConfigManager import ConfigManager
 class EV_Central:
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        if not self.debug_mode:
+        if self.debug_mode == "False":
             self.tools = AppArgumentParser(
                 "EV_Central",
                 "Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
@@ -42,7 +42,7 @@ class EV_Central:
                 db = ("localhost", 5432)
             self.args = Args()
             logger.debug("Debug mode is ON. Using default arguments.")
-            
+
         self.db_connection = None
         self.db_path = "ev_central.db"
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
@@ -132,6 +132,8 @@ class EV_Central:
 
 
 if __name__ == "__main__":
+    config = ConfigManager()
+
     logger = CustomLogger.get_logger()
-    ev_central = EV_Central(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
+    ev_central = EV_Central(debug_mode=config.get("DEBUG_MODE"))
     ev_central.start()

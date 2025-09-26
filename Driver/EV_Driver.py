@@ -10,7 +10,8 @@ from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 class Driver:
     def __init__(self, debug_mode=False):
-        if not debug_mode:
+        self.debug_mode = debug_mode
+        if self.debug_mode == "False":
 
             self.tools = AppArgumentParser("Driver", "Módulo de control del punto de recarga")            
             self.tools.add_argument("broker", type=ip_port_type, help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)")
@@ -36,5 +37,6 @@ class Driver:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    driver = Driver(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
+    config = ConfigManager()
+    driver = Driver(debug_mode=config.get("DEBUG_MODE"))
     driver.start()
