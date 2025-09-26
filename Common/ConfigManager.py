@@ -17,19 +17,16 @@ class ConfigManager:
         return cls._instance
 
     def _load(self, file_path=".env"):
-        if os.path.exists(file_path):
+        try:
             load_dotenv(file_path)
-            try:
-                with open(file_path, "r") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            if "=" in line:
-                                key, value = line.split("=", 1)
-                                self._config_data[key.strip()] = value.strip()
-            except FileNotFoundError:
-                print(f"Warning: Config file '{file_path}' not found.")
-        else:
+            with open(file_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        if "=" in line:
+                            key, value = line.split("=", 1)
+                            self._config_data[key.strip()] = value.strip()
+        except FileNotFoundError:
             print(f"Warning: Config file '{file_path}' not found.")
     @classmethod
     def get(cls, key, default=None):
