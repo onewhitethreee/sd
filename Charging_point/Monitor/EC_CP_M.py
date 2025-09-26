@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
+from Common.ConfigManager import ConfigManager
 class EV_CP_M:
     def __init__(self, debug_mode=False):
         if not debug_mode:
@@ -21,6 +22,7 @@ class EV_CP_M:
                 ip_port_ev_central = ("localhost", 5000)
                 id_cp = "cp_001"
             self.args = Args()
+            logger.debug("Debug mode is ON. Using default arguments.")
     
     def start(self):
         logger.info(f"Starting EV_CP_M module")
@@ -37,5 +39,5 @@ class EV_CP_M:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    ev_cp_m = EV_CP_M(debug_mode=True)
+    ev_cp_m = EV_CP_M(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
     ev_cp_m.start()

@@ -4,9 +4,11 @@ Módulo que recibe la información de los sensores y se conecta al sistema centr
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
+from Common.ConfigManager import ConfigManager
 
 class EV_CP_E:
     def __init__(self, debug_mode=False):
@@ -21,7 +23,7 @@ class EV_CP_E:
                 broker = ("localhost", 9092)
                 ip_port_ev_m = ("localhost", 6000)
             self.args = Args()
-        
+            logger.debug("Debug mode is ON. Using default arguments.")
     def start(self):
         logger.info(f"Starting EV_CP_E module")
         logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
@@ -35,5 +37,5 @@ class EV_CP_E:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    ev_cp_e = EV_CP_E(debug_mode=True)
+    ev_cp_e = EV_CP_E(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
     ev_cp_e.start()

@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
+from Common.ConfigManager import ConfigManager
 class Driver:
     def __init__(self, debug_mode=False):
         if not debug_mode:
@@ -20,6 +21,7 @@ class Driver:
                 broker = ("localhost", 9092)
                 id_client = "client_001"
             self.args = Args()
+            logger.debug("Debug mode is ON. Using default arguments.")
     
     def start(self):
         logger.info(f"Starting Driver module")
@@ -34,5 +36,5 @@ class Driver:
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    driver = Driver(debug_mode=True)
+    driver = Driver(debug_mode=ConfigManager.get_config("DEBUG_MODE"))
     driver.start()
