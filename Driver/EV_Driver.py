@@ -21,7 +21,7 @@ class Driver:
             self.args = self.tools.parse_args()
         else:
             class Args:
-                broker = self.config.get_broker_address(), self.config.get_broker_port()
+                broker = self.config.get_broker()
                 id_client = self.config.get_client_id()
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")

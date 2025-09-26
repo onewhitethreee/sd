@@ -49,15 +49,15 @@ class ConfigManager:
     def get_debug_mode(self):
         return self.get("DEBUG_MODE", "False").lower() in ("true", "1", "yes")
 
-    def get_broker_address(self):
-        return self.get("BROKER_ADDRESS", "localhost:9092").split(":")[0]
-    def get_broker_port(self):
-        return int(self.get("BROKER_ADDRESS", "localhost:9092").split(":")[1])
+    
+    def get_broker(self):
+        ip_port = self.get("BROKER_ADDRESS", "localhost:9092").split(":")
+        return (ip_port[0], int(ip_port[1]))
 
-    def get_db_address(self):
-        return self.get("DB_ADDRESS", "localhost:5432").split(":")[0]
-    def get_db_port(self):
-        return int(self.get("DB_ADDRESS", "localhost:5432").split(":")[1])
+    def get_db(self):
+        ip_port = self.get("DB_ADDRESS", "localhost:5432").split(":")
+        return (ip_port[0], int(ip_port[1]))
+
     
     def get_listen_port(self):
         return int(self.get("LISTEN_PORT", "5000"))

@@ -23,7 +23,7 @@ class EV_CP_E:
             self.args = self.tools.parse_args()
         else:
             class Args:
-                broker = self.config.get_broker_address(), self.config.get_broker_port()
+                broker = self.config.get_broker()
                 ip_port_ev_m = self.config.get_ip_port_ev_m()
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
