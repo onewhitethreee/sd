@@ -127,6 +127,28 @@ class SqliteConnection:
     def clean_database(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
+    
+    @staticmethod
+    def insert_charging_point(connection, cp_id, location, price_per_kwh, status, last_connection_time):
+        """
+        Insert a new charging point into the ChargingPoints table.
+        """
+        try:
+            cursor = connection.cursor()
+            cursor.execute("""
+                INSERT INTO ChargingPoints (cp_id, location, price_per_kwh, status, last_connection_time)
+                VALUES (?, ?, ?, ?, ?)
+            """, (cp_id, location, price_per_kwh, status, last_connection_time))
+            connection.commit()
+        except sqlite3.IntegrityError as e:
+            logging.error(f"Integrity error while inserting charging point '{cp_id}': {e}")
+            raise
+        except sqlite3.Error as e:
+            logging.error(f"SQLite error while inserting charging point '{cp_id}': {e}")
+            raise
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while inserting charging point '{cp_id}': {e}")
+            raise
 
 if __name__ == "__main__":
 
