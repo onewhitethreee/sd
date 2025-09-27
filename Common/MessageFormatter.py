@@ -26,6 +26,9 @@ class MessageFormatter:
 
     @staticmethod
     def pack_message(message, encoding="utf-8"):
+        """
+        Packs a message dictionary into the specified byte string format.
+        """
         if not isinstance(message, dict):
             raise TypeError("El mensaje debe ser un diccionario.")
         try:
@@ -37,6 +40,9 @@ class MessageFormatter:
 
     @staticmethod
     def unpack_message(message_str, encoding="utf-8"):
+        """
+        Unpacks a message from the given byte string.
+        """
         if not (
             message_str.startswith(MessageFormatter.STX)
             and MessageFormatter.ETX in message_str
@@ -55,6 +61,53 @@ class MessageFormatter:
         except (ValueError, json.JSONDecodeError) as e:
             raise ValueError("Error al desempaquetar el mensaje.") from e
 
+    @staticmethod
+    def extract_complete_message(buffer):
+        """
+        Extract a complete message from the buffer.
+        Returns a tuple (remaining_buffer, message) where:
+            - remaining_buffer is the buffer after extracting the message
+            - message is the extracted message dictionary or None if no complete message is found
+        """
+        if MessageFormatter.STX not in buffer:
+            return buffer, None
+
+        stx_index = buffer.index(MessageFormatter.STX)
+
+        # find where ETX is
+        try:
+            etx_index = buffer.index(MessageFormatter.ETX, stx_index)
+        except ValueError:
+            # ETX not found, message is incomplete
+            return buffer, None
+
+        # Check for LRC
+        if len(buffer) < etx_index + 2:
+            # Not enough data to contain LRC
+            return buffer, None
+
+        # Extract complete message
+        message_bytes = buffer[stx_index : etx_index + 2]
+
+        try:
+            message = MessageFormatter.unpack_message(message_bytes)
+            # Remove the processed message from the buffer
+            remaining_buffer = buffer[etx_index + 2 :]
+            return remaining_buffer, message
+        except ValueError:
+            # Message format error, skip this STX
+            return buffer[stx_index + 1 :], None
+    @staticmethod
+    def create_response_message(cp_type, message_id, status, info=""):
+        """
+        a response message template
+        """
+        return {
+            "type": cp_type,
+            "message_id": message_id,
+            "status": status,
+            "info": info,
+        }
 
 if __name__ == "__main__":
 
