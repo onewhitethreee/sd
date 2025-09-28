@@ -184,19 +184,52 @@ class EV_Central:
             status="success",
             info=f"charging point {cp_id} registered successfully."
         )
+    def _handle_authorization_message(self, client_id, message): # TODO: implement
+        """
+        处理来自司机应用程序或充电点本身的充电授权请求。
+        需要验证充电点是否可用，并决定是否授权。
+        成功授权后，需要向充电点和司机应用程序发送授权通知。
+        """
+        pass
+
+    def _handle_charging_data_message(self, client_id, message): # TODO: implement
+        """
+        处理充电点在充电过程中实时发送的电量消耗和费用信息。
+        这些数据需要更新到内部状态和数据库，并显示在监控面板上。
+        """
+        pass
+    def _handle_fault_notification_message(self, client_id, message): # TODO: implement
+        """
+        处理充电点发送的故障或异常通知。
+        需要记录这些事件，并可能触发警报或通知维护人员。
+        """
+        pass
+    def _handle_recovery_message(self, client_id, message): # TODO: implement
+        """
+        处理充电点在故障修复后发送的恢复通知。
+        需要更新其状态，并可能重新启用其服务。
+        """
+        pass
+
+    def _handle_heartbeat_message(self, client_id, message):  # TODO: implement
+        """
+        处理充电桩发送的心跳消息，更新其最后连接时间。
+        这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
+        """
+        pass
+
+    def _handle_manual_command(self, cp_id, command): # TODO: implement
+        """
+        处理来自管理员的手动命令，如启动或停止充电点。
+        这些命令需要通过消息队列发送到相应的充电点。
+        """
+        pass
     
     def _debug_print_registered_charging_points(self):
         if self.debug_mode:
             self.logger.debug("当前注册的充电桩:")
             for cp_id, details in self._registered_charging_points.items():
                 self.logger.debug(f" - {cp_id}: {details}")
-    
-    def _handle_heartbeat_message(self, client_id, message): # TODO: implement
-        """
-        处理充电桩发送的心跳消息，更新其最后连接时间。
-        这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
-        """
-        pass
 
     def get_all_registered_charging_points(self):
         """
@@ -221,8 +254,7 @@ class EV_Central:
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
-        
-        
+
         # self._init_kafka_producer()
         # self._init_kafka_consumer()
         self.logger.info("All systems initialized successfully.")
@@ -261,5 +293,4 @@ if __name__ == "__main__":
     ev_central = EV_Central(logger=logger)
     ev_central.start()
 
-# TODO 检查一下发送消息，有一个错误需要修复
-# TODO 再解决如果用户发送少了属性服务器也要返回相对的错误信息给用户
+# TODO 解决如果用户发送少了属性服务器也要返回相对的错误信息给用户
