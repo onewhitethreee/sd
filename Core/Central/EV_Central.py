@@ -74,8 +74,6 @@ class EV_Central:
             # 获取数据库连接
             self.db_connection = self.db_manager.get_connection()
             self.logger.debug(f"Database connection type: {type(self.db_connection)}")
-        
-            
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -87,13 +85,13 @@ class EV_Central:
         self.logger.debug("Initializing socket server")
         try:
 
+            # 将自定义消息处理函数分配给 socket 服务器
             self.socket_server = MySocketServer(
                 host=self.config.get_ip_port_ev_cp_central()[0],
                 port=self.config.get_ip_port_ev_cp_central()[1],
                 logger=self.logger,
+                message_callback=self._process_charging_point_message
             )
-            # 将自定义消息处理函数分配给 socket 服务器
-            self.socket_server._process_message = self._process_charging_point_message
             # 通过MySocketServer类的start方法启动服务器 
             self.socket_server.start()
             self.logger.debug("Socket server initialized successfully")
@@ -109,7 +107,7 @@ class EV_Central:
 
         msg_type = message.get("type")
 
-        if msg_type == "register":
+        if msg_type.lower() == "register":
             # 如果是注册消息，就交给注册专员处理
             return self._handle_register_message(client_id, message)
 
@@ -252,8 +250,8 @@ class EV_Central:
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
-        self._init_kafka_producer()
-        self._init_kafka_consumer()
+        # self._init_kafka_producer()
+        # self._init_kafka_consumer()
 
     def shutdown_systems(self):
         self.logger.info("Shutting down systems...")

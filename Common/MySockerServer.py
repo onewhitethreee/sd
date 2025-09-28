@@ -10,7 +10,7 @@ from Common.MessageFormatter import MessageFormatter
 
 
 class MySocketServer:
-    def __init__(self, host="0.0.0.0", port=8080, logger=None):
+    def __init__(self, host="0.0.0.0", port=8080, logger=None, message_callback=None):
         self.host = host
         self.port = port
         self.logger = logger
@@ -18,18 +18,29 @@ class MySocketServer:
         self.is_running = False
         self.message_formatter = MessageFormatter()
         self.clients = {}  # {client_id: client_socket}
+        # 必须是要一个可调用的函数
+        if not callable(message_callback):
+            raise ValueError("message_callback must be a callable function")
+        self.message_callback = message_callback  # 用于处理消息的回调函数
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen(5)
-        self.is_running = True
-        self.logger.info(f"Socket server started on {self.host}:{self.port}")
-
-        # 在这个线程中接受客户端连接
-        threading.Thread(target=self._accept_clients, daemon=True).start()
-        self.logger.debug(f"Started thread to accept clients, listening on {self.host}:{self.port}")
+        try:
+                
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(5)
+            self.is_running = True
+            self.logger.info(f"Socket server started on {self.host}:{self.port}")
+            # 在这个线程中接受客户端连接
+            threading.Thread(target=self._accept_clients, daemon=True).start()
+            self.logger.debug(f"Started thread to accept clients, listening on {self.host}:{self.port}")
+        except Exception as e:
+            self.logger.error(f"Failed to start server: {e}")
+            self.is_running = False
+            if self.server_socket:
+                self.server_socket.close()
+            raise
     def _accept_clients(self):
         """
         Accept incoming client connections.
@@ -78,9 +89,9 @@ class MySocketServer:
                         break
 
                     # 处理消息并获取响应
-                    # TODO 搞懂这里的_process_message是怎么个事
-                    response = self._process_message(client_id, message)
-                    self.logger.debug(f"Processed message from {client_id}: {message}")
+                    # 这里调用的是外部的处理函数
+                    response = self.message_callback(client_id, message)
+                    self.logger.debug(f"Processed message from {client_id}: {message} and got response: {response}")
                     if response:
                         self.send_to_client(client_id, response)
                         self.logger.debug(f"Sent response to {client_id}: {response}")
@@ -94,25 +105,7 @@ class MySocketServer:
             client_socket.close()
             self.logger.info(f"Connection closed for {client_id}")
 
-    def _process_message(self, client_id, message):
-        # TODO 这里添加注册的逻辑
-        """处理接收到的消息并返回响应"""
-        self.logger.info(f"Processing message from {client_id}: {message}")
-        msg_type = message.get("type")
-
-        if msg_type == "PING":
-            return {"type": "PONG", "timestamp": message.get("timestamp")}
-
-        elif msg_type == "ECHO":
-            return {"type": "ECHO_REPLY", "data": message.get("data")}
-
-        elif msg_type == "REGISTER" or msg_type == 'register':
-            self.logger.debug(f"Client {client_id} registered as {message.get('name')}")
-            return {"type": "REGISTER_ACK", "status": "success"}
-
-        else:
-            self.logger.warning(f"Unknown message type: {msg_type}")
-            return {"type": "ERROR", "message": f"Unknown message type: {msg_type}"}
+    
 
     def send_to_client(self, client_id, message) -> bool:
         """发送消息给特定客户端"""
