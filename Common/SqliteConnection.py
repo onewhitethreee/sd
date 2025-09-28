@@ -1,7 +1,7 @@
 import sqlite3
 import os
 import logging
-
+import threading
 
 class SqliteConnection:
     def __init__(self, db_path, sql_schema_file=None, create_tables_if_not_exist=True):
@@ -9,54 +9,56 @@ class SqliteConnection:
         self.sql_schema_file = sql_schema_file
         self.connection = None
         self.create_tables_if_not_exist = create_tables_if_not_exist
-
+        # 用线程池来解决sqlite跨线程使用，这个问题出现在多线程的socket server中
+        self.local = threading.local()
 
         if self.create_tables_if_not_exist and not os.path.exists(self.db_path):
             logging.debug(f"Database file '{self.db_path}' does not exist. Attempting to create and set up schema.")
             self._execute_sql_from_file()
         else:
             logging.debug(f"Database file '{self.db_path}' already exists. Skipping initial schema creation.")
-        
+
+    def get_connection(self):
+        """为每个线程获取独立的连接"""
+        if not hasattr(self.local, "connection") or self.local.connection is None:
+            self.local.connection = sqlite3.connect(self.db_path)
+            self.local.connection.execute("PRAGMA foreign_keys = ON;")
+            thread_id = threading.current_thread().ident
+            logging.debug(f"Created new connection for thread {thread_id}")
+        return self.local.connection
+
+    def close_connection(self):
+        """关闭数据库连接"""
+        if hasattr(self.local, "connection") and self.local.connection is not None:
+            self.local.connection.close()
+            thread_id = threading.current_thread().ident
+            logging.debug(f"Closed connection for thread {thread_id}")
+            self.local.connection = None
 
     def _execute_sql_from_file(self):
-        """
-        Create tables in the SQLite database by executing SQL commands from a file.
-        """
-        if not self.sql_schema_file:
-            logging.error("No SQL schema file provided, cannot create tables.")
-            return
-        if not os.path.exists(self.sql_schema_file):
+        """创建表结构（修改：使用临时连接）"""
+        if not self.sql_schema_file or not os.path.exists(self.sql_schema_file):
             logging.error(f"SQL schema file '{self.sql_schema_file}' not found.")
             return
-
-        logging.debug(f"Executing SQL schema from '{self.sql_schema_file}' into database '{self.db_path}'.")
         try:
-            self.connection = sqlite3.connect(self.db_path)
-            
-            self.connection.execute("PRAGMA foreign_keys = ON;") 
-            
-            cursor = self.connection.cursor()
+            temp_conn = sqlite3.connect(self.db_path)
+            temp_conn.execute("PRAGMA foreign_keys = ON;")
 
-            with open(self.sql_schema_file, 'r', encoding='utf-8') as f:
+            with open(self.sql_schema_file, "r", encoding="utf-8") as f:
                 sql_script = f.read()
 
-            cursor.executescript(sql_script) 
+            temp_conn.executescript(sql_script)
+            temp_conn.commit()
+            logging.debug(
+                f"Successfully executed SQL schema from '{self.sql_schema_file}'."
+            )
 
-            self.connection.commit()
-            logging.debug(f"Successfully executed SQL schema from '{self.sql_schema_file}'.")
-
-        except sqlite3.Error as e:
-            logging.error(f"SQLite error during schema execution: {e}")
-            if self.connection:
-                self.connection.rollback() 
-        
-        except Exception as e: 
-            logging.error(f"An unexpected error occurred: {e}")
+        except Exception as e:
+            logging.error(f"Error during schema execution: {e}")
+            raise
         finally:
-            if self.connection:
-                self.connection.close()
-
-
+            if temp_conn:
+                temp_conn.close()
 
     def is_sqlite_available(self):
         """
@@ -97,58 +99,58 @@ class SqliteConnection:
                 self.connection.close()
                 logging.debug(f"Connection to database '{self.db_path}' closed after availability check.")
 
-    @staticmethod
-    def get_all_charging_points(connection):
-        """
-        Retrieve all registered charging points from the database.
-        Returns a list of dictionaries with charging point details.
-        """
+    def get_all_charging_points(self):
+        """获取所有充电桩"""
+        connection = self.get_connection()
         try:
             cursor = connection.cursor()
-            cursor.execute("SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints")
+            cursor.execute(
+                "SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints"
+            )
             rows = cursor.fetchall()
-            charging_points = []
-            for row in rows:
-                charging_points.append({
+            return [
+                {
                     "id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
                     "status": row[3],
-                    "last_connection_time": row[4]
-                })
-            return charging_points
-        except sqlite3.Error as e:
-            logging.error(f"SQLite error while fetching charging points: {e}")
-            return []
+                    "last_connection_time": row[4],
+                }
+                for row in rows
+            ]
         except Exception as e:
-            logging.error(f"An unexpected error occurred while fetching charging points: {e}")
+            logging.error(f"Error fetching charging points: {e}")
             return []
 
     def clean_database(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
-    
-    @staticmethod
-    def insert_charging_point(connection, cp_id, location, price_per_kwh, status, last_connection_time):
-        """
-        Insert a new charging point into the ChargingPoints table.
-        """
+
+    def insert_or_update_charging_point(self, cp_id, location, price_per_kwh, status, last_connection_time):
+        """插入或更新充电桩信息"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
         try:
-            cursor = connection.cursor()
+            # 使用 INSERT OR REPLACE 来处理重复
             cursor.execute("""
-                INSERT INTO ChargingPoints (cp_id, location, price_per_kwh, status, last_connection_time)
+                INSERT OR REPLACE INTO ChargingPoints 
+                (cp_id, location, price_per_kwh, status, last_connection_time)
                 VALUES (?, ?, ?, ?, ?)
             """, (cp_id, location, price_per_kwh, status, last_connection_time))
+            
             connection.commit()
-        except sqlite3.IntegrityError as e:
-            logging.error(f"Integrity error while inserting charging point '{cp_id}': {e}")
-            raise
-        except sqlite3.Error as e:
-            logging.error(f"SQLite error while inserting charging point '{cp_id}': {e}")
-            raise
+            
+            
+            logging.info(f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}")
+            
+            return True
+            
         except Exception as e:
-            logging.error(f"An unexpected error occurred while inserting charging point '{cp_id}': {e}")
+            connection.rollback()
+            logging.error(f"Error inserting/updating charging point '{cp_id}': {e}")
             raise
+
+
 
 if __name__ == "__main__":
 
