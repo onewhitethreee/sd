@@ -71,7 +71,7 @@ def main():
             register_message = {
                 "type": "register",
                 "message_id": str(uuid.uuid4()),  # 生成一个唯一的消息ID
-                "id": "CP9919",
+                "id": "C1P9919",
                 "location": "Testing Lab, Sector 7G",
                 "price_per_kwh": 0.55,
             }

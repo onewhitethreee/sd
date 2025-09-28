@@ -71,6 +71,9 @@ class EV_Central:
                     "Database is not available or not properly initialized."
                 )
                 sys.exit(1)
+            # 读取所有已注册的充电桩到内存中
+            for cp in self.get_all_registered_charging_points():
+                self._registered_charging_points[cp["id"]] = cp
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -218,7 +221,8 @@ class EV_Central:
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
-        print(self.get_all_registered_charging_points())
+        
+        
         # self._init_kafka_producer()
         # self._init_kafka_consumer()
         self.logger.info("All systems initialized successfully.")
