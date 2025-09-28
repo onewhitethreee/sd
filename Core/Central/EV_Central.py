@@ -17,11 +17,16 @@ from Common.MySockerServer import MySocketServer
 
 class EV_Central:
     def __init__(self, logger=None):
-        self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
+
+        self.logger = logger
         self.socket_server = None
         self._registered_charging_points = {}
+        self.db_manager = None  # 这个用来存储数据库管理对象
+        self.db_path = self.config.get_db_path()
+        self.sql_schema = os.path.join("Core", "BD", "table.sql")
+
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_Central",
@@ -51,11 +56,6 @@ class EV_Central:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
-        self.db_manager = None # 这个用来存储数据库管理对象
-        self.db_path = self.config.get_db_path()
-        self.sql_schema = os.path.join("Core", "BD", "table.sql")
-        self.charging_points = {}
-
     def _init_database(self):
         self.logger.debug("Initializing database connection")
         try:
@@ -72,6 +72,7 @@ class EV_Central:
                 )
                 sys.exit(1)
             # 读取所有已注册的充电桩到内存中
+            # TODO 在没有与charging point 连接的情况下，充电桩的状态都是disconnected， 这里需要改进
             for cp in self.get_all_registered_charging_points():
                 self._registered_charging_points[cp["id"]] = cp
         except Exception as e:
@@ -90,7 +91,7 @@ class EV_Central:
                 host=self.config.get_ip_port_ev_cp_central()[0],
                 port=self.config.get_ip_port_ev_cp_central()[1],
                 logger=self.logger,
-                message_callback=self._process_charging_point_message
+                message_callback=self._process_charging_point_message,
             )
             # 通过MySocketServer类的start方法启动服务器
             self.socket_server.start()
@@ -121,15 +122,17 @@ class EV_Central:
 
         else:
             # 如果是未知类型的消息，返回一个错误信息
-            self.logger.warning(f"收到来自 {client_id} 的未知消息类型: '{msg_type}'")
+            self.logger.warning(
+                f"Received unknown message type from {client_id}: '{msg_type}'"
+            )
             return MessageFormatter.create_response_message(
                 cp_type=msg_type,
                 message_id=message.get("message_id", ""),
                 status="failure",
-                info=f"未知的消息类型: '{msg_type}'",
+                info=f"Unknown message type: '{msg_type}'",
             )
 
-    def _handle_register_message(self, client_id, message): # TODO: review
+    def _handle_register_message(self, client_id, message):  # TODO: review
         """
         专门处理充电桩的注册请求。
         """
@@ -146,7 +149,7 @@ class EV_Central:
             return MessageFormatter.create_response_message(
                 message_id=message.get("message_id", ""),
                 status="failure",
-                info="注册消息中缺少必要字段"
+                info="注册消息中缺少必要字段",
             )
         # 插入数据库
         try:
@@ -165,7 +168,7 @@ class EV_Central:
                 cp_type="register",
                 message_id=message.get("message_id", ""),
                 status="failure",
-                info=f"注册失败: {e}"
+                info=f"注册失败: {e}",
             )
         # 更新内存中的注册列表
         self._registered_charging_points[cp_id] = {
@@ -176,15 +179,19 @@ class EV_Central:
             "last_connection_time": None,
         }
 
+        # 调试输出当前所有注册的充电桩
         self._debug_print_registered_charging_points()
 
         return MessageFormatter.create_response_message(
             cp_type="register",
             message_id=message.get("message_id", ""),
             status="success",
-            info=f"charging point {cp_id} registered successfully."
+            info=f"charging point {cp_id} registered successfully.",
         )
-    def _handle_authorization_message(self, client_id, message): # TODO: implement
+
+    def _handle_authorization_message(
+        self, cp_id, client_id, message
+    ):  # TODO: implement
         """
         处理来自司机应用程序或充电点本身的充电授权请求。
         需要验证充电点是否可用，并决定是否授权。
@@ -192,19 +199,21 @@ class EV_Central:
         """
         pass
 
-    def _handle_charging_data_message(self, client_id, message): # TODO: implement
+    def _handle_charging_data_message(self, client_id, message):  # TODO: implement
         """
         处理充电点在充电过程中实时发送的电量消耗和费用信息。
         这些数据需要更新到内部状态和数据库，并显示在监控面板上。
         """
         pass
-    def _handle_fault_notification_message(self, client_id, message): # TODO: implement
+
+    def _handle_fault_notification_message(self, client_id, message):  # TODO: implement
         """
         处理充电点发送的故障或异常通知。
         需要记录这些事件，并可能触发警报或通知维护人员。
         """
         pass
-    def _handle_recovery_message(self, client_id, message): # TODO: implement
+
+    def _handle_recovery_message(self, client_id, message):  # TODO: implement
         """
         处理充电点在故障修复后发送的恢复通知。
         需要更新其状态，并可能重新启用其服务。
@@ -218,18 +227,26 @@ class EV_Central:
         """
         pass
 
-    def _handle_manual_command(self, cp_id, command): # TODO: implement
+    def _handle_manual_command(self, cp_id, command):  # TODO: implement
         """
         处理来自管理员的手动命令，如启动或停止充电点。
         这些命令需要通过消息队列发送到相应的充电点。
         """
         pass
-    
+
     def _debug_print_registered_charging_points(self):
         if self.debug_mode:
             self.logger.debug("当前注册的充电桩:")
             for cp_id, details in self._registered_charging_points.items():
                 self.logger.debug(f" - {cp_id}: {details}")
+
+    def _generate_unique_message_id(self):
+        """
+        生成一个唯一的消息ID，使用UUID
+        """
+        import uuid
+
+        return str(uuid.uuid4()) 
 
     def get_all_registered_charging_points(self):
         """
@@ -242,11 +259,11 @@ class EV_Central:
 
         return SqliteConnection.get_all_charging_points(self.db_manager)
 
-    def _init_kafka_producer(self): # TODO: implement
+    def _init_kafka_producer(self):  # TODO: implement
         self.logger.debug("Initializing Kafka producer")
         pass
 
-    def _init_kafka_consumer(self): # TODO: implement
+    def _init_kafka_consumer(self):  # TODO: implement
         self.logger.debug("Initializing Kafka consumer")
         pass
 
@@ -276,7 +293,7 @@ class EV_Central:
         )
 
         self.initialize_systems()
-
+        print(self._generate_unique_message_id())
         try:
             ## SOCKET HERE ##
             while True:
