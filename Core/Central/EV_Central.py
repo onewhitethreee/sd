@@ -51,7 +51,7 @@ class EV_Central:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
-        self.db_connection = None
+        self.db_manager = None # 这个用来存储数据库管理对象
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.charging_points = {}
@@ -71,9 +71,6 @@ class EV_Central:
                     "Database is not available or not properly initialized."
                 )
                 sys.exit(1)
-            # 获取数据库连接
-            self.db_connection = self.db_manager.get_connection()
-            self.logger.debug(f"Database connection type: {type(self.db_connection)}")
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -92,7 +89,7 @@ class EV_Central:
                 logger=self.logger,
                 message_callback=self._process_charging_point_message
             )
-            # 通过MySocketServer类的start方法启动服务器 
+            # 通过MySocketServer类的start方法启动服务器
             self.socket_server.start()
             self.logger.debug("Socket server initialized successfully")
         except Exception as e:
@@ -138,7 +135,7 @@ class EV_Central:
         cp_id = message.get("id")
         location = message.get("location")
         price_per_kwh = message.get("price_per_kwh")
-        
+
         # 检查必要字段是否存在
         # TODO 是否需要另外添加message_id的检查?
         if not all([cp_id, location, price_per_kwh]):
@@ -175,7 +172,7 @@ class EV_Central:
             "status": "active",
             "last_connection_time": None,
         }
-        
+
         self._debug_print_registered_charging_points()
 
         return MessageFormatter.create_response_message(
@@ -184,60 +181,31 @@ class EV_Central:
             status="success",
             info=f"charging point {cp_id} registered successfully."
         )
+    
     def _debug_print_registered_charging_points(self):
         if self.debug_mode:
             self.logger.debug("当前注册的充电桩:")
             for cp_id, details in self._registered_charging_points.items():
                 self.logger.debug(f" - {cp_id}: {details}")
+    
     def _handle_heartbeat_message(self, client_id, message): # TODO: implement
         """
         处理充电桩发送的心跳消息，更新其最后连接时间。
         这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
         """
         pass
-    
+
     def get_all_registered_charging_points(self):
         """
         Retrieve all registered charging points from the database.
         Returns a list of dictionaries with charging point details.
         """
-        if not self.db_connection:
+        if not self.db_manager:
             self.logger.error("Database connection is not initialized.")
             return []
 
-        if not self.debug_mode:
-            return SqliteConnection.get_all_charging_points(self.db_connection)
-        else:
-            """
-            Simulated data for debug mode.
-            """
-            self.logger.debug(
-                "Fetching all registered charging points from the debug mode database"
-            )
-            return [
-                {
-                    "id": "CP001",
-                    "location": "Calle Mayor 1",
-                    "price_per_kwh": 0.15,
-                    "status": "disconnected",
-                    "last_connection_time": None,
-                },
-                {
-                    "id": "CP002",
-                    "location": "Avenida Central 5",
-                    "price_per_kwh": 0.20,
-                    "status": "disconnected",
-                    "last_connection_time": None,
-                },
-                {   
-                    "id": "CP003",
-                    "location": "Plaza Mayor 10",
-                    "price_per_kwh": 0.25,
-                    "status": "disconnected",
-                    "last_connection_time": datetime.now(),
-                },
-            ]
-    
+        return SqliteConnection.get_all_charging_points(self.db_manager)
+
     def _init_kafka_producer(self): # TODO: implement
         self.logger.debug("Initializing Kafka producer")
         pass
@@ -250,8 +218,10 @@ class EV_Central:
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
+        print(self.get_all_registered_charging_points())
         # self._init_kafka_producer()
         # self._init_kafka_consumer()
+        self.logger.info("All systems initialized successfully.")
 
     def shutdown_systems(self):
         self.logger.info("Shutting down systems...")
