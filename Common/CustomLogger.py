@@ -9,7 +9,7 @@ class CustomLogger:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         color_formatter = colorlog.ColoredFormatter(
-            "%(log_color)s%(levelname)s:%(asctime)s: %(message)s",  #  custom log format
+            "%(log_color)s%(levelname)s:%(asctime)s:[%(filename)s:%(lineno)d - %(funcName)s] %(message)s",
             log_colors={
                 "DEBUG": "cyan",
                 "INFO": "green",
