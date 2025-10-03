@@ -29,8 +29,8 @@ class EV_Central:
 
         if not self.debug_mode:
             self.tools = AppArgumentParser(
-                "EV_Central",
-                "Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
+                app_name="EV_Central",
+                app_description="Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
             )
             self.tools.add_argument("listen_port", type=int, help="Puerto de escuha")
             self.tools.add_argument(
@@ -257,7 +257,7 @@ class EV_Central:
             self.logger.error("Database connection is not initialized.")
             return []
 
-        return SqliteConnection.get_all_charging_points(self.db_manager)
+        return self.db_manager.get_all_charging_points()
 
     def _init_kafka_producer(self):  # TODO: implement
         self.logger.debug("Initializing Kafka producer")
