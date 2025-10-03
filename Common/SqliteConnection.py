@@ -125,7 +125,9 @@ class SqliteConnection:
     def clean_database(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
+    
 
+    # TODO 添加事务实现，防止并发问题
     def insert_or_update_charging_point(self, cp_id, location, price_per_kwh, status, last_connection_time):
         """插入或更新充电桩信息"""
         connection = self.get_connection()
