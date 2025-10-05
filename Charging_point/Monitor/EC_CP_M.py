@@ -4,11 +4,15 @@ Módulo que monitoriza la salud de todo el punto de recarga y que reporta a la C
 
 import sys
 import os
+import uuid
+import time
+import threading
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
+from Common.MySocketClient import MySocketClient
 
 
 class EV_CP_M:
@@ -39,10 +43,13 @@ class EV_CP_M:
             class Args:
                 ip_port_ev_cp_e = self.config.get_ip_port_ev_cp_e()
                 ip_port_ev_central = self.config.get_ip_port_ev_cp_central()
-                id_cp = self.config.get_client_id()
+                id_cp = self.config.get_id_cp()
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
+        self.central_client = None  # Cliente para conectar con EV_Central
+        self.engine_server = None  # Servidor para aceptar conexiones de EV_CP_E
+        self.running = False
 
     def _accept_engine_connection(self):
         """
@@ -54,7 +61,14 @@ class EV_CP_M:
         """
         连接到EV_Central
         """
-        pass
+        self.central_client = MySocketClient(
+            logger=self.logger,
+            message_callback=self._handle_central_message,
+        )
+        return self.central_client.connect(
+            self.args.ip_port_ev_central[0], self.args.ip_port_ev_central[1]
+        )
+
     def _handle_disconnection(self):
         """
         处理断开连接和重试机制
@@ -65,49 +79,104 @@ class EV_CP_M:
         """
         和central注册一个charging point
         """
-        pass
+        register_message = {
+            "type": "register",
+            "message_id": str(uuid.uuid4()),
+            "id": self.args.id_cp,
+            "location": "Location_Info",  # 可以是一个字符串，表示位置
+            "price_per_kwh": 0.20,  # 每千瓦时的价格
+        }
+        return self.central_client.send(register_message)
+
     def _send_heartbeat(self):
         """
         发送心跳消息以保持与中央的连接
         """
-        pass
+        while self.running:
+            if self.central_client and self.central_client.is_connected:
+                heartbeat_msg = {
+                    "type": "heartbeat",
+                    "message_id": str(uuid.uuid4()),
+                    "id": self.args.id_cp,
+                }
+                if self.central_client.send(heartbeat_msg):
+                    self.logger.debug("Heartbeat sent")
+                else:
+                    self.logger.error("Failed to send heartbeat")
+            time.sleep(30)  # Cada 30 segundos
+
+    def _start_heartbeat_thread(self):
+        """
+        启动发送心跳的线程
+        """
+
+        heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=True)
+        heartbeat_thread.start()
+
     def autheticate_charging_point(self):
         """
         认证充电点
         """
         pass
-    def _authenticate_with_central(self):
-        """
-        向central认证
-        """
-        pass
+
+
     def _check_engine_health(self):
         """
         检查EV_CP_E的健康状态
         """
         pass
+
     def _check_status(self):
         """
         检查充电点的状态
         """
         pass
+
     def update_cp_status(self, status):
         """
         更新充电点状态
         """
         pass
+
     def report_status_to_central(self, status):
         """
         向central报告状态
         """
         pass
+
     def _handle_central_message(self, message):
         """
         处理来自central的消息
         """
-        pass
-    
+        message_type = message.get("type")
+        if message_type == "register_response":
+            self.logger.info("Received registration response from central")
+            if message.get("status") == "success":
+                self.logger.info("Registration successful")
+                # TODO 处理注册成功后的逻辑
+        else:
+            self.logger.warning(f"Unknown message type from central: {message_type}")
+
+    def initialize_systems(self):
+        """
+        初始化系统，连接到central和EV_CP_E
+        """
+        if self._connect_to_central():
+            self.logger.info("Connected to EV_Central")
+            if self._register_with_central():
+                self.logger.info("Registration message sent to central")
+                self._start_heartbeat_thread()
+            else:
+                self.logger.error("Failed to send registration message to EV_Central")
+                self.logger.info("需要实现重试机制")
+                # TODO 实现重试机制
+        else:
+            self.logger.error("Failed to connect to EV_Central")
+            self.logger.info("需要实现重试机制")
+            # TODO 实现重试机制
+
     def start(self):
+        self.running = True
         self.logger.info(f"Starting EV_CP_M module")
         self.logger.info(
             f"Listening  to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
@@ -117,13 +186,23 @@ class EV_CP_M:
         )
         self.logger.info(f"Point ID: {self.args.id_cp}")
 
+        self.initialize_systems()
         # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
             while True:
-                pass  # Simulación de la ejecución continua del servicio
+                time.sleep(1)  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV CP M")
+            self.running = False
+            if self.central_client:
+                self.central_client.disconnect()
             sys.exit(0)
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {e}")
+            self.running = False
+            if self.central_client:
+                self.central_client.disconnect()
+            sys.exit(1)
 
 
 if __name__ == "__main__":

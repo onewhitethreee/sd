@@ -10,7 +10,7 @@ from Common.MessageFormatter import MessageFormatter
 
 
 class MySocketServer:
-    def __init__(self, host="0.0.0.0", port=8080, logger=None, message_callback=None):
+    def __init__(self, host="0.0.0.0", port=5002, logger=None, message_callback=None):
         self.host = host
         self.port = port
         self.logger = logger
@@ -27,7 +27,7 @@ class MySocketServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-                
+
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
             self.is_running = True
@@ -104,8 +104,6 @@ class MySocketServer:
                 del self.clients[client_id]
             client_socket.close()
             self.logger.info(f"Connection closed for {client_id}")
-
-    
 
     def send_to_client(self, client_id, message) -> bool:
         """发送消息给特定客户端"""
