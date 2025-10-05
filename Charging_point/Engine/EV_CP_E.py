@@ -9,6 +9,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.ConfigManager import ConfigManager
 from Common.CustomLogger import CustomLogger
+from Common.MySockerServer import MySocketServer
+
 
 class EV_CP_E:
     def __init__(self, logger=None):
@@ -28,12 +30,15 @@ class EV_CP_E:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
+        
+
+
 
     def _init_connections(self): # TODO kafka client implementation
         """
         去和central和ev_m建立连接
         """
-        pass
+        self._connect_to_central()
 
     def _shutdown_system(self):
         """
@@ -84,6 +89,10 @@ class EV_CP_E:
         """
         pass
 
+    def initialize_system(self):
+        self.logger.info("Initializing EV_CP_E module")
+        self._init_connections()
+
     def start(self):
         self.logger.info(f"Starting EV_CP_E module")
         self.logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
@@ -95,6 +104,8 @@ class EV_CP_E:
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV CP E")
             sys.exit(0)
+
+
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
 
