@@ -111,8 +111,8 @@ class EV_Central:
         msg_type = message.get("type")
 
         handlers = {
-            "register": self._handle_register_message,
-            "heartbeat": self._handle_heartbeat_message,
+            "register_request": self._handle_register_message,
+            "heartbeat_request": self._handle_heartbeat_message,
             # "charge_completion": self._handle_charging_completion,
             # "status_update": self._handle_status_update,
 
@@ -123,7 +123,7 @@ class EV_Central:
         if handler:
             return handler(client_id, message)
         else:
-            self.logger.warning(f"Unknown message type from {client_id}: '{msg_type}'")
+            self.logger.error(f"Unknown message type from {client_id}: '{msg_type}'")
             return MessageFormatter.create_response_message(
                 cp_type=f"{msg_type}_response",
                 message_id=message.get("message_id", ""),
@@ -206,7 +206,7 @@ class EV_Central:
         self._debug_print_registered_charging_points()
 
         return MessageFormatter.create_response_message(
-            cp_type="register",
+            cp_type="register_response",
             message_id=message.get("message_id", ""),
             status="success",
             info=f"charging point {cp_id} registered successfully.",
@@ -248,6 +248,7 @@ class EV_Central:
         处理充电桩发送的心跳消息，更新其最后连接时间。
         这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
         """
+        self.logger.info(f"Processing heartbeat from client {client_id}")
         cp_id = message.get("id")
         if not cp_id :
             return MessageFormatter.create_response_message(

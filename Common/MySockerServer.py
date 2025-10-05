@@ -91,7 +91,7 @@ class MySocketServer:
                     # 处理消息并获取响应
                     # 这里调用的是外部的处理函数
                     response = self.message_callback(client_id, message)
-                    self.logger.debug(f"Processed message from {client_id}: {message} and got response: {response}")
+                    self.logger.info(f"Processed message from {client_id}: {message} and got response: {response}")
                     if response:
                         self.send_to_client(client_id, response)
                         self.logger.debug(f"Sent response to {client_id}: {response}")

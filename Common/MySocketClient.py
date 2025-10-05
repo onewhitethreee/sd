@@ -75,6 +75,7 @@ class MySocketClient:
         try:
             packed = MessageFormatter.pack_message(message)
             self.socket.send(packed)
+            self.logger.debug(f"Sent message: {packed}")
             return True
         except Exception as e:
             self.logger.error(f"Send failed: {e}")

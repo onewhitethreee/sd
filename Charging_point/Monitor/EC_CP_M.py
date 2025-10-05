@@ -50,13 +50,9 @@ class EV_CP_M:
         self.central_client = None  # Cliente para conectar con EV_Central
         self.engine_server = None  # Servidor para aceptar conexiones de EV_CP_E
         self.running = False
+        self.RETRY_INTERVAL = 5  # Intervalo de reintento en segundos
 
-    def _accept_engine_connection(self):
-        """
-        接受来自EV_CP_E的连接
-        """
-        pass
-
+    
     def _connect_to_central(self):
         """
         连接到EV_Central
@@ -80,7 +76,7 @@ class EV_CP_M:
         和central注册一个charging point
         """
         register_message = {
-            "type": "register",
+            "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "location": "Location_Info",  # 可以是一个字符串，表示位置
@@ -95,7 +91,7 @@ class EV_CP_M:
         while self.running:
             if self.central_client and self.central_client.is_connected:
                 heartbeat_msg = {
-                    "type": "heartbeat",
+                    "type": "heartbeat_request",
                     "message_id": str(uuid.uuid4()),
                     "id": self.args.id_cp,
                 }
@@ -103,13 +99,12 @@ class EV_CP_M:
                     self.logger.debug("Heartbeat sent")
                 else:
                     self.logger.error("Failed to send heartbeat")
-            time.sleep(30)  # Cada 30 segundos
+            time.sleep(30)  # Cada 30 segundos enviar un latido
 
     def _start_heartbeat_thread(self):
         """
         启动发送心跳的线程
         """
-
         heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=True)
         heartbeat_thread.start()
 
@@ -151,11 +146,69 @@ class EV_CP_M:
         message_type = message.get("type")
         if message_type == "register_response":
             self.logger.info("Received registration response from central")
+            self.logger.debug(f"Registration response details: {message}")
+            # TODO 这里需要用MessageFormatter来进行解包和验证
+            # TODO 不需要解包，通过debug发现MySocketClient已经为我们处理好了
             if message.get("status") == "success":
                 self.logger.info("Registration successful")
                 # TODO 处理注册成功后的逻辑
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")
+
+    def _retry_connection(self):
+        """
+        重试连接到central
+        """
+        retry_count = 0
+        max_retries = 10
+        
+        while self.running and retry_count < max_retries:
+            retry_count += 1
+            self.logger.info(f"Connection retry {retry_count}/{max_retries}")
+            
+            if self._connect_to_central():
+                self.logger.info("Reconnected to EV_Central")
+                return True
+                
+            self.logger.error(f"Connection failed, waiting {self.RETRY_INTERVAL}s...")
+            time.sleep(self.RETRY_INTERVAL)
+        
+        self.logger.error(f"Connection failed after {max_retries} attempts")
+        return False
+
+    def _retry_registration(self):
+        """
+        重试注册机制
+        """
+        retry_count = 0
+        max_retries = 5
+        
+        while self.running and retry_count < max_retries:
+            retry_count += 1
+            self.logger.info(f"Registration retry {retry_count}/{max_retries}")
+            
+            if self._register_with_central():
+                self.logger.info("Registration successful")
+                self._start_heartbeat_thread()
+                return True
+                
+            self.logger.error(f"Registration failed, waiting {self.RETRY_INTERVAL}s...")
+            time.sleep(self.RETRY_INTERVAL)
+        
+        self.logger.error(f"Registration failed after {max_retries} attempts")
+        return False
+    def _ensure_connection_and_registration(self):
+        """
+        确保连接和注册
+        """
+        self.logger.info("Ensuring connection and registration with EV_Central")
+        # Primero asegurar conexión
+        if not self.central_client or not self.central_client.is_connected:
+            if not self._retry_connection():
+                return False
+        
+        # Luego asegurar registro
+        return self._retry_registration()
 
     def initialize_systems(self):
         """
@@ -168,12 +221,10 @@ class EV_CP_M:
                 self._start_heartbeat_thread()
             else:
                 self.logger.error("Failed to send registration message to EV_Central")
-                self.logger.info("需要实现重试机制")
-                # TODO 实现重试机制
+                threading.Thread(target=self._retry_registration, daemon=True).start()
         else:
             self.logger.error("Failed to connect to EV_Central")
-            self.logger.info("需要实现重试机制")
-            # TODO 实现重试机制
+            threading.Thread(target=self._ensure_connection_and_registration, daemon=True).start()
 
     def start(self):
         self.running = True
