@@ -363,7 +363,7 @@ class EV_Central:
         try:
             ## SOCKET HERE ##
             while True:
-                pass  # Simulación de la ejecución continua del servicio
+                pass # TODO 这里在部署的时候不能用死循环，需要改成非阻塞的方式
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV Central")
             self.shutdown_systems()
