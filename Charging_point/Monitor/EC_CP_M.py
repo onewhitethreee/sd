@@ -47,7 +47,7 @@ class EV_CP_M:
     def start(self):
         self.logger.info(f"Starting EV_CP_M module")
         self.logger.info(
-            f"Connecting to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
+            f"Listening  to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
         )
         self.logger.info(
             f"Connecting to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}"

@@ -27,6 +27,63 @@ class EV_CP_E:
                 ip_port_ev_m = self.config.get_ip_port_ev_m()
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
+
+
+    def _init_connections(self): # TODO kafka client implementation
+        """
+        去和central和ev_m建立连接
+        """
+        pass
+
+    def _shutdown_system(self):
+        """
+        关闭系统连接
+        """
+        pass
+
+    def _process_central_message(self, message):
+        """
+        处理来自central的消息
+        """
+        pass
+
+    def send_register_to_central(self):
+        """
+        向central注册 charging point
+        """
+        pass
+    def send_charging_data_to_central(self, data):
+        """
+        向central发送充电数据
+        """
+        pass
+    def send_charging_complete_to_central(self, data):
+        """
+        向central发送充电完成数据
+        """
+        pass
+    def _manage_charging_session(self, session_data):
+        """
+        管理充电会话
+        """
+        pass
+
+    def _start_charging_session(self, ev_id):
+        """
+        启动充电会话
+        """
+        pass
+    def _stop_charging_session(self, ev_id):
+        """
+        停止充电会话
+        """
+        pass
+    def _update_status(self, status):
+        """
+        更新充电点状态
+        """
+        pass
+
     def start(self):
         self.logger.info(f"Starting EV_CP_E module")
         self.logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")

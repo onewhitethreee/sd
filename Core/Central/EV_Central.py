@@ -84,6 +84,8 @@ class EV_Central:
         Initialize the socket server to listen for incoming connections from charging points.
         """
         self.logger.debug("Initializing socket server")
+        self._cp_connections = {}  # {cp_id: client_socket}
+        self._client_to_cp = {}  # {client_id: cp_id}
         try:
 
             # 将自定义消息处理函数分配给 socket 服务器
@@ -108,25 +110,22 @@ class EV_Central:
 
         msg_type = message.get("type")
 
-        if msg_type.lower() == "register":
-            # 如果是注册消息，就交给注册专员处理
-            return self._handle_register_message(client_id, message)
+        handlers = {
+            "register": self._handle_register_message,
+            "heartbeat": self._handle_heartbeat_message,
+            # "charge_completion": self._handle_charging_completion,
+            # "status_update": self._handle_status_update,
 
-        # elif msg_type == "heartbeat":
-        #     # 未来可以在这里添加对心跳消息的处理
-        #     pass
+            # TODO 添加其他消息类型的处理函数
+        }
 
-        # elif msg_type == "status_update":
-        #     # 未来可以在这里添加对状态更新消息的处理
-        #     pass
-
+        handler = handlers.get(msg_type)
+        if handler:
+            return handler(client_id, message)
         else:
-            # 如果是未知类型的消息，返回一个错误信息
-            self.logger.warning(
-                f"Received unknown message type from {client_id}: '{msg_type}'"
-            )
+            self.logger.warning(f"Unknown message type from {client_id}: '{msg_type}'")
             return MessageFormatter.create_response_message(
-                cp_type=msg_type,
+                cp_type=f"{msg_type}_response",
                 message_id=message.get("message_id", ""),
                 status="failure",
                 info=f"Unknown message type: '{msg_type}'",
@@ -141,18 +140,37 @@ class EV_Central:
         cp_id = message.get("id")
         location = message.get("location")
         price_per_kwh = message.get("price_per_kwh")
+        message_id = message.get("message_id")
 
-        # 检查必要字段是否存在
-        # TODO 是否需要另外添加message_id的检查?
-        if not all([cp_id, location, price_per_kwh]):
-            self.logger.error(f"注册消息缺少必要字段: {message}")
+        if not message_id:
             return MessageFormatter.create_response_message(
-                message_id=message.get("message_id", ""),
+                cp_type="register_response",
+                message_id="",
                 status="failure",
-                info="注册消息中缺少必要字段",
+                info="注册消息中缺少 message_id 字段",
             )
+
+        missing_fields = []
+        if not cp_id:
+            missing_fields.append("id")
+        if not location:
+            missing_fields.append("location")
+        if price_per_kwh is None:
+            missing_fields.append("price_per_kwh")
+        if missing_fields:
+            return MessageFormatter.create_response_message(
+                cp_type="register_response",
+                message_id=message_id,
+                status="failure",
+                info=f"注册消息中缺少字段: {', '.join(missing_fields)}",
+            )
+
         # 插入数据库
         try:
+            price_per_kwh = float(price_per_kwh)
+            if price_per_kwh < 0:
+                raise ValueError("price_per_kwh must be non-negative")
+
             self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
             self.db_manager.insert_or_update_charging_point(
                 cp_id=cp_id,
@@ -165,11 +183,16 @@ class EV_Central:
         except Exception as e:
             self.logger.debug(f"注册充电桩 {cp_id} 失败: {e}")
             return MessageFormatter.create_response_message(
-                cp_type="register",
-                message_id=message.get("message_id", ""),
+                cp_type="register_response",
+                message_id=message_id,
                 status="failure",
                 info=f"注册失败: {e}",
             )
+
+        # 维护连接映射
+        self._cp_connections[cp_id] = client_id
+        self._client_to_cp[client_id] = cp_id
+
         # 更新内存中的注册列表
         self._registered_charging_points[cp_id] = {
             "client_id": client_id,
@@ -225,7 +248,43 @@ class EV_Central:
         处理充电桩发送的心跳消息，更新其最后连接时间。
         这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
         """
-        pass
+        cp_id = message.get("id")
+        if not cp_id :
+            return MessageFormatter.create_response_message(
+                cp_type="heartbeat_response",
+                message_id=message.get("message_id", ""),
+                status="failure",
+                info="心跳消息中缺少 id 字段",
+            )
+        current_time = datetime.now(timezone.utc).isoformat()
+        if cp_id in self._registered_charging_points:
+            self._registered_charging_points[cp_id]["last_connection_time"] = current_time
+            # 同步更新数据库中的最后连接时间
+            try:
+                self.db_manager.insert_or_update_charging_point(
+                    cp_id=cp_id,
+                    location=self._registered_charging_points[cp_id]["location"],
+                    price_per_kwh=self._registered_charging_points[cp_id]["price_per_kwh"],
+                    status="active",
+                    last_connection_time=current_time,
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to update last connection time for {cp_id}: {e}")
+                return MessageFormatter.create_response_message(
+                    cp_type="heartbeat_response",
+                    message_id=message.get("message_id", ""),
+                    status="failure",
+                    info=f"Failed to update last connection time: {e}",
+                )
+            self.logger.debug(f"Updated last connection time for {cp_id} to {current_time}")
+        else:
+            self.logger.warning(f"Received heartbeat from unregistered charging point {cp_id}")
+            return MessageFormatter.create_response_message(
+                cp_type="heartbeat_response",
+                message_id=message.get("message_id", ""),
+                status="failure",
+                info=f"Charging point {cp_id} is not registered.",
+            )
 
     def _handle_manual_command(self, cp_id, command):  # TODO: implement
         """
