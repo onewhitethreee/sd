@@ -52,7 +52,6 @@ class EV_CP_M:
         self.running = False
         self.RETRY_INTERVAL = 5  # Intervalo de reintento en segundos
 
-    
     def _connect_to_central(self):
         """
         连接到EV_Central
@@ -114,7 +113,6 @@ class EV_CP_M:
         """
         pass
 
-
     def _check_engine_health(self):
         """
         检查EV_CP_E的健康状态
@@ -152,27 +150,62 @@ class EV_CP_M:
             if message.get("status") == "success":
                 self.logger.info("Registration successful")
                 # TODO 处理注册成功后的逻辑
+
+        elif message_type == "heartbeat_response":
+            self.logger.debug("Received heartbeat response from central")
+            if message.get("status") == "success":
+                self.logger.debug(f"Heartbeat acknowledged by central {message}")
+            else:
+                self.logger.warning(f"Heartbeat not acknowledged by central {message}")
+
+        elif message_type == 'SERVER_SHUTDOWN':
+            self.logger.warning("Central server is shutting down")
+            self._handle_server_shutdown()
+        
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")
 
+    def _handle_server_shutdown(self):
+        self.logger.info("Initiating graceful shutdown due to central server shutdown")
+        threading.Thread(target=self._graceful_shutdown, daemon=False).start()
+
+
+    def _graceful_shutdown(self):
+        """
+        Realiza un cierre ordenado del sistema
+        """
+        # Dar tiempo para terminar operaciones pendientes
+        time.sleep(2)
+
+        # Detener loops activos
+        self.running = False
+
+        # Desconectar clientes
+        if self.central_client:
+            self.central_client.disconnect()
+
+        # Cerrar otros recursos si los hay
+        # TODO: Cerrar servidor para EV_CP_E cuando esté implementado
+
+        self.logger.info("Shutdown complete")
     def _retry_connection(self):
         """
         重试连接到central
         """
         retry_count = 0
         max_retries = 10
-        
+
         while self.running and retry_count < max_retries:
             retry_count += 1
             self.logger.info(f"Connection retry {retry_count}/{max_retries}")
-            
+
             if self._connect_to_central():
                 self.logger.info("Reconnected to EV_Central")
                 return True
-                
+
             self.logger.error(f"Connection failed, waiting {self.RETRY_INTERVAL}s...")
             time.sleep(self.RETRY_INTERVAL)
-        
+
         self.logger.error(f"Connection failed after {max_retries} attempts")
         return False
 
@@ -182,19 +215,19 @@ class EV_CP_M:
         """
         retry_count = 0
         max_retries = 5
-        
+
         while self.running and retry_count < max_retries:
             retry_count += 1
             self.logger.info(f"Registration retry {retry_count}/{max_retries}")
-            
+
             if self._register_with_central():
                 self.logger.info("Registration successful")
                 self._start_heartbeat_thread()
                 return True
-                
+
             self.logger.error(f"Registration failed, waiting {self.RETRY_INTERVAL}s...")
             time.sleep(self.RETRY_INTERVAL)
-        
+
         self.logger.error(f"Registration failed after {max_retries} attempts")
         return False
     def _ensure_connection_and_registration(self):
@@ -206,7 +239,7 @@ class EV_CP_M:
         if not self.central_client or not self.central_client.is_connected:
             if not self._retry_connection():
                 return False
-        
+
         # Luego asegurar registro
         return self._retry_registration()
 
@@ -238,22 +271,18 @@ class EV_CP_M:
         self.logger.info(f"Point ID: {self.args.id_cp}")
 
         self.initialize_systems()
+
         # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
-            while True:
+            while self.running:
                 time.sleep(1)  # Simulación de la ejecución continua del servicio
+                self.logger.debug(f"EV_CP_M is running... {self.running}")
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV CP M")
-            self.running = False
-            if self.central_client:
-                self.central_client.disconnect()
-            sys.exit(0)
+            self._graceful_shutdown()
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")
-            self.running = False
-            if self.central_client:
-                self.central_client.disconnect()
-            sys.exit(1)
+            self._graceful_shutdown()
 
 
 if __name__ == "__main__":

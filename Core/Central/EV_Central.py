@@ -269,6 +269,12 @@ class EV_Central:
                     status="active",
                     last_connection_time=current_time,
                 )
+                return MessageFormatter.create_response_message(
+                    cp_type="heartbeat_response",
+                    message_id=message.get("message_id", ""),
+                    status="success",
+                    info="Heartbeat received and last connection time updated.",
+                )
             except Exception as e:
                 self.logger.error(f"Failed to update last connection time for {cp_id}: {e}")
                 return MessageFormatter.create_response_message(

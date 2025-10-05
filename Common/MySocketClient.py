@@ -18,7 +18,9 @@ class MySocketClient:
         """Conecta al servidor"""
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(30.0)  # Timeout de 30 segundos
             self.socket.connect((host, port))
+            self.socket.settimeout(1.0)  # Timeout más corto para recv
             self.is_connected = True
             self.logger.info(f"Connected to {host}:{port}")
 
@@ -31,7 +33,11 @@ class MySocketClient:
 
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")
+            if self.socket:
+                self.socket.close()
+                self.socket = None
             return False
+
 
     def _receive_loop(self):
         """Loop para recibir mensajes"""
@@ -41,6 +47,9 @@ class MySocketClient:
                 if not data:
                     self.logger.warning("Server disconnected")
                     self.is_connected = False
+                    # Notificar la desconexión al callback
+                    if self.message_callback:
+                        self.message_callback({"type": "CONNECTION_LOST"})
                     break
 
                 self.buffer += data
@@ -55,16 +64,27 @@ class MySocketClient:
 
                     # Callback para procesar mensaje
                     if self.message_callback:
-                        self.message_callback(message)
-            except KeyboardInterrupt:
-                self.logger.info("Receive loop interrupted by user")
+                        try:
+                            self.message_callback(message)
+                        except Exception as e:
+                            self.logger.error(f"Error in message callback: {e}")
+                            
+            except socket.timeout:
+                # Timeout es normal, continuar
+                continue
+            except ConnectionResetError:
+                self.logger.error("Connection reset by peer")
                 self.is_connected = False
+                if self.message_callback:
+                    self.message_callback({"type": "CONNECTION_RESET"})
                 break
-
             except Exception as e:
                 self.logger.error(f"Error receiving: {e}")
                 self.is_connected = False
+                if self.message_callback:
+                    self.message_callback({"type": "CONNECTION_ERROR", "error": str(e)})
                 break
+
 
     def send(self, message):
         """Envía mensaje al servidor"""
@@ -83,6 +103,21 @@ class MySocketClient:
 
     def disconnect(self):
         """Desconecta del servidor"""
+        if not self.is_connected:
+            return
+            
         self.is_connected = False
         if self.socket:
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except:
+                pass  # Socket ya cerrado
             self.socket.close()
+            self.socket = None
+        
+        # Esperar a que termine el thread de recepción
+        if self.receive_thread and self.receive_thread.is_alive():
+            self.receive_thread.join(timeout=2)
+        
+        self.logger.info("Disconnected from server")
+
