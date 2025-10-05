@@ -44,6 +44,69 @@ class EV_CP_M:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
+    def _accept_engine_connection(self):
+        """
+        接受来自EV_CP_E的连接
+        """
+        pass
+
+    def _connect_to_central(self):
+        """
+        连接到EV_Central
+        """
+        pass
+    def _handle_disconnection(self):
+        """
+        处理断开连接和重试机制
+        """
+        pass
+
+    def _register_with_central(self):
+        """
+        和central注册一个charging point
+        """
+        pass
+    def _send_heartbeat(self):
+        """
+        发送心跳消息以保持与中央的连接
+        """
+        pass
+    def autheticate_charging_point(self):
+        """
+        认证充电点
+        """
+        pass
+    def _authenticate_with_central(self):
+        """
+        向central认证
+        """
+        pass
+    def _check_engine_health(self):
+        """
+        检查EV_CP_E的健康状态
+        """
+        pass
+    def _check_status(self):
+        """
+        检查充电点的状态
+        """
+        pass
+    def update_cp_status(self, status):
+        """
+        更新充电点状态
+        """
+        pass
+    def report_status_to_central(self, status):
+        """
+        向central报告状态
+        """
+        pass
+    def _handle_central_message(self, message):
+        """
+        处理来自central的消息
+        """
+        pass
+    
     def start(self):
         self.logger.info(f"Starting EV_CP_M module")
         self.logger.info(
