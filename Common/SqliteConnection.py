@@ -125,7 +125,6 @@ class SqliteConnection:
     def clean_database(self):
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
-    
 
     # TODO 添加事务实现，防止并发问题
     def insert_or_update_charging_point(self, cp_id, location, price_per_kwh, status, last_connection_time):
@@ -139,19 +138,26 @@ class SqliteConnection:
                 (cp_id, location, price_per_kwh, status, last_connection_time)
                 VALUES (?, ?, ?, ?, ?)
             """, (cp_id, location, price_per_kwh, status, last_connection_time))
-            
+
             connection.commit()
-            
-            
+
             logging.info(f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}")
-            
+
             return True
-            
+
         except Exception as e:
             connection.rollback()
             logging.error(f"Error inserting/updating charging point '{cp_id}': {e}")
             raise
 
+    def update_charging_point_status(self, cp_id, status):
+        """更新充电桩状态"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?", (status, cp_id)
+        )
+        connection.commit()
 
 
 if __name__ == "__main__":

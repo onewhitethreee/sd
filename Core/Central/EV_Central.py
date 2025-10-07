@@ -75,7 +75,24 @@ class EV_Central:
             # 读取所有已注册的充电桩到内存中
             # TODO 在没有与charging point 连接的情况下，充电桩的状态都是disconnected， 这里需要改进
             for cp in self.get_all_registered_charging_points():
-                self._registered_charging_points[cp["id"]] = cp
+                # 系统启动时，所有充电桩都设置为离线状态
+                cp_data = {
+                    "id": cp["id"],
+                    "location": cp["location"],
+                    "price_per_kwh": cp["price_per_kwh"],
+                    "status": Status.DISCONNECTED.value,  # 统一设置为离线
+                    "last_connection_time": cp["last_connection_time"],
+                    # "client_id": None  # 还没有客户端连接
+                }
+                self._registered_charging_points[cp["id"]] = cp_data
+                
+                # 更新数据库中的状态为 DISCONNECTED
+                self.db_manager.update_charging_point_status(
+                    cp_id=cp["id"],
+                    status=Status.DISCONNECTED.value
+                )
+                
+            self.logger.info(f"Loaded {len(self._registered_charging_points)} charging points from database")
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -271,9 +288,10 @@ class EV_Central:
                     price_per_kwh=self._registered_charging_points[cp_id][
                         "price_per_kwh"
                     ],
-                    status=Status.ACTIVE,  # 心跳消息表示充电桩在线，更新状态为 ACTIVE
+                    status=Status.ACTIVE.value,  # 心跳消息表示充电桩在线，更新状态为 ACTIVE
                     last_connection_time=current_time,
                 )
+                self._show_registered_charging_points()
                 return MessageFormatter.create_response_message(
                     cp_type="heartbeat_response",
                     message_id=message.get("message_id", ""),
@@ -290,9 +308,6 @@ class EV_Central:
                     status="failure",
                     info=f"Failed to update last connection time: {e}",
                 )
-            self.logger.debug(
-                f"Updated last connection time for {cp_id} to {current_time}"
-            )
         else:
             self.logger.warning(
                 f"Received heartbeat from unregistered charging point {cp_id}"
@@ -410,3 +425,4 @@ if __name__ == "__main__":
     ev_central.start()
 
 # TODO 解决如果用户发送少了属性服务器也要返回相对的错误信息给用户
+# TODO 关闭服务器时，所有连接的充电桩都要被设置为离线状态
