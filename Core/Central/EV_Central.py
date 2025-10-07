@@ -26,6 +26,7 @@ class EV_Central:
         self.db_manager = None  # 这个用来存储数据库管理对象
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
+        self.running = False
 
         if not self.debug_mode:
             self.tools = AppArgumentParser(
@@ -97,6 +98,7 @@ class EV_Central:
             )
             # 通过MySocketServer类的start方法启动服务器
             self.socket_server.start()
+            self.running = True
             self.logger.debug("Socket server initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize socket server: {e}")
@@ -115,7 +117,6 @@ class EV_Central:
             "heartbeat_request": self._handle_heartbeat_message,
             # "charge_completion": self._handle_charging_completion,
             # "status_update": self._handle_status_update,
-
             # TODO 添加其他消息类型的处理函数
         }
 
@@ -250,7 +251,7 @@ class EV_Central:
         """
         self.logger.info(f"Processing heartbeat from client {client_id}")
         cp_id = message.get("id")
-        if not cp_id :
+        if not cp_id:
             return MessageFormatter.create_response_message(
                 cp_type="heartbeat_response",
                 message_id=message.get("message_id", ""),
@@ -259,13 +260,17 @@ class EV_Central:
             )
         current_time = datetime.now(timezone.utc).isoformat()
         if cp_id in self._registered_charging_points:
-            self._registered_charging_points[cp_id]["last_connection_time"] = current_time
+            self._registered_charging_points[cp_id][
+                "last_connection_time"
+            ] = current_time
             # 同步更新数据库中的最后连接时间
             try:
                 self.db_manager.insert_or_update_charging_point(
                     cp_id=cp_id,
                     location=self._registered_charging_points[cp_id]["location"],
-                    price_per_kwh=self._registered_charging_points[cp_id]["price_per_kwh"],
+                    price_per_kwh=self._registered_charging_points[cp_id][
+                        "price_per_kwh"
+                    ],
                     status="active",
                     last_connection_time=current_time,
                 )
@@ -276,16 +281,22 @@ class EV_Central:
                     info="Heartbeat received and last connection time updated.",
                 )
             except Exception as e:
-                self.logger.error(f"Failed to update last connection time for {cp_id}: {e}")
+                self.logger.error(
+                    f"Failed to update last connection time for {cp_id}: {e}"
+                )
                 return MessageFormatter.create_response_message(
                     cp_type="heartbeat_response",
                     message_id=message.get("message_id", ""),
                     status="failure",
                     info=f"Failed to update last connection time: {e}",
                 )
-            self.logger.debug(f"Updated last connection time for {cp_id} to {current_time}")
+            self.logger.debug(
+                f"Updated last connection time for {cp_id} to {current_time}"
+            )
         else:
-            self.logger.warning(f"Received heartbeat from unregistered charging point {cp_id}")
+            self.logger.warning(
+                f"Received heartbeat from unregistered charging point {cp_id}"
+            )
             return MessageFormatter.create_response_message(
                 cp_type="heartbeat_response",
                 message_id=message.get("message_id", ""),
@@ -312,7 +323,28 @@ class EV_Central:
         """
         import uuid
 
-        return str(uuid.uuid4()) 
+        return str(uuid.uuid4())
+
+    def _show_registered_charging_points(self):
+        """
+        打印所有已注册的充电桩及其状态。
+        """
+        if not self._registered_charging_points:
+            print("\n>>> 暂无已注册的充电桩\n")
+            return
+
+        print("\n" + "╔" + "═"*60 + "╗")
+        print("║" + " Puntos de recarga registrados ".center(60) + "║")
+        print("╚" + "═"*60 + "╝\n")
+        
+        for i, (cp_id, details) in enumerate(self._registered_charging_points.items(), 1):
+            print(f"【{i}】 charging point {cp_id}")
+            print(f"    ├─ Location: {details['location']}")
+            print(f"    ├─ Price/kWh: €{details['price_per_kwh']}/kWh")
+            print(f"    ├─ Status: {details['status']}")
+            print(f"    └─ Last Connection: {details['last_connection_time']}")
+            print()
+
 
     def get_all_registered_charging_points(self):
         """
@@ -341,6 +373,7 @@ class EV_Central:
         # self._init_kafka_producer()
         # self._init_kafka_consumer()
         self.logger.info("All systems initialized successfully.")
+        self._show_registered_charging_points()
 
     def shutdown_systems(self):
         self.logger.info("Shutting down systems...")
@@ -348,6 +381,7 @@ class EV_Central:
             self.socket_server.stop()
         if self.db_manager:
             self.db_manager.close_connection()
+        self.running = False
 
     def start(self):
         self.logger.debug(f"Starting EV Central on port {self.args.listen_port}")
@@ -359,11 +393,10 @@ class EV_Central:
         )
 
         self.initialize_systems()
-        print(self._generate_unique_message_id())
         try:
             ## SOCKET HERE ##
-            while True:
-                pass # TODO 这里在部署的时候不能用死循环，需要改成非阻塞的方式
+            while self.running:
+                pass  # TODO 这里在部署的时候不能用死循环，需要改成非阻塞的方式
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV Central")
             self.shutdown_systems()
