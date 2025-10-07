@@ -22,7 +22,6 @@ class EV_Central:
 
         self.logger = logger
         self.socket_server = None
-        self._registered_charging_points = {}
         self.db_manager = None  # 这个用来存储数据库管理对象
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
@@ -72,27 +71,11 @@ class EV_Central:
                     "Database is not available or not properly initialized."
                 )
                 sys.exit(1)
-            # 读取所有已注册的充电桩到内存中
-            # TODO 在没有与charging point 连接的情况下，充电桩的状态都是disconnected， 这里需要改进
-            for cp in self.get_all_registered_charging_points():
-                # 系统启动时，所有充电桩都设置为离线状态
-                cp_data = {
-                    "id": cp["id"],
-                    "location": cp["location"],
-                    "price_per_kwh": cp["price_per_kwh"],
-                    "status": Status.DISCONNECTED.value,  # 统一设置为离线
-                    "last_connection_time": cp["last_connection_time"],
-                    # "client_id": None  # 还没有客户端连接
-                }
-                self._registered_charging_points[cp["id"]] = cp_data
-                
-                # 更新数据库中的状态为 DISCONNECTED
-                self.db_manager.update_charging_point_status(
-                    cp_id=cp["id"],
-                    status=Status.DISCONNECTED.value
-                )
-                
-            self.logger.info(f"Loaded {len(self._registered_charging_points)} charging points from database")
+            
+            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
+            charging_points_count = len(self.db_manager.get_all_charging_points())
+            self.logger.info(f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED.")
+
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -211,17 +194,7 @@ class EV_Central:
         self._cp_connections[cp_id] = client_id
         self._client_to_cp[client_id] = cp_id
 
-        # 更新内存中的注册列表
-        self._registered_charging_points[cp_id] = {
-            "client_id": client_id,
-            "location": location,
-            "price_per_kwh": price_per_kwh,
-            "status": Status.DISCONNECTED.value,  # 初始状态为 DISCONNECTED，等待心跳消息更新
-            "last_connection_time": None,
-        }
-
-        # 调试输出当前所有注册的充电桩
-        self._debug_print_registered_charging_points()
+        self._show_registered_charging_points()
 
         return MessageFormatter.create_response_message(
             cp_type="register_response",
@@ -261,13 +234,14 @@ class EV_Central:
         """
         pass
 
-    def _handle_heartbeat_message(self, client_id, message):  # TODO: implement
+    def _handle_heartbeat_message(self, client_id, message):
         """
         处理充电桩发送的心跳消息，更新其最后连接时间。
         这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
         """
         self.logger.info(f"Processing heartbeat from client {client_id}")
         cp_id = message.get("id")
+        
         if not cp_id:
             return MessageFormatter.create_response_message(
                 cp_type="heartbeat_response",
@@ -275,23 +249,25 @@ class EV_Central:
                 status="failure",
                 info="心跳消息中缺少 id 字段",
             )
-        current_time = datetime.now(timezone.utc).isoformat()
-        if cp_id in self._registered_charging_points:
-            self._registered_charging_points[cp_id][
-                "last_connection_time"
-            ] = current_time
-            # 同步更新数据库中的最后连接时间
+        
+        # 检查充电桩是否已注册
+        if self.db_manager.is_charging_point_registered(cp_id):
+            current_time = datetime.now(timezone.utc).isoformat()
             try:
-                self.db_manager.insert_or_update_charging_point(
+                # 直接更新状态和最后连接时间
+                self.db_manager.update_charging_point_status(
                     cp_id=cp_id,
-                    location=self._registered_charging_points[cp_id]["location"],
-                    price_per_kwh=self._registered_charging_points[cp_id][
-                        "price_per_kwh"
-                    ],
-                    status=Status.ACTIVE.value,  # 心跳消息表示充电桩在线，更新状态为 ACTIVE
-                    last_connection_time=current_time,
+                    status=Status.ACTIVE.value,
+                    last_connection_time=current_time
                 )
+                
+                # 更新连接映射
+                self._cp_connections[cp_id] = client_id
+                self._client_to_cp[client_id] = cp_id
+                
+                self.logger.info(f"Heartbeat from {cp_id} processed successfully")
                 self._show_registered_charging_points()
+                
                 return MessageFormatter.create_response_message(
                     cp_type="heartbeat_response",
                     message_id=message.get("message_id", ""),
@@ -326,12 +302,6 @@ class EV_Central:
         """
         pass
 
-    def _debug_print_registered_charging_points(self):
-        if self.debug_mode:
-            self.logger.debug("当前注册的充电桩:")
-            for cp_id, details in self._registered_charging_points.items():
-                self.logger.debug(f" - {cp_id}: {details}")
-
     def _generate_unique_message_id(self):
         """
         生成一个唯一的消息ID，使用UUID
@@ -344,22 +314,22 @@ class EV_Central:
         """
         打印所有已注册的充电桩及其状态。
         """
-        if not self._registered_charging_points:
-            print("\n>>> No hay puntos de recarga registrados\n")
+        charging_points = self.get_all_registered_charging_points()
+        if not charging_points:
+            print("No registered charging points found.")
             return
 
         print("\n" + "╔" + "═"*60 + "╗")
         print("║" + " Puntos de recarga registrados ".center(60) + "║")
         print("╚" + "═"*60 + "╝\n")
-        
-        for i, (cp_id, details) in enumerate(self._registered_charging_points.items(), 1):
-            print(f"【{i}】 charging point {cp_id}")
-            print(f"    ├─ Location: {details['location']}")
-            print(f"    ├─ Price/kWh: €{details['price_per_kwh']}/kWh")
-            print(f"    ├─ Status: {details['status']}")
-            print(f"    └─ Last Connection: {details['last_connection_time']}")
-            print()
 
+        for i, cp in enumerate(charging_points, 1):
+            print(f"【{i}】 charging point {cp['id']}")
+            print(f"    ├─ Location: {cp['location']}")
+            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
+            print(f"    ├─ Status: {cp['status']}")
+            print(f"    └─ Last Connection: {cp['last_connection_time']}")
+            print()
 
     def get_all_registered_charging_points(self):
         """
