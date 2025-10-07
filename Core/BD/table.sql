@@ -4,11 +4,11 @@ CREATE TABLE IF NOT EXISTS `ChargingPoints` (
   `price_per_kwh` decimal(10, 4),
   `status` TEXT NOT NULL DEFAULT 'unknown' CHECK (
     `status` IN (
-      'active',
-      'stopped',
-      'supplying',
-      'faulty',
-      'disconnected'
+      'ACTIVE',
+      'STOPPED',
+      'DISCONNECTED',
+      'FAULTY',
+      'CHARGING'
     )
   ),
   `last_connection_time` DATETIME

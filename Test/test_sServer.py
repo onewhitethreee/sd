@@ -69,7 +69,7 @@ def main():
             # --- 构造注册消息 ---
             # 这是一个模拟的新充电桩发出的注册请求
             register_message = {
-                "type": "register",
+                "type": "register_request",
                 "message_id": str(uuid.uuid4()),  # 生成一个唯一的消息ID
                 "id": "C1P9919",
                 "location": "Testing Lab, Sector 7G",

@@ -13,7 +13,7 @@ from Common.MessageFormatter import MessageFormatter
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 from Common.MySockerServer import MySocketServer
-
+from Common.Status import Status
 
 class EV_Central:
     def __init__(self, logger=None):
@@ -177,7 +177,7 @@ class EV_Central:
                 cp_id=cp_id,
                 location=location,
                 price_per_kwh=price_per_kwh,
-                status="active",
+                status=Status.DISCONNECTED.value,  # 初始状态为 DISCONNECTED，等待心跳消息更新
                 last_connection_time=None,
             )
             self.logger.info(f"充电桩 {cp_id} 注册成功！")
@@ -199,7 +199,7 @@ class EV_Central:
             "client_id": client_id,
             "location": location,
             "price_per_kwh": price_per_kwh,
-            "status": "active",
+            "status": Status.DISCONNECTED.value,  # 初始状态为 DISCONNECTED，等待心跳消息更新
             "last_connection_time": None,
         }
 
@@ -271,7 +271,7 @@ class EV_Central:
                     price_per_kwh=self._registered_charging_points[cp_id][
                         "price_per_kwh"
                     ],
-                    status="active",
+                    status=Status.ACTIVE,  # 心跳消息表示充电桩在线，更新状态为 ACTIVE
                     last_connection_time=current_time,
                 )
                 return MessageFormatter.create_response_message(
@@ -330,7 +330,7 @@ class EV_Central:
         打印所有已注册的充电桩及其状态。
         """
         if not self._registered_charging_points:
-            print("\n>>> 暂无已注册的充电桩\n")
+            print("\n>>> No hay puntos de recarga registrados\n")
             return
 
         print("\n" + "╔" + "═"*60 + "╗")
