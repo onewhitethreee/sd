@@ -276,7 +276,7 @@ class EV_CP_M:
         try:
             while self.running:
                 time.sleep(1)  # Simulación de la ejecución continua del servicio
-                self.logger.debug(f"EV_CP_M is running... {self.running}")
+                # self.logger.debug(f"EV_CP_M is running... {self.running}")
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV CP M")
             self._graceful_shutdown()

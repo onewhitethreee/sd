@@ -38,7 +38,6 @@ class MySocketClient:
                 self.socket = None
             return False
 
-
     def _receive_loop(self):
         """Loop para recibir mensajes"""
         while self.is_connected:
@@ -68,15 +67,18 @@ class MySocketClient:
                             self.message_callback(message)
                         except Exception as e:
                             self.logger.error(f"Error in message callback: {e}")
-                            
+
             except socket.timeout:
                 # Timeout es normal, continuar
                 continue
-            except ConnectionResetError:
-                self.logger.error("Connection reset by peer")
-                self.is_connected = False
-                if self.message_callback:
-                    self.message_callback({"type": "CONNECTION_RESET"})
+            except (ConnectionResetError, OSError) as e:
+                if self.is_connected:  # 只有在应该连接时才记录错误
+                    self.logger.error(f"Connection error: {e}")
+                    self.is_connected = False
+                    if self.message_callback:
+                        self.message_callback(
+                            {"type": "CONNECTION_ERROR", "error": str(e)}
+                        )
                 break
             except Exception as e:
                 self.logger.error(f"Error receiving: {e}")
@@ -84,7 +86,6 @@ class MySocketClient:
                 if self.message_callback:
                     self.message_callback({"type": "CONNECTION_ERROR", "error": str(e)})
                 break
-
 
     def send(self, message):
         """Envía mensaje al servidor"""
@@ -105,19 +106,18 @@ class MySocketClient:
         """Desconecta del servidor"""
         if not self.is_connected:
             return
-            
+
         self.is_connected = False
         if self.socket:
             try:
                 self.socket.shutdown(socket.SHUT_RDWR)
+                self.socket.close()
             except:
                 pass  # Socket ya cerrado
-            self.socket.close()
             self.socket = None
-        
+
         # Esperar a que termine el thread de recepción
         if self.receive_thread and self.receive_thread.is_alive():
             self.receive_thread.join(timeout=2)
-        
-        self.logger.info("Disconnected from server")
 
+        self.logger.info("Disconnected from server")
