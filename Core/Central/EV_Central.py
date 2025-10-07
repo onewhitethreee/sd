@@ -95,6 +95,7 @@ class EV_Central:
                 port=self.config.get_ip_port_ev_cp_central()[1],
                 logger=self.logger,
                 message_callback=self._process_charging_point_message,
+                disconnect_callback=self._handle_client_disconnect,
             )
             # 通过MySocketServer类的start方法启动服务器
             self.socket_server.start()
@@ -103,6 +104,25 @@ class EV_Central:
         except Exception as e:
             self.logger.error(f"Failed to initialize socket server: {e}")
             sys.exit(1)
+    def _handle_client_disconnect(self, client_id):
+        """处理客户端断开连接"""
+        if client_id in self._client_to_cp:
+            cp_id = self._client_to_cp[client_id]
+            self.logger.info(f"Client {client_id} (CP: {cp_id}) disconnected")
+            
+            # 更新数据库状态为离线
+            try:
+                self.db_manager.update_charging_point_status(
+                    cp_id=cp_id,
+                    status=Status.DISCONNECTED.value,
+                )
+                self.logger.info(f"Charging point {cp_id} set to DISCONNECTED.")
+            except Exception as e:
+                self.logger.error(f"Failed to update status for {cp_id}: {e}")
+            
+            # 清理映射关系
+            del self._cp_connections[cp_id]
+            del self._client_to_cp[client_id]
 
     def _process_charging_point_message(self, client_id, message):
         """
@@ -365,7 +385,11 @@ class EV_Central:
         if self.socket_server:
             self.socket_server.stop()
         if self.db_manager:
-            self.db_manager.close_connection()
+            try:
+                self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
+                self.logger.info("All charging points set to DISCONNECTED.")
+            except Exception as e:
+                self.logger.error(f"Error setting charging points to DISCONNECTED: {e}")
         self.running = False
 
     def start(self):
@@ -381,6 +405,8 @@ class EV_Central:
         try:
             ## SOCKET HERE ##
             while self.running:
+                import time
+                time.sleep(1)
                 pass  # TODO 这里在部署的时候不能用死循环，需要改成非阻塞的方式
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV Central")

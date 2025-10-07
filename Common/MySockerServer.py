@@ -10,7 +10,7 @@ from Common.MessageFormatter import MessageFormatter
 
 
 class MySocketServer:
-    def __init__(self, host="0.0.0.0", port=5002, logger=None, message_callback=None):
+    def __init__(self, host="0.0.0.0", port=5002, logger=None, message_callback=None, disconnect_callback=None):
         self.host = host
         self.port = port
         self.logger = logger
@@ -21,7 +21,11 @@ class MySocketServer:
         # 必须是要一个可调用的函数
         if not callable(message_callback):
             raise ValueError("message_callback must be a callable function")
+        if not callable(disconnect_callback):
+            raise ValueError("disconnect_callback must be a callable function")
+        
         self.message_callback = message_callback  # 用于处理消息的回调函数
+        self.disconnect_callback = disconnect_callback  # 用于处理断开连接的回调函数
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -99,11 +103,11 @@ class MySocketServer:
         except Exception as e:
             self.logger.error(f"Error handling client {client_id}: {e}")
         finally:
-            if client_id in self.clients:
-                # 清理客户端连接
-                del self.clients[client_id]
-            client_socket.close()
-            self.logger.info(f"Connection closed for {client_id}")
+            if self.disconnect_callback:
+                try:
+                    self.disconnect_callback(client_id)
+                except Exception as e:
+                    self.logger.error(f"Error in disconnect callback for {client_id}: {e}")
 
     def send_to_client(self, client_id, message) -> bool:
         """发送消息给特定客户端"""

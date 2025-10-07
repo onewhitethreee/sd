@@ -150,14 +150,31 @@ class SqliteConnection:
             logging.error(f"Error inserting/updating charging point '{cp_id}': {e}")
             raise
 
-    def update_charging_point_status(self, cp_id, status, last_connection_time):
-        """更新充电桩状态"""
+    def update_charging_point_status(self, cp_id, status, last_connection_time=None):
+        """
+        更新充电桩状态
+        
+        Args:
+            cp_id: 充电桩ID
+            status: 新状态
+            last_connection_time: 最后连接时间（可选）。如果不提供，则不更新此字段
+        """
         connection = self.get_connection()
         cursor = connection.cursor()
-        cursor.execute(
-            "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?", (status, last_connection_time, cp_id)
-        )
+        
+        if last_connection_time is not None:
+            cursor.execute(
+                "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?", 
+                (status, last_connection_time, cp_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?", 
+                (status, cp_id)
+            )
+        
         connection.commit()
+
 
     def is_charging_point_registered(self, cp_id):
         """检查充电桩是否已注册"""
