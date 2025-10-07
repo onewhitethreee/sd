@@ -162,6 +162,9 @@ class EV_CP_M:
             self.logger.warning("Central server is shutting down")
             self._handle_server_shutdown()
         
+        elif message_type == 'CONNECTION_ERROR':
+            self.logger.error(f"Connection error from central: {message}")
+
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")
 
