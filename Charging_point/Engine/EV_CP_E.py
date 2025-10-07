@@ -27,11 +27,7 @@ class EV_CP_E:
                 type=ip_port_type,
                 help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)",
             )
-            self.tools.add_argument(
-                "ip_port_ev_m",
-                type=ip_port_type,
-                help="IP y puerto del EV_M (formato IP:PORT)",
-            )
+            
             self.args = self.tools.parse_args()
         else:
 
