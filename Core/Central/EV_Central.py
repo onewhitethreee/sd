@@ -30,7 +30,9 @@ class EV_Central:
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 app_name="EV_Central",
-                app_description="Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
+                #app_description="Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
+                description="Sistema Central de Control para Puntos de Recarga de Vehículos Eléctricos",
+
             )
             self.tools.add_argument("listen_port", type=int, help="Puerto de escuha")
             self.tools.add_argument(

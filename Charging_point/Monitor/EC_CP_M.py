@@ -7,6 +7,7 @@ import os
 import uuid
 import time
 import threading
+from datetime import datetime, timezone 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
@@ -56,19 +57,37 @@ class EV_CP_M:
         """
         连接到EV_Central
         """
-        self.central_client = MySocketClient(
-            logger=self.logger,
-            message_callback=self._handle_central_message,
-        )
-        return self.central_client.connect(
-            self.args.ip_port_ev_central[0], self.args.ip_port_ev_central[1]
-        )
+        try:
+            self.central_client = MySocketClient(
+                logger=self.logger,
+                message_callback=self._handle_central_message,
+            )
+            
+            if self.central_client.connect(
+                self.args.ip_port_ev_central[0], 
+                self.args.ip_port_ev_central[1]
+            ):
+                self.logger.info(f"Connected to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}")
+                return True
+            else:
+                self.logger.error(f"Failed to connect to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}")
+                return False
+
+            #return self.central_client.connect(
+            #    self.args.ip_port_ev_central[0], self.args.ip_port_ev_central[1]
+            #)
+        
+        except Exception as e:
+            self.logger.error(f"Error connecting to EV_Central: {e}")
+            return False
 
     def _handle_disconnection(self):
         """
         处理断开连接和重试机制
         """
-        pass
+        msg_type = message.get("type")
+
+        #pass
 
     def _register_with_central(self):
         """
@@ -82,6 +101,101 @@ class EV_CP_M:
             "price_per_kwh": 0.20,  # 每千瓦时的价格
         }
         return self.central_client.send(register_message)
+
+    def _connect_to_engine(self):
+        """
+        连接到EV_CP_E
+        """
+        try:
+            self.engine_server = MySocketClient(
+                logger=self.logger,
+                message_callback=self._hadle_engine_message,
+            )
+            
+            if self.engine_server.connect(
+                self.args.ip_port_ev_cp_e[0], 
+                self.args.ip_port_ev_cp_e[1]
+            ):
+                self.logger.info(f"Connected to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}")
+                return True
+            else:
+                self.logger.error(f"Failed to connect to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}")
+                return False
+
+            #return self.engine_server.connect(
+            #    self.args.ip_port_ev_cp_e[0], self.args.ip_port_ev_cp_e[1]
+            #)
+        
+        except Exception as e:
+            self.logger.error(f"Error connecting to EV_CP_E: {e}")
+            return False
+    
+    def _hadle_engine_message(self, message):
+        """
+        处理来自EV_CP_E的消息
+        """
+        message_type = message.get("type")
+        self.looger.info(f"Received message from EV_CP_E of type: {message_type}")
+        
+        if message_type == "sensor_data":
+            voltage = message.get("voltage")
+            current = message.get("current")
+            power = message.get("power")
+            self.logger.info(f"Sensor data - Voltage: {voltage}V, Current: {current}A, Power: {power}W")
+
+            # Enviar los datos al CENTRAL
+            self._report_charging_data(voltage, current, power)
+        
+        elif message_type == "charging_complete":
+            self.logger.info("Charging session completed as reported by EV_CP_E")
+            self._notify_central_charging_complete()
+        
+        elif message_type == 'CONNECTION_LOST':
+            self.logger.warning("Connection lost with EV_CP_E")
+        
+        elif message_type == 'CONNECTION_ERROR':
+            self.logger.error(f"Connection error from EV_CP_E: {message}")
+
+    def _report_charging_data(self, voltage, current, power):
+        """
+        向CENTRAL报告充电数据
+        """
+        if self.central_client and self.central_client.is_connected:
+            data_message = {
+                "type": "charging_data",
+                "message_id": str(uuid.uuid4()),
+                "id": self.args.id_cp,
+                "voltage": voltage,
+                "current": current,
+                "power": power,
+                "timestamp": datatime.now(timezone.utc).isoformat()  # 使用ISO 8601格式的UTC时间戳
+            }
+            
+            if self.central_client.send(data_message): # 成功发送
+                self.logger.debug("Charging data reported to central")
+            else:
+                self.logger.error("Failed to report charging data to central")
+        else: # 没有连接
+            self.logger.error("Cannot report charging data, not connected to central")
+
+    def _notify_central_charging_complete(self):
+        """
+        通知CENTRAL充电完成
+        """
+        if self.central_client and self.central_client.is_connected:
+            complete_message = {
+                "type": "charging_complete",
+                "message_id": str(uuid.uuid4()),
+                "id": self.args.id_cp,
+                "timestamp": datatime.now(timezone.utc).isoformat()  # 使用ISO 8601格式的UTC时间戳
+            }
+            
+            if self.central_client.send(complete_message): # 成功发送
+                self.logger.info("Notified central of charging completion")
+            else:
+                self.logger.error("Failed to notify central of charging completion")
+        else: # 没有连接
+            self.logger.error("Cannot notify charging completion, not connected to central")
 
     def _send_heartbeat(self):
         """
@@ -168,6 +282,48 @@ class EV_CP_M:
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")
 
+    def _hadle_engine_message(self, message):
+        """
+        处理来自EV_CP_E的消息
+        """
+        message_type = message.get("type")
+        self.looger.info(f"Received message from EV_CP_E of type: {message_type}")
+        
+        if message_type == "sensor_data":
+            voltage = message.get("voltage")
+            current = message.get("current")
+            power = message.get("power")
+            self.logger.info(f"Sensor data - Voltage: {voltage}V, Current: {current}A, Power: {power}W")
+
+            # Enviar los datos al CENTRAL
+            self._report_charging_data(voltage, current, power)
+        
+        elif message_type == "charging_complete":
+            self.logger.info("Charging session completed as reported by EV_CP_E")
+            self._notify_central_charging_complete()
+            
+    def _report_charging_data(self, voltage, current, power):
+        """
+        向CENTRAL报告充电数据
+        """
+        if self.central_client and self.central_client.is_connected:
+            data_message = {
+                "type": "charging_data",
+                "message_id": str(uuid.uuid4()),
+                "id": self.args.id_cp,
+                "voltage": voltage,
+                "current": current,
+                "power": power,
+                "timestamp": int(time.time())
+            }
+            
+            if self.central_client.send(data_message): # 成功发送
+                self.logger.debug("Charging data reported to central")
+            else:
+                self.logger.error("Failed to report charging data to central")
+        else: # 没有连接
+            self.logger.error("Cannot report charging data, not connected to central")
+
     def _handle_server_shutdown(self):
         self.logger.info("Initiating graceful shutdown due to central server shutdown")
         threading.Thread(target=self._graceful_shutdown, daemon=False).start()
@@ -191,6 +347,7 @@ class EV_CP_M:
         # TODO: Cerrar servidor para EV_CP_E cuando esté implementado
 
         self.logger.info("Shutdown complete")
+
     def _retry_connection(self):
         """
         重试连接到central
@@ -233,6 +390,7 @@ class EV_CP_M:
 
         self.logger.error(f"Registration failed after {max_retries} attempts")
         return False
+    
     def _ensure_connection_and_registration(self):
         """
         确保连接和注册
@@ -250,7 +408,7 @@ class EV_CP_M:
         """
         初始化系统，连接到central和EV_CP_E
         """
-        if self._connect_to_central():
+        if self._connect_to_central():  # 连接central
             self.logger.info("Connected to EV_Central")
             if self._register_with_central():
                 self.logger.info("Registration message sent to central")
@@ -261,6 +419,12 @@ class EV_CP_M:
         else:
             self.logger.error("Failed to connect to EV_Central")
             threading.Thread(target=self._ensure_connection_and_registration, daemon=True).start()
+        
+        if self._connect_to_engine():  # 连接EV_CP_E
+            self.logger.info("Connected to EV_CP_E")
+        else:
+            self.logger.warning("Failed to connect to EV_CP_E")
+        
 
     def start(self):
         self.running = True
