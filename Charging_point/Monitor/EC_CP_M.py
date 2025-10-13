@@ -48,9 +48,10 @@ class EV_CP_M:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
         self.central_client = None  # Cliente para conectar con EV_Central
-        self.engine_server = None  # Servidor para aceptar conexiones de EV_CP_E
+        self.engine_client = None  # Servidor para aceptar conexiones de EV_CP_E
         self.running = False
         self.RETRY_INTERVAL = 5  # Intervalo de reintento en segundos
+        self.threads = []
 
     def _connect_to_central(self):
         """
@@ -99,13 +100,15 @@ class EV_CP_M:
                 else:
                     self.logger.error("Failed to send heartbeat")
             time.sleep(30)  # Cada 30 segundos enviar un latido
+        self.logger.info("theartbeat thread has stopped")
 
     def _start_heartbeat_thread(self):
         """
         启动发送心跳的线程
         """
-        heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=True)
+        heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=False)
         heartbeat_thread.start()
+        self.threads.append(heartbeat_thread)
 
     def autheticate_charging_point(self):
         """
@@ -113,11 +116,70 @@ class EV_CP_M:
         """
         pass
 
+    def _connect_to_engine(self):
+        """
+        连接到EV_CP_E
+        """
+        self.engine_client = MySocketClient(
+            logger=self.logger,
+            message_callback=self._handle_engine_message,
+        )
+        return self.engine_client.connect(
+            self.args.ip_port_ev_cp_e[0], self.args.ip_port_ev_cp_e[1]
+        )
+
     def _check_engine_health(self):
         """
         检查EV_CP_E的健康状态
         """
-        pass
+        self.logger.info("Starting health check thread for EV_CP_E")
+        
+        while self.running:
+            try:
+                if not self.engine_client or not self.engine_client.is_connected:
+                    self.logger.info("Connecting to EV_CP_E...")
+                    if not self._connect_to_engine():
+                        self.logger.error("Failed to connect to EV_CP_E")
+                        self._report_failure("EV_CP_E connection failed") 
+                        time.sleep(self.RETRY_INTERVAL)
+                        continue
+
+                health_check_msg = {
+                    "type": "health_check_request",
+                    "message_id": str(uuid.uuid4()),
+                    "id": self.args.id_cp,
+                    "timestamp": int(time.time()),
+                }
+                if self.engine_client.send(health_check_msg):
+                    self.logger.debug("Health check sent to EV_CP_E")
+                else:
+                    self.logger.error("Failed to send health check to EV_CP_E")
+                    self._report_failure("Health check send failed")  
+                    
+            except Exception as e:
+                self.logger.error(f"Error checking EV_CP_E health: {e}")
+                self._report_failure(f"Health check error: {str(e)}")
+
+            time.sleep(60) # TODO 每60秒检查一次, production 可能需要更频繁
+        
+        self.logger.info("Health check thread for EV_CP_E has stopped")
+
+
+    def _report_failure(self, failure_info):
+        """
+        向central报告故障
+        """
+        failure_message = {
+            "type": "fault_notification",
+            "message_id": str(uuid.uuid4()),
+            "id": self.args.id_cp,
+            "failure_info": failure_info,
+        }
+        if self.central_client and self.central_client.is_connected:
+            if self.central_client.send(failure_message):
+                self.logger.info("Reported failure to central")
+            else:
+                self.logger.error("Failed to report failure to central")
 
     def _check_status(self):
         """
@@ -136,6 +198,22 @@ class EV_CP_M:
         向central报告状态
         """
         pass
+
+    def _handle_engine_message(self, message):
+        """
+        处理来自EV_CP_E的消息
+        """
+        message_type = message.get("type")
+        if message_type == "health_check_response":
+            self.logger.debug(f"Health check response from EV_CP_E: {message}")
+            # TODO 处理健康检查响应
+        elif message_type == "SERVER_SHUTDOWN":
+            self.logger.warning("EV_CP_E server is shutting down")
+            self._handle_server_shutdown()
+        elif message_type == "CONNECTION_ERROR":
+            self.logger.error(f"Connection error from EV_CP_E: {message}")
+        else:
+            self.logger.warning(f"Unknown message type from EV_CP_E: {message_type}")
 
     def _handle_central_message(self, message):
         """
@@ -158,11 +236,11 @@ class EV_CP_M:
             else:
                 self.logger.warning(f"Heartbeat not acknowledged by central {message}")
 
-        elif message_type == 'SERVER_SHUTDOWN':
+        elif message_type == "SERVER_SHUTDOWN":
             self.logger.warning("Central server is shutting down")
             self._handle_server_shutdown()
-        
-        elif message_type == 'CONNECTION_ERROR':
+
+        elif message_type == "CONNECTION_ERROR":
             self.logger.error(f"Connection error from central: {message}")
 
         else:
@@ -171,7 +249,6 @@ class EV_CP_M:
     def _handle_server_shutdown(self):
         self.logger.info("Initiating graceful shutdown due to central server shutdown")
         threading.Thread(target=self._graceful_shutdown, daemon=False).start()
-
 
     def _graceful_shutdown(self):
         """
@@ -182,10 +259,19 @@ class EV_CP_M:
 
         # Detener loops activos
         self.running = False
+        
+        self.logger.info(f"Waiting for threads to finish... {len(self.threads)} threads")
+        for thread in self.threads:
+            thread.join(timeout=5)
+            if thread.is_alive():
+                self.logger.warning(f"Thread {thread.name} did not finish in time")
+        self.logger.info("All threads have been stopped")
 
         # Desconectar clientes
         if self.central_client:
             self.central_client.disconnect()
+        if self.engine_client:
+            self.engine_client.disconnect()
 
         # Cerrar otros recursos si los hay
         # TODO: Cerrar servidor para EV_CP_E cuando esté implementado
@@ -200,7 +286,7 @@ class EV_CP_M:
 
         while self.running and retry_count < max_retries:
             retry_count += 1
-            self.logger.info(f"Connection retry {retry_count}/{max_retries}")
+            self.logger.info(f"Connection retry to central {retry_count}/{max_retries}")
 
             if self._connect_to_central():
                 self.logger.info("Reconnected to EV_Central")
@@ -257,10 +343,23 @@ class EV_CP_M:
                 self._start_heartbeat_thread()
             else:
                 self.logger.error("Failed to send registration message to EV_Central")
-                threading.Thread(target=self._retry_registration, daemon=True).start()
+                retry_thread = threading.Thread(target=self._ensure_connection_and_registration, daemon=False)
+                self.threads.append(retry_thread)
+                retry_thread.start()
         else:
             self.logger.error("Failed to connect to EV_Central")
-            threading.Thread(target=self._ensure_connection_and_registration, daemon=True).start()
+            ensure_thread = threading.Thread(target=self._ensure_connection_and_registration, daemon=False)
+            self.threads.append(ensure_thread)
+            ensure_thread.start()
+        if self._connect_to_engine():
+            self.logger.info("Connected to EV_CP_E")
+        else:
+            self.logger.error("Failed to connect to EV_CP_E")
+
+        # 启动检查EV_CP_E健康状态的线程
+        health_thread = threading.Thread(target=self._check_engine_health, daemon=False)
+        self.threads.append(health_thread)
+        health_thread.start()
 
     def start(self):
         self.running = True
@@ -286,6 +385,9 @@ class EV_CP_M:
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")
             self._graceful_shutdown()
+        finally:
+            self.logger.info("EV_CP_M has stopped")
+            os._exit(0)  # Asegura que el proceso termina
 
 
 if __name__ == "__main__":
@@ -293,3 +395,4 @@ if __name__ == "__main__":
 
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()
+# TODO 修复debug -> 更新python扩展解决

@@ -12,8 +12,9 @@ from Common.SqliteConnection import SqliteConnection
 from Common.MessageFormatter import MessageFormatter
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
-from Common.MySockerServer import MySocketServer
+from Common.MySocketServer import MySocketServer
 from Common.Status import Status
+
 
 class EV_Central:
     def __init__(self, logger=None):
@@ -71,10 +72,12 @@ class EV_Central:
                     "Database is not available or not properly initialized."
                 )
                 sys.exit(1)
-            
+
             self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
             charging_points_count = len(self.db_manager.get_all_charging_points())
-            self.logger.info(f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED.")
+            self.logger.info(
+                f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED."
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
@@ -104,12 +107,13 @@ class EV_Central:
         except Exception as e:
             self.logger.error(f"Failed to initialize socket server: {e}")
             sys.exit(1)
+
     def _handle_client_disconnect(self, client_id):
         """处理客户端断开连接"""
         if client_id in self._client_to_cp:
             cp_id = self._client_to_cp[client_id]
             self.logger.info(f"Client {client_id} (CP: {cp_id}) disconnected")
-            
+
             # 更新数据库状态为离线
             try:
                 self.db_manager.update_charging_point_status(
@@ -119,7 +123,7 @@ class EV_Central:
                 self.logger.info(f"Charging point {cp_id} set to DISCONNECTED.")
             except Exception as e:
                 self.logger.error(f"Failed to update status for {cp_id}: {e}")
-            
+
             # 清理映射关系
             del self._cp_connections[cp_id]
             del self._client_to_cp[client_id]
@@ -132,11 +136,15 @@ class EV_Central:
 
         msg_type = message.get("type")
 
+        # TODO 这里的逻辑可能是不需要的，直接通过Monitor来处理
         handlers = {
             "register_request": self._handle_register_message,
             "heartbeat_request": self._handle_heartbeat_message,
-            # "charge_completion": self._handle_charging_completion,
-            # "status_update": self._handle_status_update,
+            "charge_request": self._handle_charge_request_message,
+            "charging_data": self._handle_charging_data_message,
+            "charge_completion": self._handle_charge_completion_message,
+            "fault_notification": self._handle_fault_notification_message,
+            "status_update": self._handle_status_update_message,
             # TODO 添加其他消息类型的处理函数
         }
 
@@ -223,6 +231,28 @@ class EV_Central:
             info=f"charging point {cp_id} registered successfully.",
         )
 
+    def _handle_charge_request_message(self, client_id, message):  # TODO: implement
+        """
+        处理来自司机应用程序或充电点本身的充电请求。
+        需要验证充电点是否可用，并决定是否授权。
+        成功授权后，需要向充电点和司机应用程序发送授权通知。
+        """
+        self.logger.info(f"正在处理来自 {client_id} 的充电请求...")
+
+    def _handle_charge_completion_message(self, client_id, message):  # TODO: implement
+        """
+        处理充电完成的通知。
+        需要更新充电点和车辆的状态，并记录充电会话的详细信息。
+        """
+        pass
+
+    def _handle_status_update_message(self, client_id, message):  # TODO: implement
+        """
+        处理充电点发送的状态更新消息。
+        需要更新其在数据库中的状态，并可能触发其他操作（如通知管理员）。
+        """
+        pass
+
     def _handle_authorization_message(
         self, cp_id, client_id, message
     ):  # TODO: implement
@@ -261,7 +291,7 @@ class EV_Central:
         """
         self.logger.info(f"Processing heartbeat from client {client_id}")
         cp_id = message.get("id")
-        
+
         if not cp_id:
             return MessageFormatter.create_response_message(
                 cp_type="heartbeat_response",
@@ -269,7 +299,7 @@ class EV_Central:
                 status="failure",
                 info="心跳消息中缺少 id 字段",
             )
-        
+
         # 检查充电桩是否已注册
         if self.db_manager.is_charging_point_registered(cp_id):
             current_time = datetime.now(timezone.utc).isoformat()
@@ -278,16 +308,16 @@ class EV_Central:
                 self.db_manager.update_charging_point_status(
                     cp_id=cp_id,
                     status=Status.ACTIVE.value,
-                    last_connection_time=current_time
+                    last_connection_time=current_time,
                 )
-                
+
                 # 更新连接映射
                 self._cp_connections[cp_id] = client_id
                 self._client_to_cp[client_id] = cp_id
-                
+
                 self.logger.info(f"Heartbeat from {cp_id} processed successfully")
                 self._show_registered_charging_points()
-                
+
                 return MessageFormatter.create_response_message(
                     cp_type="heartbeat_response",
                     message_id=message.get("message_id", ""),
@@ -315,6 +345,19 @@ class EV_Central:
                 info=f"Charging point {cp_id} is not registered.",
             )
 
+    def _send_message_to_client(self, client_id, message):
+        """
+        向指定客户端发送消息
+        """
+        try:
+            if self.socket_server:
+                self.socket_server.send_message_to_client(client_id, message)
+                self.logger.debug(f"消息已发送给客户端 {client_id}: {message}")
+            else:
+                self.logger.error("Socket服务器未初始化")
+        except Exception as e:
+            self.logger.error(f"向客户端 {client_id} 发送消息失败: {e}")
+
     def _handle_manual_command(self, cp_id, command):  # TODO: implement
         """
         处理来自管理员的手动命令，如启动或停止充电点。
@@ -339,9 +382,9 @@ class EV_Central:
             print("No registered charging points found.")
             return
 
-        print("\n" + "╔" + "═"*60 + "╗")
+        print("\n" + "╔" + "═" * 60 + "╗")
         print("║" + " Puntos de recarga registrados ".center(60) + "║")
-        print("╚" + "═"*60 + "╝\n")
+        print("╚" + "═" * 60 + "╝\n")
 
         for i, cp in enumerate(charging_points, 1):
             print(f"【{i}】 charging point {cp['id']}")
@@ -386,7 +429,9 @@ class EV_Central:
             self.socket_server.stop()
         if self.db_manager:
             try:
-                self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
+                self.db_manager.set_all_charging_points_status(
+                    Status.DISCONNECTED.value
+                )
                 self.logger.info("All charging points set to DISCONNECTED.")
             except Exception as e:
                 self.logger.error(f"Error setting charging points to DISCONNECTED: {e}")
@@ -406,6 +451,7 @@ class EV_Central:
             ## SOCKET HERE ##
             while self.running:
                 import time
+
                 time.sleep(1)
                 pass  # TODO 这里在部署的时候不能用死循环，需要改成非阻塞的方式
         except KeyboardInterrupt:
@@ -421,4 +467,4 @@ if __name__ == "__main__":
     ev_central.start()
 
 # TODO 解决如果用户发送少了属性服务器也要返回相对的错误信息给用户
-# TODO 关闭服务器时，所有连接的充电桩都要被设置为离线状态
+# TODO 关闭服务器时，所有连接的充电桩都要被设置为离线状态 -》 已完善
