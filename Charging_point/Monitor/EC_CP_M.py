@@ -69,7 +69,48 @@ class EV_CP_M:
         """
         处理断开连接和重试机制
         """
-        pass
+        self.logger.warning("Handling disconnection - attempting to reconnect")
+        
+        # 报告故障状态
+        self.update_cp_status("FAULTY")
+        
+        # 启动重连线程
+        reconnect_thread = threading.Thread(target=self._reconnect_services, daemon=False)
+        reconnect_thread.start()
+        self.threads.append(reconnect_thread)
+
+    def _reconnect_services(self):
+        """
+        重连服务
+        """
+        self.logger.info("Starting reconnection process")
+        
+        max_retries = 5
+        retry_count = 0
+        
+        while self.running and retry_count < max_retries:
+            retry_count += 1
+            self.logger.info(f"Reconnection attempt {retry_count}/{max_retries}")
+            
+            # 尝试重连到Central
+            if not self.central_client or not self.central_client.is_connected:
+                if self._connect_to_central():
+                    self.logger.info("Reconnected to Central")
+                    # 重新注册
+                    if self._register_with_central():
+                        self.logger.info("Re-registered with Central")
+                        self.update_cp_status("ACTIVE")
+                        return True
+            
+            # 尝试重连到Engine
+            if not self.engine_client or not self.engine_client.is_connected:
+                if self._connect_to_engine():
+                    self.logger.info("Reconnected to Engine")
+            
+            time.sleep(10)  # 等待10秒后重试
+        
+        self.logger.error("Failed to reconnect after maximum retries")
+        return False
 
     def _register_with_central(self):
         """
@@ -100,7 +141,7 @@ class EV_CP_M:
                 else:
                     self.logger.error("Failed to send heartbeat")
             time.sleep(30)  # Cada 30 segundos enviar un latido
-        self.logger.info("theartbeat thread has stopped")
+        self.logger.info("heartbeat thread has stopped")
 
     def _start_heartbeat_thread(self):
         """
@@ -110,11 +151,25 @@ class EV_CP_M:
         heartbeat_thread.start()
         self.threads.append(heartbeat_thread)
 
-    def autheticate_charging_point(self):
+    def authenticate_charging_point(self):
         """
         认证充电点
         """
-        pass
+        self.logger.info(f"Authenticating charging point {self.args.id_cp}")
+        
+        # 发送认证请求到central
+        auth_message = {
+            "type": "auth_request",
+            "message_id": str(uuid.uuid4()),
+            "id": self.args.id_cp,
+            "timestamp": int(time.time())
+        }
+        
+        if self.central_client and self.central_client.is_connected:
+            return self.central_client.send(auth_message)
+        else:
+            self.logger.error("Cannot authenticate: not connected to central")
+            return False
 
     def _connect_to_engine(self):
         """
@@ -133,6 +188,8 @@ class EV_CP_M:
         检查EV_CP_E的健康状态
         """
         self.logger.info("Starting health check thread for EV_CP_E")
+        last_health_response = time.time()
+        health_timeout = 120  # 2分钟超时
         
         while self.running:
             try:
@@ -144,11 +201,20 @@ class EV_CP_M:
                         time.sleep(self.RETRY_INTERVAL)
                         continue
 
+                # 检查是否超时
+                current_time = time.time()
+                if current_time - last_health_response > health_timeout:
+                    self.logger.error("EV_CP_E health check timeout")
+                    self._report_failure("EV_CP_E health check timeout")
+                    self.update_cp_status("FAULTY")
+                    # 尝试重连
+                    self._connect_to_engine()
+
                 health_check_msg = {
                     "type": "health_check_request",
                     "message_id": str(uuid.uuid4()),
                     "id": self.args.id_cp,
-                    "timestamp": int(time.time()),
+                    "timestamp": int(current_time),
                 }
                 if self.engine_client.send(health_check_msg):
                     self.logger.debug("Health check sent to EV_CP_E")
@@ -185,19 +251,161 @@ class EV_CP_M:
         """
         检查充电点的状态
         """
-        pass
+        self.logger.debug("Checking charging point status")
+        
+        # 检查与Engine的连接状态
+        engine_connected = self.engine_client and self.engine_client.is_connected
+        
+        # 检查与Central的连接状态
+        central_connected = self.central_client and self.central_client.is_connected
+        
+        status_info = {
+            "cp_id": self.args.id_cp,
+            "engine_connected": engine_connected,
+            "central_connected": central_connected,
+            "timestamp": int(time.time())
+        }
+        
+        self.logger.debug(f"Status check result: {status_info}")
+        return status_info
 
     def update_cp_status(self, status):
         """
         更新充电点状态
         """
-        pass
+        self.logger.info(f"Updating charging point status to: {status}")
+        
+        # 记录当前状态
+        self._current_status = status
+        
+        # 向Central报告状态更新
+        self.report_status_to_central(status)
+        
+        # 如果状态是故障，向Engine发送停止命令
+        if status == "FAULTY":
+            self._send_stop_command_to_engine()
 
     def report_status_to_central(self, status):
         """
         向central报告状态
         """
-        pass
+        status_message = {
+            "type": "status_update",
+            "message_id": str(uuid.uuid4()),
+            "id": self.args.id_cp,
+            "status": status,
+            "timestamp": int(time.time())
+        }
+        
+        if self.central_client and self.central_client.is_connected:
+            if self.central_client.send(status_message):
+                self.logger.info(f"Status update sent to central: {status}")
+            else:
+                self.logger.error("Failed to send status update to central")
+        else:
+            self.logger.error("Cannot send status update: not connected to central")
+
+    def _send_stop_command_to_engine(self):
+        """
+        向Engine发送停止命令
+        """
+        stop_message = {
+            "type": "stop_command",
+            "message_id": str(uuid.uuid4()),
+            "id": self.args.id_cp,
+            "timestamp": int(time.time())
+        }
+        
+        if self.engine_client and self.engine_client.is_connected:
+            if self.engine_client.send(stop_message):
+                self.logger.info("Stop command sent to engine")
+            else:
+                self.logger.error("Failed to send stop command to engine")
+        else:
+            self.logger.error("Cannot send stop command: not connected to engine")
+
+    def _handle_start_charging_command(self, message):
+        """
+        处理来自Central的启动充电命令
+        """
+        self.logger.info("Received start charging command from Central")
+        
+        cp_id = message.get("cp_id")
+        session_id = message.get("session_id")
+        driver_id = message.get("driver_id")
+        
+        if not cp_id or not session_id:
+            self.logger.error("Start charging command missing required fields")
+            return
+        
+        # 转发启动充电命令给Engine
+        start_charging_message = {
+            "type": "start_charging_command",
+            "message_id": str(uuid.uuid4()),
+            "cp_id": cp_id,
+            "session_id": session_id,
+            "driver_id": driver_id,
+            "ev_id": f"ev_{driver_id}",  # 使用driver_id作为ev_id
+            "timestamp": int(time.time())
+        }
+        
+        if self.engine_client and self.engine_client.is_connected:
+            if self.engine_client.send(start_charging_message):
+                self.logger.info(f"Start charging command sent to engine for session {session_id}")
+            else:
+                self.logger.error("Failed to send start charging command to engine")
+        else:
+            self.logger.error("Cannot send start charging command: not connected to engine")
+
+    def _handle_charging_data_from_engine(self, message):
+        """
+        处理来自Engine的充电数据
+        """
+        self.logger.debug("Received charging data from Engine")
+        
+        # 转发充电数据给Central
+        charging_data_message = {
+            "type": "charging_data",
+            "message_id": str(uuid.uuid4()),
+            "session_id": message.get("session_id"),
+            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
+            "total_cost": message.get("total_cost"),
+            "charging_rate": message.get("charging_rate"),
+            "timestamp": message.get("timestamp", int(time.time()))
+        }
+        
+        if self.central_client and self.central_client.is_connected:
+            if self.central_client.send(charging_data_message):
+                self.logger.debug("Charging data forwarded to Central")
+            else:
+                self.logger.error("Failed to forward charging data to Central")
+        else:
+            self.logger.error("Cannot forward charging data: not connected to Central")
+
+    def _handle_charging_completion_from_engine(self, message):
+        """
+        处理来自Engine的充电完成通知
+        """
+        self.logger.info("Received charging completion from Engine")
+        
+        # 转发充电完成通知给Central
+        completion_message = {
+            "type": "charge_completion",
+            "message_id": str(uuid.uuid4()),
+            "cp_id": self.args.id_cp,
+            "session_id": message.get("session_id"),
+            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
+            "total_cost": message.get("total_cost"),
+            "timestamp": message.get("timestamp", int(time.time()))
+        }
+        
+        if self.central_client and self.central_client.is_connected:
+            if self.central_client.send(completion_message):
+                self.logger.info("Charging completion forwarded to Central")
+            else:
+                self.logger.error("Failed to forward charging completion to Central")
+        else:
+            self.logger.error("Cannot forward charging completion: not connected to Central")
 
     def _handle_engine_message(self, message):
         """
@@ -206,12 +414,29 @@ class EV_CP_M:
         message_type = message.get("type")
         if message_type == "health_check_response":
             self.logger.debug(f"Health check response from EV_CP_E: {message}")
-            # TODO 处理健康检查响应
+            # 更新最后健康检查响应时间
+            self.last_health_response = time.time()
+            
+            # 检查Engine状态
+            engine_status = message.get("engine_status")
+            if engine_status == "FAULTY":
+                self.logger.warning("EV_CP_E reports FAULTY status")
+                self.update_cp_status("FAULTY")
+            elif engine_status == "ACTIVE":
+                self.logger.debug("EV_CP_E reports ACTIVE status")
+                # 如果当前状态是故障，尝试恢复
+                if hasattr(self, '_current_status') and self._current_status == "FAULTY":
+                    self.update_cp_status("ACTIVE")
+                    
         elif message_type == "SERVER_SHUTDOWN":
             self.logger.warning("EV_CP_E server is shutting down")
             self._handle_server_shutdown()
         elif message_type == "CONNECTION_ERROR":
             self.logger.error(f"Connection error from EV_CP_E: {message}")
+        elif message_type == "charging_data":
+            self._handle_charging_data_from_engine(message)
+        elif message_type == "charging_completion":
+            self._handle_charging_completion_from_engine(message)
         else:
             self.logger.warning(f"Unknown message type from EV_CP_E: {message_type}")
 
@@ -242,6 +467,9 @@ class EV_CP_M:
 
         elif message_type == "CONNECTION_ERROR":
             self.logger.error(f"Connection error from central: {message}")
+
+        elif message_type == "start_charging_command":
+            self._handle_start_charging_command(message)
 
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")

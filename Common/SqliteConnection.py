@@ -194,6 +194,147 @@ class SqliteConnection:
         )
         connection.commit()
 
+    def create_charging_session(self, session_id, cp_id, driver_id, start_time):
+        """创建充电会话"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO ChargingSessions 
+                (session_id, cp_id, driver_id, start_time, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (session_id, cp_id, driver_id, start_time, "in_progress"))
+            
+            connection.commit()
+            logging.info(f"充电会话 {session_id} 创建成功")
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"创建充电会话失败: {e}")
+            return False
+
+    def update_charging_session(self, session_id, end_time=None, energy_consumed=None, total_cost=None, status=None):
+        """更新充电会话"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            # 构建动态更新语句
+            updates = []
+            params = []
+            
+            if end_time is not None:
+                updates.append("end_time = ?")
+                params.append(end_time)
+            
+            if energy_consumed is not None:
+                updates.append("energy_consumed_kwh = ?")
+                params.append(energy_consumed)
+            
+            if total_cost is not None:
+                updates.append("total_cost = ?")
+                params.append(total_cost)
+            
+            if status is not None:
+                updates.append("status = ?")
+                params.append(status)
+            
+            if not updates:
+                logging.warning("没有提供要更新的字段")
+                return False
+            
+            params.append(session_id)
+            query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
+            
+            cursor.execute(query, params)
+            connection.commit()
+            
+            logging.info(f"充电会话 {session_id} 更新成功")
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"更新充电会话失败: {e}")
+            return False
+
+    def get_charging_session(self, session_id):
+        """获取充电会话信息"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT session_id, cp_id, driver_id, start_time, end_time, 
+                       energy_consumed_kwh, total_cost, status
+                FROM ChargingSessions 
+                WHERE session_id = ?
+            """, (session_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "session_id": row[0],
+                    "cp_id": row[1],
+                    "driver_id": row[2],
+                    "start_time": row[3],
+                    "end_time": row[4],
+                    "energy_consumed_kwh": row[5],
+                    "total_cost": row[6],
+                    "status": row[7]
+                }
+            return None
+        except Exception as e:
+            logging.error(f"获取充电会话失败: {e}")
+            return None
+
+    def get_active_charging_sessions(self):
+        """获取所有活跃的充电会话"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute("""
+                SELECT session_id, cp_id, driver_id, start_time, 
+                       energy_consumed_kwh, total_cost, status
+                FROM ChargingSessions 
+                WHERE status = 'in_progress'
+            """)
+            
+            rows = cursor.fetchall()
+            return [
+                {
+                    "session_id": row[0],
+                    "cp_id": row[1],
+                    "driver_id": row[2],
+                    "start_time": row[3],
+                    "energy_consumed_kwh": row[4],
+                    "total_cost": row[5],
+                    "status": row[6]
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.error(f"获取活跃充电会话失败: {e}")
+            return []
+
+    def register_driver(self, driver_id, username):
+        """注册司机"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            from datetime import datetime
+            current_time = datetime.now().isoformat()
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO Drivers 
+                (driver_id, username, created_at)
+                VALUES (?, ?, ?)
+            """, (driver_id, username, current_time))
+            
+            connection.commit()
+            logging.info(f"司机 {driver_id} 注册成功")
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"注册司机失败: {e}")
+            return False
+
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
