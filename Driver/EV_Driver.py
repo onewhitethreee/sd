@@ -35,7 +35,7 @@ class Driver:
             while True:
                 pass  # Simulación de la ejecución continua del servicio
         except KeyboardInterrupt:
-            self.logger.info("Shutting down EV Central")
+            self.logger.info("Shutting down Driver")
             sys.exit(0)
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
