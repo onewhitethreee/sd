@@ -10,7 +10,14 @@ from Common.MessageFormatter import MessageFormatter
 
 
 class MySocketServer:
-    def __init__(self, host="0.0.0.0", port=5002, logger=None, message_callback=None, disconnect_callback=None):
+    def __init__(
+        self,
+        host="0.0.0.0",
+        port=5002,
+        logger=None,
+        message_callback=None,
+        disconnect_callback=None,
+    ):
         self.host = host
         self.port = port
         self.logger = logger
@@ -216,7 +223,15 @@ if __name__ == "__main__":
 
     try:
         server.start()
-        server.running_event.wait()  # 主线程等待，直到服务器停止
+        while (
+            server.running_event.is_set()
+        ):  
+            time.sleep(0.1)  
+
     except KeyboardInterrupt:
         print("\nShutting down server...")
-        server.stop()
+        server.stop()  # KeyboardInterrupt时调用stop来清理和clear running_event
+    except Exception as e:  # 捕获其他意外异常
+        logger.error(f"FATAL ERROR in main loop: {e}", exc_info=True)
+        server.stop()  # 出错也应该停止服务器
+    print("Server stopped.")
