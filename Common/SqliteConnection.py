@@ -175,6 +175,15 @@ class SqliteConnection:
         
         connection.commit()
 
+    def get_charging_point_status(self, cp_id):
+        """获取充电桩状态"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            "SELECT status FROM ChargingPoints WHERE cp_id = ?", (cp_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     def is_charging_point_registered(self, cp_id):
         """检查充电桩是否已注册"""
