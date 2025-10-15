@@ -1,9 +1,9 @@
 import socket
 import threading
-import json
+
 import sys
 import os
-
+import time
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 from Common.CustomLogger import CustomLogger
 from Common.MessageFormatter import MessageFormatter
@@ -14,34 +14,42 @@ class MySocketServer:
         self.host = host
         self.port = port
         self.logger = logger
-        self.server_socket = None
-        self.is_running = False
-        self.message_formatter = MessageFormatter()
         self.clients = {}  # {client_id: client_socket}
-        # 必须是要一个可调用的函数
+        self.clients_lock = threading.Lock()  # 用于保护 self.clients 字典的锁
+
+        self.running_event = threading.Event()  # 这个事件控制服务器的主循环
+
+        self.server_socket = None
+        self.message_formatter = MessageFormatter()
+
         if not callable(message_callback):
             raise ValueError("message_callback must be a callable function")
         if not callable(disconnect_callback):
             raise ValueError("disconnect_callback must be a callable function")
-        
+
         self.message_callback = message_callback  # 用于处理消息的回调函数
         self.disconnect_callback = disconnect_callback  # 用于处理断开连接的回调函数
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
+        self.server_socket.settimeout(1.0)  # 设置 accept 的超时时间
 
+        try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
-            self.is_running = True
-            self.logger.info(f"Socket server started on {self.host}:{self.port}")
+
+            self.running_event.set() # 标记服务器正在运行
+
+            # self.logger.info(f"Socket server started on {self.host}:{self.port}")
             # 在这个线程中接受客户端连接
             threading.Thread(target=self._accept_clients, daemon=True).start()
             self.logger.debug(f"Started thread to accept clients, listening on {self.host}:{self.port}")
         except Exception as e:
             self.logger.error(f"Failed to start server: {e}")
-            self.is_running = False
+            
+            self.running_event.clear()  # 标记服务器已停止
+            
             if self.server_socket:
                 self.server_socket.close()
             raise
@@ -49,10 +57,13 @@ class MySocketServer:
         """
         Accept incoming client connections.
         """
-        while self.is_running:
+        while self.running_event.is_set(): 
             try:
                 client_socket, client_address = self.server_socket.accept()
                 self.logger.info(f"Accepted connection from {client_address}")
+                
+                client_socket.settimeout(1.0)  # 设置 recv 的超时时间
+                
                 client_thread = threading.Thread(
                     # 处理与客户端的通信
                     target=self._handle_client,
@@ -60,8 +71,10 @@ class MySocketServer:
                     daemon=True,
                 )
                 client_thread.start()
+            except socket.timeout:
+                continue  # 超时只是为了检查 running_event，继续循环
             except Exception as e:
-                if self.is_running:  
+                if self.running_event.is_set():  # 仅在服务器运行时记录错误
                     self.logger.error(f"Error accepting clients: {e}")
 
     def _handle_client(self, client_socket, client_address):
@@ -70,16 +83,26 @@ class MySocketServer:
         """
         client_id = f"{client_address[0]}:{client_address[1]}"
         self.logger.info(f"Handling client {client_id}")
-        self.clients[client_id] = client_socket
+        with self.clients_lock:
+            self.clients[client_id] = client_socket
+        
         buffer = b""  # 消息缓冲区
 
         try:
-            while self.is_running:
-                data = client_socket.recv(4096)
-                if not data:
-                    self.logger.info(f"Client {client_id} disconnected")
-                    break
+            while self.running_event.is_set():
+                try:
 
+                    data = client_socket.recv(4096)
+                    if not data:
+                        self.logger.info(f"Client {client_id} disconnected")
+                        break
+                except socket.timeout:
+                    if not self.running_event.is_set():
+                        break  # 服务器停止，退出循环
+                    continue  # 继续等待数据
+                except socket.error as e:
+                    self.logger.error(f"Socket error with client {client_id}: {e}")
+                    break
                 # 将新数据添加到缓冲区
                 buffer += data
                 self.logger.debug(f"Received raw data from {client_id}: {data}")
@@ -108,26 +131,40 @@ class MySocketServer:
                     self.disconnect_callback(client_id)
                 except Exception as e:
                     self.logger.error(f"Error in disconnect callback for {client_id}: {e}")
+            with self.clients_lock:
+                if client_id in self.clients:
+                    try:
+                        self.clients[client_id].close()
+                    except Exception as e:
+                        self.logger.error(f"Error closing socket for {client_id}: {e}")
+                    del self.clients[client_id]
+
+
 
     def send_to_client(self, client_id, message) -> bool:
         """发送消息给特定客户端"""
-        if client_id in self.clients:
-            try:
-                packed_message = MessageFormatter.pack_message(message)
-                self.clients[client_id].send(packed_message)
-                self.logger.info(f"Sent message to {client_id}: {packed_message}")
-                return True
-            except Exception as e:
-                self.logger.error(f"Error sending message to {client_id}: {e}")
+        with self.clients_lock:
+            client_socket = self.clients.get(client_id)
+            if client_socket:
+                try:
+                    packed_message = MessageFormatter.pack_message(message)
+                    client_socket.send(packed_message)
+                    self.logger.info(f"Sent message to {client_id}: {message}")
+                    return True
+                except Exception as e:
+                    self.logger.error(f"Error sending message to {client_id}: {e}")
+                    return False
+            else:
+                self.logger.warning(f"Client {client_id} not connected")
                 return False
-        else:
-            self.logger.warning(f"Client {client_id} not connected")
-            return False
 
     def send_to_all(self, message, exclude_client=None):
         """向所有客户端广播消息"""
         packed_message = MessageFormatter.pack_message(message)
-        for client_id, client_socket in self.clients.items():
+
+        with self.clients_lock:
+            client_items = list(self.clients.items())  # 复制一份以避免在迭代时修改字典
+        for client_id, client_socket in client_items:
             if client_id != exclude_client:
                 try:
                     client_socket.send(packed_message)
@@ -137,52 +174,49 @@ class MySocketServer:
 
     def stop(self):
         """停止服务器"""
-        # TODO 在发送关闭通知前，确保所有消息都已处理完毕，等待所有客户端的确认
-
-        self.is_running = False
-
-        # 向所有客户端发送关闭通知
-        shutdown_msg = {"type": "SERVER_SHUTDOWN"}
-        self.send_to_all(shutdown_msg)
-
-        # 关闭所有连接
-        for client_id in list(self.clients.keys()):
-            self._disconnect_client(client_id)
-
+        self.logger.info("Stopping socket server...")
+        self.running_event.clear()  # 标记服务器停止
         if self.server_socket:
             self.server_socket.close()
 
-        self.logger.info("Socket server stopped")
+        # 向所有客户端发送关闭通知
+        shutdown_msg = {"type": "SERVER_SHUTDOWN", "message": "Server is shutting down"}
+        self.send_to_all(shutdown_msg)
 
-    def _disconnect_client(self, client_id):
-        """断开特定客户端"""
-        if client_id in self.clients:
-            try:
-                self.clients[client_id].close()
-            except:
-                pass
-            del self.clients[client_id]
+        with self.clients_lock:
+            # 获取所有客户端的列表，防止在迭代时字典被修改
+            # 此时，我们不再期望 _handle_client 线程会自己清理，
+            # 因为它们可能因为服务器关闭而突然中断。这里是强制清理。
+            remaining_client_ids = list(self.clients.keys())
+            for client_id in remaining_client_ids:
+                try:
+                    client_socket = self.clients[client_id]
+                    client_socket.close() # 强制关闭 socket
+                    del self.clients[client_id] # 从字典中移除
+                    self.logger.info(f"Forcibly closed and removed client {client_id} during server shutdown.")
+                except Exception as e:
+                    self.logger.warning(f"Error during final client cleanup for {client_id}: {e}")
+            self.clients.clear() # 确保字典最终为空
+        self.logger.info("Socket server stopped")
 
     def get_connected_clients(self):
         """获取所有连接的客户端"""
-        return list(self.clients.keys())
+        with self.clients_lock:
+            return list(self.clients.keys())
 
     def is_client_connected(self, client_id):
         """检查客户端是否连接"""
-        return client_id in self.clients
+        with self.clients_lock:
+            return client_id in self.clients
 
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()
-    server = MySocketServer(host="0.0.0.0", port=8080, logger=logger)
+    server = MySocketServer(host="0.0.0.0", port=8080, logger=logger, message_callback=lambda cid, msg: {"type": "echo", "data": msg}, disconnect_callback=lambda cid: logger.info(f"Client {cid} disconnected"))
 
     try:
         server.start()
-        # 保持主线程运行
-        while True:
-            import time
-
-            time.sleep(1)
+        server.running_event.wait()  # 主线程等待，直到服务器停止
     except KeyboardInterrupt:
         print("\nShutting down server...")
         server.stop()
