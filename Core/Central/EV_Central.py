@@ -729,34 +729,8 @@ class EV_Central:
         """
         向指定司机发送充电状态更新
         """
-        try:
-            # 查找连接到该司机的客户端
-            driver_client_id = None
-            for client_id, cp_id in self._client_to_cp.items():
-                # 这里需要根据实际架构调整，可能需要维护driver_id到client_id的映射
-                # 暂时通过广播方式发送给所有连接的客户端
-                pass
-            
-            # 构建充电状态更新消息
-            status_message = {
-                "type": "charging_status_update",
-                "message_id": str(uuid.uuid4()),
-                "driver_id": driver_id,
-                "session_id": charging_data["session_id"],
-                "energy_consumed_kwh": charging_data["energy_consumed_kwh"],
-                "total_cost": charging_data["total_cost"],
-                "charging_rate": charging_data.get("charging_rate", 0),
-                "timestamp": charging_data["timestamp"]
-            }
-            
-            # 发送给所有连接的客户端（在实际实现中应该只发送给对应的Driver）
-            for client_id in self._client_to_cp.keys():
-                self._send_message_to_client(client_id, status_message)
-                
-            self.logger.debug(f"充电状态更新已发送给司机 {driver_id}")
-            
-        except Exception as e:
-            self.logger.error(f"发送充电状态给司机 {driver_id} 失败: {e}")
+        self.logger.debug(f"向司机 {driver_id} 发送充电状态更新: {charging_data}")
+        self.logger.warning("此功能尚未实现，需要通过消息队列或其他方式发送给司机应用程序")
 
     def _send_start_charging_to_monitor(self, cp_id, session_id, driver_id):
         """
@@ -897,4 +871,3 @@ if __name__ == "__main__":
     ev_central.start()
 
 # TODO 解决如果用户发送少了属性服务器也要返回相对的错误信息给用户
-# TODO 关闭服务器时，所有连接的充电桩都要被设置为离线状态 -》 已完善

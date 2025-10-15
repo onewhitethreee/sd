@@ -86,8 +86,8 @@ class MySocketServer:
                 # 处理缓冲区中的完整消息
                 while True:
                     buffer, message = self.message_formatter.extract_complete_message(buffer)
-                    self.logger.debug(f"Buffer after extraction: {buffer}")
-                    self.logger.debug(f"Extracted message: {message}")
+                    # self.logger.debug(f"Buffer after extraction: {buffer}")
+                    # self.logger.debug(f"Extracted message: {message}")
                     if message is None:
                         self.logger.debug("No complete message found in buffer yet.")
                         break

@@ -102,7 +102,7 @@ class EV_CP_E:
 
     def _handle_health_check(self, message):
         """处理健康检查请求"""
-        self.logger.debug("Processing health check from Monitor")
+        # self.logger.debug("Processing health check from Monitor")
 
         response = {
             "type": "health_check_response",
