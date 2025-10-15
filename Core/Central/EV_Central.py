@@ -16,7 +16,7 @@ from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 from Common.MySocketServer import MySocketServer
 from Common.Status import Status
-from MessageDispatcher import MessageDispatcher
+from Core.Central.MessageDispatcher import MessageDispatcher
 
 
 class EV_Central:
