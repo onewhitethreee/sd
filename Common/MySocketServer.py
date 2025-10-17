@@ -119,7 +119,7 @@ class MySocketServer:
                     # self.logger.debug(f"Buffer after extraction: {buffer}")
                     # self.logger.debug(f"Extracted message: {message}")
                     if message is None:
-                        self.logger.debug("No complete message found in buffer yet.")
+                        # self.logger.debug("No complete message found in buffer yet.")
                         break
 
                     # 处理消息并获取响应
@@ -216,6 +216,9 @@ class MySocketServer:
         with self.clients_lock:
             return client_id in self.clients
 
+    def send_message_to_client(self, client_id, message):
+        """发送消息给特定客户端"""
+        return self.send_to_client(client_id, message)
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

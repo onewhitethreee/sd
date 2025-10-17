@@ -448,8 +448,6 @@ class EV_CP_M:
         if message_type == "register_response":
             self.logger.info("Received registration response from central")
             self.logger.debug(f"Registration response details: {message}")
-            # TODO 这里需要用MessageFormatter来进行解包和验证
-            # TODO 不需要解包，通过debug发现MySocketClient已经为我们处理好了
             if message.get("status") == "success":
                 self.logger.info("Registration successful")
                 # TODO 处理注册成功后的逻辑
@@ -470,7 +468,11 @@ class EV_CP_M:
 
         elif message_type == "start_charging_command":
             self._handle_start_charging_command(message)
-
+        elif message_type == 'status_update_response':
+            self.logger.debug(f"Status update response from central: {message}")
+        elif message_type == 'CONNECTION_LOST':
+            self.logger.error(f"Connection lost notification from central: {message}")
+            self._handle_disconnection()
         else:
             self.logger.warning(f"Unknown message type from central: {message_type}")
 

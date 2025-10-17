@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.SqliteConnection import SqliteConnection
-from Common.MessageFormatter import MessageFormatter
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 from Common.MySocketServer import MySocketServer
