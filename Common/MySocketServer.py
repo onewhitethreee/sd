@@ -110,6 +110,9 @@ class MySocketServer:
                 except socket.error as e:
                     self.logger.error(f"Socket error with client {client_id}: {e}")
                     break
+                except Exception as e:
+                    self.logger.error(f"Unexpected error with client {client_id}: {e}")
+                    break
                 # 将新数据添加到缓冲区
                 buffer += data
                 self.logger.debug(f"Received raw data from {client_id}: {data}")

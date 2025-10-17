@@ -12,7 +12,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from Common.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
-from Common.MySocketClient import MySocketClient
+from ConnectionManager import ConnectionManager
+from Common.Status import Status
 
 
 class EV_CP_M:
@@ -47,323 +48,321 @@ class EV_CP_M:
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
-        self.central_client = None  # Cliente para conectar con EV_Central
-        self.engine_client = None  # Servidor para aceptar conexiones de EV_CP_E
+        self.central_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
+        self.engine_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.running = False
-        self.RETRY_INTERVAL = 5  # Intervalo de reintento en segundos
-        self.threads = []
 
-    def _connect_to_central(self):
-        """
-        连接到EV_Central
-        """
-        self.central_client = MySocketClient(
-            logger=self.logger,
-            message_callback=self._handle_central_message,
-        )
-        return self.central_client.connect(
-            self.args.ip_port_ev_central[0], self.args.ip_port_ev_central[1]
-        )
+        self._current_status = "UNKNOWN"  # 当前充电点状态
 
-    def _handle_disconnection(self):
-        """
-        处理断开连接和重试机制
-        """
-        self.logger.warning("Handling disconnection - attempting to reconnect")
-        
-        # 报告故障状态
-        self.update_cp_status("FAULTY")
-        
-        # 启动重连线程
-        reconnect_thread = threading.Thread(target=self._reconnect_services, daemon=False)
-        reconnect_thread.start()
-        self.threads.append(reconnect_thread)
+        self._heartbeat_thread = None
+        self._engine_health_thread = None
 
-    def _reconnect_services(self):
-        """
-        重连服务
-        """
-        self.logger.info("Starting reconnection process")
-        
-        max_retries = 5
-        retry_count = 0
-        
-        while self.running and retry_count < max_retries:
-            retry_count += 1
-            self.logger.info(f"Reconnection attempt {retry_count}/{max_retries}")
-            
-            # 尝试重连到Central
-            if not self.central_client or not self.central_client.is_connected:
-                if self._connect_to_central():
-                    self.logger.info("Reconnected to Central")
-                    # 重新注册
-                    if self._register_with_central():
-                        self.logger.info("Re-registered with Central")
-                        self.update_cp_status("ACTIVE")
-                        return True
-            
-            # 尝试重连到Engine
-            if not self.engine_client or not self.engine_client.is_connected:
-                if self._connect_to_engine():
-                    self.logger.info("Reconnected to Engine")
-            
-            time.sleep(10)  # 等待10秒后重试
-        
-        self.logger.error("Failed to reconnect after maximum retries")
-        return False
+        self.HEARTBEAT_INTERVAL = 30  # 向 Central 发送心跳的间隔（秒）
+        self.ENGINE_HEALTH_TIMEOUT = 90  # 如果超过这个时间没有收到 Engine 的健康响应，则认为故障（秒）
+        self.ENGINE_HEALTH_CHECK_INTERVAL = 30  # 向 Engine 发送健康
 
     def _register_with_central(self):
         """
-        和central注册一个charging point
+        和central注册一个charging point (现在由 ConnectionManager 发送)。
         """
+        if not self.central_conn_mgr.is_connected:
+            self.logger.warning("Not connected to Central, can't register.")
+            return False
         register_message = {
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "location": "Location_Info",  # 可以是一个字符串，表示位置
-            "price_per_kwh": 0.20,  # 每千瓦时的价格
+            "location": "Location_Info",
+            "price_per_kwh": 0.20,
         }
-        return self.central_client.send(register_message)
+        return self.central_conn_mgr.send(register_message)
+
+    def _handle_connection_status_change(self, source_name: str, status: str):
+        """
+        由 ConnectionManager 回调，处理连接状态变化。
+        这就是 EV_CP_M 响应底层网络事件的核心逻辑。
+        """
+        self.logger.info(f"Connection status for {source_name} changed to {status}")
+        if source_name == "Central":
+            if status == "CONNECTED":
+                self.logger.info("Central is now connected. Attempting to register...")
+                # 确保注册在 Central 连接后进行
+                self._register_with_central()
+                # 启动 Central 的心跳线程
+                self._start_heartbeat_thread()
+                self.update_cp_status(
+                    Status.ACTIVE.value
+                )  # 假设连接Central成功就算活跃
+            elif status == "DISCONNECTED":
+                self.logger.warning(
+                    "Central is disconnected. Updating CP status to FAULTY."
+                )
+                self.update_cp_status(Status.FAULTY.value)
+                self._stop_heartbeat_thread()  # 停止心跳
+            else:
+                self.logger.warning(f"Unknown status '{status}' for Central")
+        elif source_name == "Engine":
+            if status == "CONNECTED":
+                self.logger.info(
+                    "Engine is now connected. Starting health check thread."
+                )
+                self._start_engine_health_check_thread()
+                # Engine连接后是否直接更新ACTIVE，这取决于业务逻辑，
+                # 如果Central也连接了，并且Engine状态良好，才算ACTIVE
+            elif status == "DISCONNECTED":
+                self.logger.warning("Engine is disconnected. Reporting failure.")
+                self._report_failure("EV_CP_E connection lost")
+                self.update_cp_status("FAULTY")
+                self._stop_engine_health_check_thread()  # 停止健康检查
+    def _stop_engine_health_check_thread(self):
+        """停止对 Engine 的健康检查线程"""
+        if self._engine_health_thread and self._engine_health_thread.is_alive():
+            self.logger.info("Stopping Engine health check thread.")
+            # 通过设置 running 标志让线程自然退出
+            # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
+            # 因为我们没有单独的停止事件，所以只能依赖这些条件
+            # 实际上，线程会在下一次循环时检测到条件变化并退出
+        else:
+            self.logger.debug("Engine health check thread is not running.")
+    def _stop_heartbeat_thread(self):
+        """停止发送心跳的线程"""
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            self.logger.info("Stopping heartbeat thread for Central.")
+            # 通过设置 running 标志让线程自然退出
+            # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
+            # 因为我们没有单独的停止事件，所以只能依赖这些条件
+            # 实际上，线程会在下一次循环时检测到条件变化并退出
+        else:
+            self.logger.debug("Heartbeat thread for Central is not running.")
+    def _start_engine_health_check_thread(self):
+        """启动对 Engine 的健康检查线程"""
+        if self._engine_health_thread and self._engine_health_thread.is_alive():
+            self.logger.debug("Engine health check thread already running.")
+            return
+        self.logger.info("Starting Engine health check thread.")
+        self._engine_health_thread = threading.Thread(
+            target=self._check_engine_health,
+            daemon=True,
+            name="EngineHealthCheckThread",
+        )
+        self._engine_health_thread.start()
 
     def _send_heartbeat(self):
         """
-        发送心跳消息以保持与中央的连接
+        发送心跳消息以保持与中央的连接。
         """
-        while self.running:
-            if self.central_client and self.central_client.is_connected:
-                heartbeat_msg = {
-                    "type": "heartbeat_request",
-                    "message_id": str(uuid.uuid4()),
-                    "id": self.args.id_cp,
-                }
-                if self.central_client.send(heartbeat_msg):
-                    self.logger.debug("Heartbeat sent")
-                else:
-                    self.logger.error("Failed to send heartbeat")
-            time.sleep(30)  # Cada 30 segundos enviar un latido
-        self.logger.info("heartbeat thread has stopped")
+        while (
+            self.running
+            and self.central_conn_mgr
+            and self.central_conn_mgr.is_connected
+        ):
+            heartbeat_msg = {
+                "type": "heartbeat_request",
+                "message_id": str(uuid.uuid4()),
+                "id": self.args.id_cp,
+            }
+            if self.central_conn_mgr.send(heartbeat_msg):
+                self.logger.debug("Heartbeat sent to Central.")
+            else:
+                self.logger.error(
+                    "Failed to send heartbeat to Central (might be disconnected internally)."
+                )
+            time.sleep(self.HEARTBEAT_INTERVAL)
+        self.logger.info("Heartbeat thread for Central has stopped.")
 
     def _start_heartbeat_thread(self):
         """
         启动发送心跳的线程
         """
-        heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=False)
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            self.logger.debug("Heartbeat thread for Central already running.")
+            return
+        self.logger.info("Starting heartbeat thread for Central.")
+        heartbeat_thread = threading.Thread(
+            target=self._send_heartbeat, daemon=True, name="CentralHeartbeatThread"
+        )
         heartbeat_thread.start()
-        self.threads.append(heartbeat_thread)
 
     def authenticate_charging_point(self):
         """
-        认证充电点
+        认证充电点，现在通过 ConnectionManager.send() 发送。
         """
         self.logger.info(f"Authenticating charging point {self.args.id_cp}")
-        
-        # 发送认证请求到central
+        if not self.central_conn_mgr.is_connected:
+            self.logger.error("Cannot authenticate: not connected to Central.")
+            return False
         auth_message = {
             "type": "auth_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
-        
-        if self.central_client and self.central_client.is_connected:
-            return self.central_client.send(auth_message)
-        else:
-            self.logger.error("Cannot authenticate: not connected to central")
-            return False
-
-    def _connect_to_engine(self):
-        """
-        连接到EV_CP_E
-        """
-        self.engine_client = MySocketClient(
-            logger=self.logger,
-            message_callback=self._handle_engine_message,
-        )
-        return self.engine_client.connect(
-            self.args.ip_port_ev_cp_e[0], self.args.ip_port_ev_cp_e[1]
-        )
+        return self.central_conn_mgr.send(auth_message)
 
     def _check_engine_health(self):
         """
-        检查EV_CP_E的健康状态
+        检查EV_CP_E的健康状态。
         """
         self.logger.info("Starting health check thread for EV_CP_E")
         last_health_response = time.time()
-        health_timeout = 120  # 2分钟超时
-        
-        while self.running:
-            try:
-                if not self.engine_client or not self.engine_client.is_connected:
-                    self.logger.info("Connecting to EV_CP_E...")
-                    if not self._connect_to_engine():
-                        self.logger.error("Failed to connect to EV_CP_E")
-                        self._report_failure("EV_CP_E connection failed") 
-                        time.sleep(self.RETRY_INTERVAL)
-                        continue
+        while (
+            self.running and self.engine_conn_mgr and self.engine_conn_mgr.is_connected
+        ):
+            current_time = time.time()
+            if current_time - last_health_response > self.ENGINE_HEALTH_TIMEOUT:
+                self.logger.error("EV_CP_E health check timeout. Reporting failure.")
+                self._report_failure("EV_CP_E health check timeout")
+                self.update_cp_status("FAULTY")
+                # 标记为断开，让 ConnectionManager 去重连。
+                # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
+                # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
+                # 并且如果是正常状态，CP status会再次更新。
+                # break # 退出循环，等待CM重连和新的健康检查线程启动
 
-                # 检查是否超时
-                current_time = time.time()
-                if current_time - last_health_response > health_timeout:
-                    self.logger.error("EV_CP_E health check timeout")
-                    self._report_failure("EV_CP_E health check timeout")
-                    self.update_cp_status("FAULTY")
-                    # 尝试重连
-                    self._connect_to_engine()
+            health_check_msg = {
+                "type": "health_check_request",
+                "message_id": str(uuid.uuid4()),
+                "id": self.args.id_cp,
+                "timestamp": int(current_time),
+            }
+            if self.engine_conn_mgr.send(health_check_msg):
+                self.logger.debug("Health check sent to EV_CP_E")
+            else:
+                self.logger.error(
+                    "Failed to send health check to EV_CP_E (might be disconnected internally)."
+                )
 
-                health_check_msg = {
-                    "type": "health_check_request",
-                    "message_id": str(uuid.uuid4()),
-                    "id": self.args.id_cp,
-                    "timestamp": int(current_time),
-                }
-                if self.engine_client.send(health_check_msg):
-                    self.logger.debug("Health check sent to EV_CP_E")
-                else:
-                    self.logger.error("Failed to send health check to EV_CP_E")
-                    self._report_failure("Health check send failed")  
-                    
-            except Exception as e:
-                self.logger.error(f"Error checking EV_CP_E health: {e}")
-                self._report_failure(f"Health check error: {str(e)}")
-
-            time.sleep(60) # TODO 每60秒检查一次, production 可能需要更频繁
-        
-        self.logger.info("Health check thread for EV_CP_E has stopped")
-
+            time.sleep(self.ENGINE_HEALTH_CHECK_INTERVAL)
+        self.logger.info("Health check thread for EV_CP_E has stopped.")
 
     def _report_failure(self, failure_info):
         """
-        向central报告故障
+        向central报告故障。
         """
+        if not self.central_conn_mgr.is_connected:
+            self.logger.warning(
+                f"Not connected to Central, cannot report failure: {failure_info}"
+            )
+            return False
         failure_message = {
             "type": "fault_notification",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "failure_info": failure_info,
         }
-        if self.central_client and self.central_client.is_connected:
-            if self.central_client.send(failure_message):
-                self.logger.info("Reported failure to central")
-            else:
-                self.logger.error("Failed to report failure to central")
-
-    def _check_status(self):
-        """
-        检查充电点的状态
-        """
-        self.logger.debug("Checking charging point status")
-        
-        # 检查与Engine的连接状态
-        engine_connected = self.engine_client and self.engine_client.is_connected
-        
-        # 检查与Central的连接状态
-        central_connected = self.central_client and self.central_client.is_connected
-        
-        status_info = {
-            "cp_id": self.args.id_cp,
-            "engine_connected": engine_connected,
-            "central_connected": central_connected,
-            "timestamp": int(time.time())
-        }
-        
-        self.logger.debug(f"Status check result: {status_info}")
-        return status_info
+        if self.central_conn_mgr.send(failure_message):
+            self.logger.info("Reported failure to Central.")
+            return True
+        else:
+            self.logger.error(
+                "Failed to report failure to Central (might be disconnected internally)."
+            )
+            return False
 
     def update_cp_status(self, status):
         """
-        更新充电点状态
+        更新充电点状态，并向 Central 报告。
         """
+        if self._current_status == status:
+            self.logger.debug(f"CP status already {status}, no update needed.")
+            return
         self.logger.info(f"Updating charging point status to: {status}")
-        
-        # 记录当前状态
         self._current_status = status
-        
-        # 向Central报告状态更新
         self.report_status_to_central(status)
-        
-        # 如果状态是故障，向Engine发送停止命令
         if status == "FAULTY":
             self._send_stop_command_to_engine()
 
     def report_status_to_central(self, status):
         """
-        向central报告状态
+        向central报告状态。
         """
+        if not self.central_conn_mgr.is_connected:
+            self.logger.warning(
+                f"Not connected to Central, cannot send status update: {status}"
+            )
+            return False
         status_message = {
             "type": "status_update",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "status": status,
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
-        
-        if self.central_client and self.central_client.is_connected:
-            if self.central_client.send(status_message):
-                self.logger.info(f"Status update sent to central: {status}")
-            else:
-                self.logger.error("Failed to send status update to central")
+        if self.central_conn_mgr.send(status_message):
+            self.logger.info(f"Status update sent to Central: {status}")
+            return True
         else:
-            self.logger.error("Cannot send status update: not connected to central")
+            self.logger.error(
+                "Failed to send status update to Central (might be disconnected internally)."
+            )
+            return False
 
     def _send_stop_command_to_engine(self):
         """
-        向Engine发送停止命令
+        向Engine发送停止命令。
         """
+        if not self.engine_conn_mgr.is_connected:
+            self.logger.warning("Not connected to Engine, cannot send stop command.")
+            return False
         stop_message = {
             "type": "stop_command",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
-        
-        if self.engine_client and self.engine_client.is_connected:
-            if self.engine_client.send(stop_message):
-                self.logger.info("Stop command sent to engine")
-            else:
-                self.logger.error("Failed to send stop command to engine")
+        if self.engine_conn_mgr.send(stop_message):
+            self.logger.info("Stop command sent to Engine.")
+            return True
         else:
-            self.logger.error("Cannot send stop command: not connected to engine")
+            self.logger.error(
+                "Failed to send stop command to Engine (might be disconnected internally)."
+            )
+            return False
 
     def _handle_start_charging_command(self, message):
         """
-        处理来自Central的启动充电命令
+        处理来自Central的启动充电命令（转发）。
         """
-        self.logger.info("Received start charging command from Central")
-        
+        self.logger.info("Received start charging command from Central.")
         cp_id = message.get("cp_id")
         session_id = message.get("session_id")
         driver_id = message.get("driver_id")
-        
         if not cp_id or not session_id:
-            self.logger.error("Start charging command missing required fields")
-            return
-        
-        # 转发启动充电命令给Engine
+            self.logger.error("Start charging command missing required fields.")
+            return False
+        if not self.engine_conn_mgr.is_connected:
+            self.logger.error(
+                "Cannot forward start charging command: not connected to Engine."
+            )
+            return False
         start_charging_message = {
             "type": "start_charging_command",
             "message_id": str(uuid.uuid4()),
             "cp_id": cp_id,
             "session_id": session_id,
             "driver_id": driver_id,
-            "ev_id": f"ev_{driver_id}",  # 使用driver_id作为ev_id
-            "timestamp": int(time.time())
+            "ev_id": f"ev_{driver_id}",
+            "timestamp": int(time.time()),
         }
-        
-        if self.engine_client and self.engine_client.is_connected:
-            if self.engine_client.send(start_charging_message):
-                self.logger.info(f"Start charging command sent to engine for session {session_id}")
-            else:
-                self.logger.error("Failed to send start charging command to engine")
+        if self.engine_conn_mgr.send(start_charging_message):
+            self.logger.info(
+                f"Start charging command sent to Engine for session {session_id}."
+            )
+            return True
         else:
-            self.logger.error("Cannot send start charging command: not connected to engine")
+            self.logger.error("Failed to send start charging command to Engine.")
+            return False
 
     def _handle_charging_data_from_engine(self, message):
         """
-        处理来自Engine的充电数据
+        处理来自Engine的充电数据（转发）。
         """
-        self.logger.debug("Received charging data from Engine")
-        
-        # 转发充电数据给Central
+        self.logger.debug("Received charging data from Engine.")
+        if not self.central_conn_mgr.is_connected:
+            self.logger.warning(
+                "Not connected to Central, cannot forward charging data."
+            )
+            return False
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -371,24 +370,25 @@ class EV_CP_M:
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
             "charging_rate": message.get("charging_rate"),
-            "timestamp": message.get("timestamp", int(time.time()))
+            "timestamp": message.get("timestamp", int(time.time())),
         }
-        
-        if self.central_client and self.central_client.is_connected:
-            if self.central_client.send(charging_data_message):
-                self.logger.debug("Charging data forwarded to Central")
-            else:
-                self.logger.error("Failed to forward charging data to Central")
+        if self.central_conn_mgr.send(charging_data_message):
+            self.logger.debug("Charging data forwarded to Central.")
+            return True
         else:
-            self.logger.error("Cannot forward charging data: not connected to Central")
+            self.logger.error("Failed to forward charging data to Central.")
+            return False
 
     def _handle_charging_completion_from_engine(self, message):
         """
-        处理来自Engine的充电完成通知
+        处理来自Engine的充电完成通知（转发）。
         """
-        self.logger.info("Received charging completion from Engine")
-        
-        # 转发充电完成通知给Central
+        self.logger.info("Received charging completion from Engine.")
+        if not self.central_conn_mgr.is_connected:
+            self.logger.warning(
+                "Not connected to Central, cannot forward charging completion."
+            )
+            return False
         completion_message = {
             "type": "charge_completion",
             "message_id": str(uuid.uuid4()),
@@ -396,43 +396,39 @@ class EV_CP_M:
             "session_id": message.get("session_id"),
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
-            "timestamp": message.get("timestamp", int(time.time()))
+            "timestamp": message.get("timestamp", int(time.time())),
         }
-        
-        if self.central_client and self.central_client.is_connected:
-            if self.central_client.send(completion_message):
-                self.logger.info("Charging completion forwarded to Central")
-            else:
-                self.logger.error("Failed to forward charging completion to Central")
+        if self.central_conn_mgr.send(completion_message):
+            self.logger.info("Charging completion forwarded to Central.")
+            return True
         else:
-            self.logger.error("Cannot forward charging completion: not connected to Central")
+            self.logger.error("Failed to forward charging completion to Central.")
+            return False
 
-    def _handle_engine_message(self, message):
+    def _handle_message_from_engine(
+        self, source_name: str, message: dict
+    ):  # 新的 Engine 消息入口
         """
-        处理来自EV_CP_E的消息
+        处理来自EV_CP_E的消息。注意：CONNECTION_LOST/SERVER_SHUTDOWN 已经在 ConnectionManager 内部处理了。
         """
         message_type = message.get("type")
         if message_type == "health_check_response":
             self.logger.debug(f"Health check response from EV_CP_E: {message}")
-            # 更新最后健康检查响应时间
-            self.last_health_response = time.time()
-            
-            # 检查Engine状态
+            # 更新最后健康检查响应时间（如果需要，可以在 EV_CP_M 内部维护这个状态）
+            # self.last_health_response = time.time() # 这东西现在要改一下逻辑，不再是EV_CP_M直接维护时间
             engine_status = message.get("engine_status")
             if engine_status == "FAULTY":
-                self.logger.warning("EV_CP_E reports FAULTY status")
+                self.logger.warning("EV_CP_E reports FAULTY status.")
                 self.update_cp_status("FAULTY")
             elif engine_status == "ACTIVE":
-                self.logger.debug("EV_CP_E reports ACTIVE status")
-                # 如果当前状态是故障，尝试恢复
-                if hasattr(self, '_current_status') and self._current_status == "FAULTY":
+                self.logger.debug("EV_CP_E reports ACTIVE status.")
+                # 如果当前状态是故障，尝试恢复 (Central也需正常)
+                if (
+                    self._current_status == "FAULTY"
+                    and self.central_conn_mgr.is_connected
+                ):
                     self.update_cp_status("ACTIVE")
-                    
-        elif message_type == "SERVER_SHUTDOWN":
-            self.logger.warning("EV_CP_E server is shutting down")
-            self._handle_server_shutdown()
-        elif message_type == "CONNECTION_ERROR":
-            self.logger.error(f"Connection error from EV_CP_E: {message}")
+
         elif message_type == "charging_data":
             self._handle_charging_data_from_engine(message)
         elif message_type == "charging_completion":
@@ -440,184 +436,116 @@ class EV_CP_M:
         else:
             self.logger.warning(f"Unknown message type from EV_CP_E: {message_type}")
 
-    def _handle_central_message(self, message):
+    def _handle_message_from_central(
+        self, source_name: str, message: dict
+    ):  # 新的 Central 消息入口
         """
-        处理来自central的消息
+        处理来自central的消息。
         """
         message_type = message.get("type")
         if message_type == "register_response":
-            self.logger.info("Received registration response from central")
-            self.logger.debug(f"Registration response details: {message}")
+            self.logger.info("Received registration response from Central.")
+            self.logger.warning(f"Registration response details: {message}")
             if message.get("status") == "success":
-                self.logger.info("Registration successful")
-                # TODO 处理注册成功后的逻辑
-
-        elif message_type == "heartbeat_response":
-            self.logger.debug("Received heartbeat response from central")
-            if message.get("status") == "success":
-                self.logger.debug(f"Heartbeat acknowledged by central {message}")
+                self.logger.info("Registration successful.")
             else:
-                self.logger.warning(f"Heartbeat not acknowledged by central {message}")
-
-        elif message_type == "SERVER_SHUTDOWN":
-            self.logger.warning("Central server is shutting down")
-            self._handle_server_shutdown()
-
-        elif message_type == "CONNECTION_ERROR":
-            self.logger.error(f"Connection error from central: {message}")
-
+                self.logger.error(
+                    f"Registration failed: {message.get('reason', 'Unknown')}"
+                )
+        elif message_type == "heartbeat_response":
+            self.logger.warning("Received heartbeat response from Central.")
+            if message.get("status") == "success":
+                self.logger.warning(f"Heartbeat acknowledged by Central {message}")
+            else:
+                self.logger.warning(f"Heartbeat not acknowledged by Central {message}")
         elif message_type == "start_charging_command":
             self._handle_start_charging_command(message)
-        elif message_type == 'status_update_response':
-            self.logger.debug(f"Status update response from central: {message}")
-        elif message_type == 'CONNECTION_LOST':
-            self.logger.error(f"Connection lost notification from central: {message}")
-            self._handle_disconnection()
+        elif message_type == "charging_data_response":
+            self.logger.warning(f"Charging data response from Central: {message}")
+        elif message_type == 'fault_notification_response':
+            self.logger.warning(f"Fault notification response from Central: {message}")
+        elif message_type == "status_update_response":
+            self.logger.warning(f"Status update response from Central: {message}")
+        elif message_type == 'charge_completion_response':
+            self.logger.warning(f"Charge completion response from Central: {message}")
         else:
-            self.logger.warning(f"Unknown message type from central: {message_type}")
-
-    def _handle_server_shutdown(self):
-        self.logger.info("Initiating graceful shutdown due to central server shutdown")
-        threading.Thread(target=self._graceful_shutdown, daemon=False).start()
+            self.logger.warning(f"Unknown message type from Central: {message_type}")
 
     def _graceful_shutdown(self):
         """
-        Realiza un cierre ordenado del sistema
+        执行有序的系统关闭。
         """
-        # Dar tiempo para terminar operaciones pendientes
-        time.sleep(2)
-
-        # Detener loops activos
-        self.running = False
-        
-        self.logger.info(f"Waiting for threads to finish... {len(self.threads)} threads")
-        for thread in self.threads:
-            thread.join(timeout=5)
-            if thread.is_alive():
-                self.logger.warning(f"Thread {thread.name} did not finish in time")
-        self.logger.info("All threads have been stopped")
-
-        # Desconectar clientes
-        if self.central_client:
-            self.central_client.disconnect()
-        if self.engine_client:
-            self.engine_client.disconnect()
-
-        # Cerrar otros recursos si los hay
-        # TODO: Cerrar servidor para EV_CP_E cuando esté implementado
+        self.logger.info("Initiating graceful shutdown.")
+        self.running = False  # 首先，通知所有应用层循环停止
+        # 停止所有 ConnectionManager
+        if self.central_conn_mgr:
+            self.central_conn_mgr.stop()
+        if self.engine_conn_mgr:
+            self.engine_conn_mgr.stop()
+        # 等待 EV_CP_M 自身的业务逻辑线程 (心跳、健康检查) 结束
+        # 由于它们是守护线程并且循环条件依赖 self.running 和 conn_mgr.is_connected，
+        # 在 `running = False` 和 `conn_mgr.stop()` 后，它们应该会自然终止。
+        # 这里可以加入适当的 `join` 来确保它们真的退出了，或者依赖 `daemon=True` 的性质。
+        # 如果是 daemon=True，在主线程退出后，它们会被强制终止，这在大多数情况下是接受的。
+        # 为了更明确的控制，可以在 `_send_heartbeat` 和 `_check_engine_health` 中加一个事件标志来立即停止。
+        self.logger.info("All connection managers stopped. Main loop will now exit.")
+        # 原来的 _exit(0) 彻底移除！
 
         self.logger.info("Shutdown complete")
-    def _retry_connection(self):
-        """
-        重试连接到central
-        """
-        retry_count = 0
-        max_retries = 10
-
-        while self.running and retry_count < max_retries:
-            retry_count += 1
-            self.logger.info(f"Connection retry to central {retry_count}/{max_retries}")
-
-            if self._connect_to_central():
-                self.logger.info("Reconnected to EV_Central")
-                return True
-
-            self.logger.error(f"Connection failed, waiting {self.RETRY_INTERVAL}s...")
-            time.sleep(self.RETRY_INTERVAL)
-
-        self.logger.error(f"Connection failed after {max_retries} attempts")
-        return False
-
-    def _retry_registration(self):
-        """
-        重试注册机制
-        """
-        retry_count = 0
-        max_retries = 5
-
-        while self.running and retry_count < max_retries:
-            retry_count += 1
-            self.logger.info(f"Registration retry {retry_count}/{max_retries}")
-
-            if self._register_with_central():
-                self.logger.info("Registration successful")
-                self._start_heartbeat_thread()
-                return True
-
-            self.logger.error(f"Registration failed, waiting {self.RETRY_INTERVAL}s...")
-            time.sleep(self.RETRY_INTERVAL)
-
-        self.logger.error(f"Registration failed after {max_retries} attempts")
-        return False
-    def _ensure_connection_and_registration(self):
-        """
-        确保连接和注册
-        """
-        self.logger.info("Ensuring connection and registration with EV_Central")
-        # Primero asegurar conexión
-        if not self.central_client or not self.central_client.is_connected:
-            if not self._retry_connection():
-                return False
-
-        # Luego asegurar registro
-        return self._retry_registration()
 
     def initialize_systems(self):
         """
-        初始化系统，连接到central和EV_CP_E
+        初始化系统，创建 ConnectionManager 实例并启动它们。
         """
-        if self._connect_to_central():
-            self.logger.info("Connected to EV_Central")
-            if self._register_with_central():
-                self.logger.info("Registration message sent to central")
-                self._start_heartbeat_thread()
-            else:
-                self.logger.error("Failed to send registration message to EV_Central")
-                retry_thread = threading.Thread(target=self._ensure_connection_and_registration, daemon=False)
-                self.threads.append(retry_thread)
-                retry_thread.start()
-        else:
-            self.logger.error("Failed to connect to EV_Central")
-            ensure_thread = threading.Thread(target=self._ensure_connection_and_registration, daemon=False)
-            self.threads.append(ensure_thread)
-            ensure_thread.start()
-        if self._connect_to_engine():
-            self.logger.info("Connected to EV_CP_E")
-        else:
-            self.logger.error("Failed to connect to EV_CP_E")
+        self.logger.info("Initializing connection managers...")
 
-        # 启动检查EV_CP_E健康状态的线程
-        health_thread = threading.Thread(target=self._check_engine_health, daemon=False)
-        self.threads.append(health_thread)
-        health_thread.start()
+        # 创建 Central 的 ConnectionManager
+        self.central_conn_mgr = ConnectionManager(
+            self.args.ip_port_ev_central[0],
+            self.args.ip_port_ev_central[1],
+            "Central",
+            self.logger,
+            self._handle_message_from_central,  # 消息回调
+            self._handle_connection_status_change,  # 连接状态回调
+        )
+        self.central_conn_mgr.start()
+        # 创建 Engine 的 ConnectionManager
+        self.engine_conn_mgr = ConnectionManager(
+            self.args.ip_port_ev_cp_e[0],
+            self.args.ip_port_ev_cp_e[1],
+            "Engine",
+            self.logger,
+            self._handle_message_from_engine,  # 消息回调
+            self._handle_connection_status_change,  # 连接状态回调
+        )
+        self.engine_conn_mgr.start()
+        self.logger.info("Connection managers started. Waiting for connections...")
 
     def start(self):
         self.running = True
-        self.logger.info(f"Starting EV_CP_M module")
+        self.logger.info(f"Starting EV_CP_M module (ID: {self.args.id_cp})")
         self.logger.info(
-            f"Listening  to EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
+            f"Configured for EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
         )
         self.logger.info(
-            f"Connecting to EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}"
+            f"Configured for EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}"
         )
-        self.logger.info(f"Point ID: {self.args.id_cp}")
-
         self.initialize_systems()
-
-        # Aquí iría la lógica para iniciar el módulo, conectar al broker, leer sensores, etc.
         try:
             while self.running:
-                time.sleep(1)  # Simulación de la ejecución continua del servicio
-                # self.logger.debug(f"EV_CP_M is running... {self.running}")
+                time.sleep(1)  # 主循环，等待管理器和回调函数处理事件
         except KeyboardInterrupt:
-            self.logger.info("Shutting down EV CP M")
-            self._graceful_shutdown()
+            self.logger.info("Keyboard interrupt detected. Shutting down EV_CP_M.")
         except Exception as e:
-            self.logger.error(f"Unexpected error: {e}")
-            self._graceful_shutdown()
+            self.logger.error(
+                f"Unexpected error in EV_CP_M main loop: {e}", exc_info=True
+            )
         finally:
-            self.logger.info("EV_CP_M has stopped")
-            os._exit(0)  # Asegura que el proceso termina
+            self.logger.info(
+                "EV_CP_M main loop terminated. Performing graceful shutdown."
+            )
+            self._graceful_shutdown()
+            self.logger.info("EV_CP_M has completely stopped.")
 
 
 if __name__ == "__main__":
@@ -625,4 +553,5 @@ if __name__ == "__main__":
 
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()
-# TODO 修复debug -> 更新python扩展解决
+
+# TODO WARNING:2025-10-17 22:43:07:[EC_CP_M.py:470 - _handle_message_from_central] Charge completion response from Central: {'type': 'charge_completion_response', 'message_id': 'c2d40682-0acd-40ce-96c0-218a1ce6e02d', 'status': 'failure', 'info': '消息中缺少必要字段: driver_id, driver_id'}
