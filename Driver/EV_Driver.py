@@ -47,7 +47,7 @@ class Driver:
                 logger=self.logger,
                 message_callback=self._handle_central_message,
             )
-            return self.central_client.connect("localhost", 5000)
+            return self.central_client.connect(self.args.broker[0], self.args.broker[1])
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
             return False
@@ -264,3 +264,5 @@ if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     driver = Driver(logger=logger)
     driver.start()
+
+# TODO 需要有kafka的时候才能进行开发测试
