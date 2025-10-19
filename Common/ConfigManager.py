@@ -76,6 +76,11 @@ class ConfigManager:
     def get_ip_port_ev_m(self):
         ip_port = self.get("IP_PORT_EV_M", "localhost:6000").split(":")
         return (ip_port[0], int(ip_port[1]))
+    
+    def get_client_id(self):
+        """Obtener el ID del cliente/driver desde la configuración."""
+        return self.get("CLIENT_ID", "DRIVER_001")
+    
 if __name__ == "__main__":
 
     config = ConfigManager()
