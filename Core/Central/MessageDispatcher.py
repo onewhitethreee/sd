@@ -27,12 +27,17 @@ class MessageDispatcher:
         socket_server,
         charging_points_connections,
         client_to_ref,
+        driver_connections,
+        client_to_driver,
     ):
         self.logger = logger
         self.db_manager = db_manager
         self.socket_server = socket_server
         self._cp_connections = charging_points_connections
         self._client_to_cp = client_to_ref
+        self._driver_connections = driver_connections
+        self._client_to_driver = client_to_driver
+
         self.handlers = {
             "register_request": self._handle_register_message,
             "heartbeat_request": self._handle_heartbeat_message,
@@ -258,6 +263,11 @@ class MessageDispatcher:
             # 更新充电点状态为充电中
             self.db_manager.update_charging_point_status(cp_id=cp_id, status=Status.CHARGING.value)
 
+            # Registrar mapeo Driver <-> client_id
+            self._driver_connections[driver_id] = client_id
+            self._client_to_driver[client_id] = driver_id
+            self.logger.debug(f"Driver {driver_id} mapped to client ID {client_id}")
+
             # 向Monitor发送启动充电命令
             self._send_start_charging_to_monitor(cp_id, session_id, driver_id)
 
@@ -352,13 +362,15 @@ class MessageDispatcher:
         self.logger.info(f"正在处理来自 {client_id} 的充电完成通知...")
 
         cp_id = message.get("cp_id")
+        session_id = message.get("session_id")
         driver_id = message.get("driver_id")
         energy_consumed = message.get("energy_consumed_kwh")
         total_cost = message.get("total_cost")
         message_id = message.get("message_id")
 
         missing_info = self._check_missing_fields(
-            message, ["cp_id", "driver_id", "energy_consumed_kwh", "total_cost", "message_id", "driver_id"]
+            #message, ["cp_id", "driver_id", "energy_consumed_kwh", "total_cost", "message_id", "driver_id"]
+            message, ["cp_id", "session_id", "energy_consumed_kwh", "total_cost", "message_id"]
         )
         if missing_info:
             return self._create_failure_response(
@@ -397,6 +409,16 @@ class MessageDispatcher:
             self.logger.info(
                 f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed}kWh, 费用: €{total_cost}"
             )
+
+            if driver_id:
+                self._send_completion_notification_to_driver(
+                    driver_id = driver_id,
+                    session_id=session_id,
+                    energy_consumed=energy_consumed,
+                    total_cost=total_cost
+                )
+            else:
+                self.logger.warning(f"No driver_id in completion message for session {session_id}")
 
             return MessageFormatter.create_response_message(
                 cp_type="charge_completion_response",
@@ -654,6 +676,47 @@ class MessageDispatcher:
         self.logger.warning(
             "此功能尚未实现，需要通过消息队列或其他方式发送给司机应用程序"
         )
+
+    def _send_completion_notification_to_driver(self, driver_id, session_id, energy_consumed, total_cost):
+        """
+        Enviar notificación de finalización de carga al conductor
+        """
+        try:
+            # Buscar el client_id asociado al driver_id
+            driver_client_id = self._driver_connections.get(driver_id)
+            
+            if not driver_client_id:
+                self.logger.warning(f"Driver {driver_id} no está conectado, no se puede enviar notificación de completion")                
+                return False
+
+            # Construir el mensaje de notificación
+            completion_message = {
+                "type": "charge_completion_notification",
+                "message_id": str(uuid.uuid4()),
+                "driver_id": driver_id,
+                "session_id": session_id,
+                "energy_consumed_kwh": energy_consumed,
+                "total_cost": total_cost,
+                "timestamp": int(time.time()),
+            }
+
+            # Enviar al Driver
+            if self.socket_server:
+                success = self.socket_server.send_message_to_client(driver_client_id, completion_message)
+                if success:
+                    self.logger.info(f"Notificación de finalización de carga enviada al Driver {driver_id} para la sesión {session_id}")
+                    return True
+                else:
+                    self.logger.error(f"Error al enviar notificación de finalización de carga al Driver {driver_id}")
+                    return False
+            else:
+                self.logger.error("El servidor de sockets no está inicializado")
+                return False
+
+        except Exception as e:
+            #self.logger.error(f"发送充电完成通知失败: {e}")
+            self.logger.error(f"Error al enviar notificación de finalización de carga a Driver: {e}")
+            return False
 
     def _send_start_charging_to_monitor(self, cp_id, session_id, driver_id):
         """
