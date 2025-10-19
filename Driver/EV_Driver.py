@@ -47,7 +47,10 @@ class Driver:
                 logger=self.logger,
                 message_callback=self._handle_central_message,
             )
-            return self.central_client.connect(self.args.broker[0], self.args.broker[1])
+            #return self.central_client.connect(self.args.broker[0], self.args.broker[1])  # Conecta al broker, en vez de al central directamente
+            
+            central_address = self.config.get_ip_port_ev_cp_central()                      # Conecta al central 
+            return self.central_client.connect(central_address[0], central_address[1])
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
             return False
