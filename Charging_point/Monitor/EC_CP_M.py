@@ -389,11 +389,17 @@ class EV_CP_M:
                 "Not connected to Central, cannot forward charging completion."
             )
             return False
+        driver_id  = message.get("driver_id")
+        if not driver_id:
+            self.logger.warning(f"Charging completion message missing driver_id: {message}")
+            driver_id = message.get("ev_id", "unknown_driver")
+
         completion_message = {
             "type": "charge_completion",
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": message.get("session_id"),
+            "driver_id": driver_id,
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
             "timestamp": message.get("timestamp", int(time.time())),
