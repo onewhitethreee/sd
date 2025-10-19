@@ -43,14 +43,19 @@ class Driver:
     def _connect_to_central(self):
         """连接到中央系统"""
         try:
+            central_address = self.config.get_ip_port_ev_cp_central()    # obtener la dirección del central desde la configuración
+
             self.central_client = MySocketClient(
                 logger=self.logger,
                 message_callback=self._handle_central_message,
             )
             #return self.central_client.connect(self.args.broker[0], self.args.broker[1])  # Conecta al broker, en vez de al central directamente
+            success = self.central_client.connect(central_address[0], central_address[1])   # Conecta al central, NO al broker
+
+            if success:
+                self.logger.info(f"Connected to Central at {central_address[0]}:{central_address[1]}")
             
-            central_address = self.config.get_ip_port_ev_cp_central()                      # Conecta al central 
-            return self.central_client.connect(central_address[0], central_address[1])
+            return success                                 
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
             return False
