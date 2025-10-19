@@ -88,8 +88,12 @@ class MessageDispatcher:
                 message_id="",
                 info="注册消息中缺少 message_id 字段",
             )
+        
+        #missing_info = self._check_missing_fields(                         # Campo driver_id dublicado y falta session_id
+        #    message, ["id", "location", "price_per_kwh", "message_id"]
+        #)
         missing_info = self._check_missing_fields(
-            message, ["id", "location", "price_per_kwh", "message_id"]
+            message, ["cp_id", "session_id", "energy_consumed_kwh", "total_cost", "message_id"]
         )
         if missing_info:
             return self._create_failure_response(
