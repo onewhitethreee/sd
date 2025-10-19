@@ -32,6 +32,10 @@ class EV_Central:
         
         self._cp_connections = {}  # {cp_id: client_socket}
         self._client_to_cp = {}  # {client_id: cp_id}
+
+        self._driver_connections = {}  # {driver_id: client_socket}
+        self._client_to_driver = {}  # {client_id: driver_id}
+
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 app_name="EV_Central",
@@ -115,6 +119,8 @@ class EV_Central:
             socket_server=self.socket_server,
             charging_points_connections=self._cp_connections,
             client_to_ref=self._client_to_cp,
+            driver_connections=self._driver_connections,
+            client_to_driver=self._client_to_driver,
         )
 
     def _handle_client_disconnect(self, client_id):
@@ -136,6 +142,17 @@ class EV_Central:
             # 清理映射关系
             del self._cp_connections[cp_id]
             del self._client_to_cp[client_id]
+
+        elif client_id in self._client_to_driver:
+            driver_id = self._client_to_driver[client_id]
+            self.logger.info(f"Driver {client_id} (client: {client_id}) disconnected")
+
+            # 清理映射关系
+            del self._driver_connections[driver_id]
+            del self._client_to_driver[client_id]
+            
+        else:
+            self.logger.warning(f"Unknown client {client_id} disconnected")
 
     def _process_charging_point_message(self, client_id, message):
         """
