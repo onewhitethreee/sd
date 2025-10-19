@@ -98,7 +98,7 @@ class MessageDispatcher:
         #    message, ["id", "location", "price_per_kwh", "message_id"]
         #)
         missing_info = self._check_missing_fields(
-            message, ["cp_id", "session_id", "energy_consumed_kwh", "total_cost", "message_id"]
+            message, ["id", "location", "price_per_kwh", "message_id"]
         )
         if missing_info:
             return self._create_failure_response(
@@ -271,15 +271,17 @@ class MessageDispatcher:
             # 向Monitor发送启动充电命令
             self._send_start_charging_to_monitor(cp_id, session_id, driver_id)
 
-            return MessageFormatter.create_response_message(
+            response = MessageFormatter.create_response_message(
                 cp_type="charge_request_response",
                 message_id=message_id,
                 status="success",
-                info=f"充电请求已授权，充电点 {cp_id} 开始为司机 {driver_id} 充电，会话ID: {session_id}",
-                #session_id=session_id,
+                info=f"充电请求已授权，充电点 {cp_id} 开始为司机 {driver_id} 充电，会话ID: {session_id}"
             )
+
             response["session_id"] = session_id
+            response["cp_id"] = cp_id
             return response
+            
         except Exception as e:
             self.logger.error(f"授权充电请求失败: {e}")
             return self._create_failure_response(

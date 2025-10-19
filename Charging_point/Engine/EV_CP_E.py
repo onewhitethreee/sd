@@ -447,15 +447,33 @@ class EV_CP_E:
                     self.running = False
                     break
                 elif command == 's':
-                    if not self.is_charging:
-                        self._start_charging_session("manual_ev")
-                        self.logger.info("Manual charging started")
+                    #if not self.is_charging:
+                    #    self._start_charging_session("manual_ev")
+                    #    self.logger.info("Manual charging started")
+                    #else:
+                    #    self.logger.info("Already charging")
+                    if self.is_charging:
+                        self.logger.warning("Already charging, cannot start new session")
+                        self.logger.warning("Use 'e' to end current charging session first")
+
+                        if self.current_session:
+                            self.logger.info(f"Current session ID: {self.current_session['session_id']}")
+                            self.logger.info(f"Driver: {self.current_session.get('driver_id', 'unknown_driver')}")
                     else:
-                        self.logger.info("Already charging")
+                        # solo permitir inicio manual si no hay sesión activa
+                        self._start_charging_session("manual_ev","manual_driver")
+                        self.logger.info("Manual charging started")
+
                 elif command == 'e':
                     if self.is_charging:
-                        self._stop_charging_session("manual_ev")
-                        self.logger.info("Manual charging stopped")
+                        if self.current_session:
+                            ev_id = self.current_session.get("ev_id", "manual_ev")
+                            self._stop_charging_session(ev_id)
+                            self.logger.info("Manual charging stopped")
+                        else:
+                            self.logger.warning("No current session found")
+                        #self._stop_charging_session("manual_ev")
+                        #self.logger.info("Manual charging stopped")
                     else:
                         self.logger.info("No active charging session")
                 else:
