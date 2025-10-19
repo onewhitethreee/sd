@@ -234,7 +234,9 @@ class Driver:
     def start(self):
         """启动Driver应用"""
         self.logger.info(f"Starting Driver module")
-        self.logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        #self.logger.info(f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}")
+        central_address = self.config.get_ip_port_ev_cp_central()
+        self.logger.info(f"Connecting to Central at {central_address[0]}:{central_address[1]}")
         self.logger.info(f"Client ID: {self.args.id_client}")
         
         # 连接到中央系统
