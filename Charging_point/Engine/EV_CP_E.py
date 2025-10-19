@@ -157,6 +157,7 @@ class EV_CP_E:
         self.logger.info("Received start charging command from Monitor")
         
         ev_id = message.get("ev_id", "unknown_ev")
+        driver_id = message.get("driver_id")
         session_id = message.get("session_id")
         
         if self.is_charging:
@@ -167,8 +168,9 @@ class EV_CP_E:
                 "message": "Already charging",
             }
         
-        success = self._start_charging_session(ev_id)
-        
+        #success = self._start_charging_session(ev_id)
+        success = self._start_charging_session(ev_id, driver_id)
+
         if success and session_id:
             # 更新会话ID
             if self.current_session:
@@ -248,7 +250,7 @@ class EV_CP_E:
 
         self.logger.info("System shutdown complete")
 
-    def _start_charging_session(self, ev_id):
+    def _start_charging_session(self, ev_id, driver_id=None):
         """启动充电会话"""
         self.logger.info(f"Starting charging session for EV: {ev_id}")
         
@@ -260,6 +262,7 @@ class EV_CP_E:
         self.current_session = {
             "session_id": str(uuid.uuid4()),
             "ev_id": ev_id,
+            "driver_id": driver_id or ev_id,
             "start_time": time.time(),
             "energy_consumed": 0.0,
             "total_cost": 0.0
@@ -379,6 +382,7 @@ class EV_CP_E:
             "type": "charging_completion",
             "message_id": str(uuid.uuid4()),
             "session_id": self.current_session["session_id"],
+            "driver_id": self.current_session.get("driver_id"),
             "energy_consumed_kwh": round(self.charging_data["energy_consumed"], 3),
             "total_cost": round(self.charging_data["total_cost"], 2),
             "duration": self.current_session.get("duration", 0),
