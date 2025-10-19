@@ -1,4 +1,5 @@
 DEBUG_MODE=True
+
 BROKER_ADDRESS=localhost:9092
 
 DB_ADDRESS=localhost:5432

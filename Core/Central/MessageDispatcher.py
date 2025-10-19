@@ -276,8 +276,10 @@ class MessageDispatcher:
                 message_id=message_id,
                 status="success",
                 info=f"充电请求已授权，充电点 {cp_id} 开始为司机 {driver_id} 充电，会话ID: {session_id}",
-                session_id=session_id,
+                #session_id=session_id,
             )
+            response["session_id"] = session_id
+            return response
         except Exception as e:
             self.logger.error(f"授权充电请求失败: {e}")
             return self._create_failure_response(

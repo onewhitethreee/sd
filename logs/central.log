@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "E:\UA\Tercero\SD\sd\Core\Central\EV_Central.py", line 210, in <module>
+    ev_central = EV_Central(logger=logger)
+  File "E:\UA\Tercero\SD\sd\Core\Central\EV_Central.py", line 60, in __init__
+    class Args:
+    ...<2 lines>...
+        db = self.config.get_db()
+  File "E:\UA\Tercero\SD\sd\Core\Central\EV_Central.py", line 61, in Args
+    listen_port = self.config.get_listen_port()
+  File "E:\UA\Tercero\SD\sd\Common\ConfigManager.py", line 60, in get_listen_port
+    return int(self.get("LISTEN_PORT", "5000"))
+ValueError: invalid literal for int() with base 10: '5000                        # Puerto en el que Central escucha conexiones'
