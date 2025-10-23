@@ -9,11 +9,11 @@ import time
 import threading
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-from Common.CustomLogger import CustomLogger
-from Common.ConfigManager import ConfigManager
+from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
+from Common.Config.CustomLogger import CustomLogger
+from Common.Config.ConfigManager import ConfigManager
 from ConnectionManager import ConnectionManager
-from Common.Status import Status
+from Common.Config.Status import Status
 
 
 class EV_CP_M:

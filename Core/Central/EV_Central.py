@@ -9,13 +9,13 @@ import uuid
 from datetime import datetime, timezone
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-from Common.SqliteConnection import SqliteConnection
-from Common.CustomLogger import CustomLogger
-from Common.ConfigManager import ConfigManager
-from Common.MySocketServer import MySocketServer
-from Common.Status import Status
-from Common.KafkaManager import KafkaManager, KafkaTopics
+from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
+from Common.Database.SqliteConnection import SqliteConnection
+from Common.Config.CustomLogger import CustomLogger
+from Common.Config.ConfigManager import ConfigManager
+from Common.Network.MySocketServer import MySocketServer
+from Common.Config.Status import Status
+from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Core.Central.MessageDispatcher import MessageDispatcher
 
 
@@ -142,6 +142,12 @@ class EV_Central:
         """
         作为消息的分发中心。根据消息的 'type' 字段，调用相应的处理方法。
         """
+        from Common.Message.MessageTransformer import MessageTransformer
+
+        # 如果message是字符串列表，转换为字典
+        if isinstance(message, list):
+            message = MessageTransformer.to_dict_with_defaults(message)
+
         self.logger.info(f"收到来自客户端 {client_id} 的消息: {message}")
 
         return self.message_dispatcher.dispatch_message(client_id, message)

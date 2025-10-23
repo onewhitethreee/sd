@@ -6,8 +6,8 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from Common.MySocketClient import MySocketClient
-from Common.CustomLogger import CustomLogger  
+from Common.Network.MySocketClient import MySocketClient
+from Common.Config.CustomLogger import CustomLogger
 
 
 class ConnectionManager:
@@ -60,6 +60,12 @@ class ConnectionManager:
         底层MySocketClient接收到消息后的内部处理函数。
         这里我们捕获连接断开的特殊消息，并更新状态。
         """
+        from Common.Message.MessageTransformer import MessageTransformer
+
+        # 如果message是字符串列表，转换为字典
+        if isinstance(message, list):
+            message = MessageTransformer.to_dict_with_defaults(message)
+
         msg_type = message.get("type")
         if msg_type == "CONNECTION_LOST" or msg_type == "SERVER_SHUTDOWN":
             self.logger.warning(
@@ -93,7 +99,7 @@ class ConnectionManager:
         停止连接管理器。会尝试优雅地停止内部重连线程并断开所有连接。
         """
         try:
-                
+
             if self._running:
                 self.logger.info(f"[{self.name}] Stopping ConnectionManager.")
                 self._running = False

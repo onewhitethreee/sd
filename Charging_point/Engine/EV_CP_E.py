@@ -10,12 +10,12 @@ import uuid
 import random
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-from Common.ConfigManager import ConfigManager
-from Common.CustomLogger import CustomLogger
-from Common.MySocketServer import MySocketServer
-from Common.Status import Status
-from Common.KafkaManager import KafkaManager, KafkaTopics
+from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
+from Common.Config.ConfigManager import ConfigManager
+from Common.Config.CustomLogger import CustomLogger
+from Common.Network.MySocketServer import MySocketServer
+from Common.Config.Status import Status
+from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 
 
 class EV_CP_E:
@@ -47,8 +47,8 @@ class EV_CP_E:
 
         self.running = False
         self.is_charging = False
-        self.monitor_server : MySocketServer = None
-        self.kafka_manager : KafkaManager = None  # Kafka管理器
+        self.monitor_server: MySocketServer = None
+        self.kafka_manager: KafkaManager = None  # Kafka管理器
 
         self.current_session = None
         self.message_handlers = {
@@ -56,7 +56,7 @@ class EV_CP_E:
             "stop_command": self._handle_stop_command,
             "resume_command": self._handle_resume_command,
             "start_charging_command": self._handle_start_charging_command,
-        }       
+        }
 
     @property
     def is_charging(self):
@@ -73,6 +73,12 @@ class EV_CP_E:
 
     def _process_monitor_message(self, client_id, message):
         """处理来自Monitor的消息"""
+        from Common.Message.MessageTransformer import MessageTransformer
+
+        # 如果message是字符串列表，转换为字典
+        if isinstance(message, list):
+            message = MessageTransformer.to_dict_with_defaults(message)
+
         try:
             msg_type = message.get("type")
             self.logger.debug(f"Received message from Monitor {client_id}: {msg_type}")
@@ -484,14 +490,18 @@ class EV_CP_E:
                         self.monitor_server._simulate_client_disconnect("test_monitor")
                     else:
                         self.logger.warning("Monitor server not running.")
-                        
+
                 elif command == "s":
                     if not self.is_charging:
-                        session_id = str(uuid.uuid4()) # 手动模式也创建会话ID
+                        session_id = str(uuid.uuid4())  # 手动模式也创建会话ID
                         self._start_charging_session("manual_ev", session_id)
-                        self.logger.info(f"Manual charging session '{session_id}' started.")
+                        self.logger.info(
+                            f"Manual charging session '{session_id}' started."
+                        )
                     else:
-                        self.logger.info(f"Already charging session '{self.current_session['session_id']}'.")
+                        self.logger.info(
+                            f"Already charging session '{self.current_session['session_id']}'."
+                        )
                 elif command == "e":
                     if self.is_charging:
                         self._stop_charging_session()
@@ -504,7 +514,9 @@ class EV_CP_E:
                     )
             except EOFError:
                 # 处理输入结束，比如管道关闭
-                self.logger.info("EOF received in interactive commands. Exiting command thread.")
+                self.logger.info(
+                    "EOF received in interactive commands. Exiting command thread."
+                )
                 break
             except Exception as e:
                 self.logger.error(f"Error in interactive commands: {e}", exc_info=True)

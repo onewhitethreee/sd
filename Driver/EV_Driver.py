@@ -11,11 +11,11 @@ import threading
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
-from Common.AppArgumentParser import AppArgumentParser, ip_port_type
-from Common.CustomLogger import CustomLogger
-from Common.ConfigManager import ConfigManager
-from Common.MySocketClient import MySocketClient
-from Common.KafkaManager import KafkaManager, KafkaTopics
+from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
+from Common.Config.CustomLogger import CustomLogger
+from Common.Config.ConfigManager import ConfigManager
+from Common.Network.MySocketClient import MySocketClient
+from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 
 
 class Driver:
@@ -69,6 +69,12 @@ class Driver:
 
     def _handle_central_message(self, message):
         """处理来自中央系统的消息"""
+        from Common.Message.MessageTransformer import MessageTransformer
+
+        # 如果message是字符串列表，转换为字典
+        if isinstance(message, list):
+            message = MessageTransformer.to_dict_with_defaults(message)
+
         message_type = message.get("type")
 
         try:
@@ -451,4 +457,3 @@ if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     driver = Driver(logger=logger)
     driver.start()
-

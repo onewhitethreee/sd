@@ -2,7 +2,8 @@
 import socket
 import threading
 import time
-from Common.MessageFormatter import MessageFormatter
+from Common.Message.MessageFormatter import MessageFormatter
+from Common.Message.MessageTransformer import MessageTransformer
 
 
 class MySocketClient:
@@ -33,7 +34,7 @@ class MySocketClient:
 
         except Exception as e:
             self.logger.error(f"Connection failed: {e} {host}:{port}")
-            
+
             if self.socket:
                 self.socket.close()
                 self.socket = None
@@ -95,7 +96,9 @@ class MySocketClient:
             return False
 
         try:
-            packed = MessageFormatter.pack_message(message)
+            # 使用 MessageTransformer 转换消息格式
+            message_list = MessageTransformer.to_list(message)
+            packed = MessageFormatter.pack_message(message_list)
             self.socket.send(packed)
             # self.logger.debug(f"Sent message: {packed}")
             return True

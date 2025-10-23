@@ -11,12 +11,13 @@ import time
 import uuid
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from Common.SqliteConnection import SqliteConnection
-from Common.MessageFormatter import MessageFormatter
-from Common.CustomLogger import CustomLogger
-from Common.ConfigManager import ConfigManager
-from Common.MySocketServer import MySocketServer
-from Common.Status import Status
+from Common.Database.SqliteConnection import SqliteConnection
+from Common.Message.MessageFormatter import MessageFormatter
+from Common.Message.MessageTransformer import MessageTransformer
+from Common.Config.CustomLogger import CustomLogger
+from Common.Config.ConfigManager import ConfigManager
+from Common.Network.MySocketServer import MySocketServer
+from Common.Config.Status import Status
 
 
 class MessageDispatcher:
@@ -52,13 +53,16 @@ class MessageDispatcher:
 
         handler = self.handlers.get(message.get("type"))
         if not handler:
-            return {
+            response = {
                 "type": "error_response",
                 "message_id": message.get("message_id", ""),
                 "status": "failure",
                 "info": f"未知消息类型: {message.get('type')}",
             }
-        return handler(client_id, message)
+            return MessageTransformer.to_list(response)
+
+        response = handler(client_id, message)
+        return MessageTransformer.to_list(response)
 
     def _create_failure_response(
         self, message_type: str, message_id, info: str
