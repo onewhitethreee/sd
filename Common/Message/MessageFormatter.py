@@ -2,12 +2,7 @@
 
 class MessageFormatter:
     """
-    Mensajería basada en el estándar de empaquetado <STX><DATA><ETX><LRC>
-    donde:
-        STX: Start of Text (0x02)
-        DATA: Mensaje字段，用'#'分隔，例如 "Código Operación#campo1#...#campo n"
-        ETX: End of Text (0x03)
-        LRC: Longitud de Redundancia Cíclica (XOR de todos los bytes en DATA)
+    Mensajería basada en el estándar de empaquetado <STX><DATA><ETX><LRC> para el proyecto de practica.
     """
 
     STX = b"\x02"  # Start of Text(ASCII)
@@ -30,9 +25,9 @@ class MessageFormatter:
         message_fields_list: A list of strings, e.g., ["OPERATION_CODE", "field1", "field2"]
         """
         if not isinstance(message_fields_list, (list, tuple)):
-            raise TypeError("消息必须是一个字符串列表或元组。")
+            raise TypeError("No es una lista o tupla.")
         if not all(isinstance(field, str) for field in message_fields_list):
-            raise TypeError("消息中的所有字段都必须是字符串。")
+            raise TypeError("No es una lista de cadenas.")
 
         try:
             message_data_str = "#".join(message_fields_list)
@@ -53,23 +48,22 @@ class MessageFormatter:
             message_str.startswith(MessageFormatter.STX)
             and MessageFormatter.ETX in message_str
         ):
-            raise ValueError("消息格式错误：缺少 STX 或 ETX。")
+            raise ValueError("Formato de mensaje incorrecto.")
         try:
             etx_index = message_str.index(MessageFormatter.ETX)
-            message_data_bytes = message_str[1:etx_index]  # 现在这是 DATA 部分的 bytes
+            message_data_bytes = message_str[1:etx_index]  
             lrc_received = message_str[etx_index + 1 : etx_index + 2]
             lrc_calculated = MessageFormatter._calculate_lrc(message_data_bytes)
 
             if lrc_received != lrc_calculated:
-                raise ValueError("LRC 不匹配，消息已损坏。")
+                raise ValueError("LRC no coincide, mensaje dañado.")
 
-            # 就是这样！解码，然后用 # 分割！
             message_data_str = message_data_bytes.decode(encoding)
             message_fields_list = message_data_str.split("#")
-            return message_fields_list  # 返回字符串列表
+            return message_fields_list  
         except (ValueError, UnicodeDecodeError) as e:
-            raise ValueError(f"解包消息时出错: {e}") from e
-
+            raise ValueError(f"Error al descomprimir el mensaje: {e}") from e
+    
     @staticmethod
     def extract_complete_message(buffer):
         """
@@ -115,7 +109,7 @@ class MessageFormatter:
         """
         return [
             cp_type if cp_type else "",
-            str(message_id) if message_id is not None else "",  # 确保ID是字符串
+            str(message_id) if message_id is not None else "", 
             status if status else "",
             info if info else "",
         ]
