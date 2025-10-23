@@ -32,7 +32,8 @@ class MySocketClient:
             return True
 
         except Exception as e:
-            self.logger.error(f"Connection failed: {e}")
+            self.logger.error(f"Connection failed: {e} {host}:{port}")
+            
             if self.socket:
                 self.socket.close()
                 self.socket = None
@@ -96,7 +97,7 @@ class MySocketClient:
         try:
             packed = MessageFormatter.pack_message(message)
             self.socket.send(packed)
-            self.logger.debug(f"Sent message: {packed}")
+            # self.logger.debug(f"Sent message: {packed}")
             return True
         except Exception as e:
             self.logger.error(f"Send failed: {e}")

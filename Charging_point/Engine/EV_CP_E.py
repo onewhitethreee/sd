@@ -15,6 +15,7 @@ from Common.ConfigManager import ConfigManager
 from Common.CustomLogger import CustomLogger
 from Common.MySocketServer import MySocketServer
 from Common.Status import Status
+from Common.KafkaManager import KafkaManager, KafkaTopics
 
 
 class EV_CP_E:
@@ -47,13 +48,14 @@ class EV_CP_E:
         self.running = False
         self.is_charging = False
         self.monitor_server = None
+        self.kafka_manager = None  # Kafka管理器
         self.current_session = None
         self.charging_thread = None
         self.charging_data = {
             "energy_consumed": 0.0,
             "total_cost": 0.0,
             "charging_rate": 0.0,  # kWh per second
-            "price_per_kwh": 0.20
+            "price_per_kwh": 0.20,
         }
 
     def get_current_status(self):
@@ -134,12 +136,12 @@ class EV_CP_E:
     def _handle_resume_command(self, message):
         """处理恢复命令"""
         self.logger.info("Received resume command from Monitor")
-        
+
         # 实现恢复逻辑
         if not self.running:
             self.running = True
             self.logger.info("Engine resumed operation")
-        
+
         # 如果当前状态是故障，重置为活跃
         if self.get_current_status() == Status.FAULTY.value:
             self.logger.info("Engine status reset from FAULTY to ACTIVE")
@@ -155,10 +157,10 @@ class EV_CP_E:
     def _handle_start_charging_command(self, message):
         """处理开始充电命令"""
         self.logger.info("Received start charging command from Monitor")
-        
+
         ev_id = message.get("ev_id", "unknown_ev")
         session_id = message.get("session_id")
-        
+
         if self.is_charging:
             return {
                 "type": "command_response",
@@ -166,47 +168,51 @@ class EV_CP_E:
                 "status": "failure",
                 "message": "Already charging",
             }
-        
+
         success = self._start_charging_session(ev_id)
-        
+
         if success and session_id:
             # 更新会话ID
             if self.current_session:
                 self.current_session["session_id"] = session_id
-        
+
         response = {
             "type": "command_response",
             "message_id": message.get("message_id"),
             "status": "success" if success else "failure",
             "message": "Charging started" if success else "Failed to start charging",
-            "session_id": self.current_session["session_id"] if self.current_session else None
+            "session_id": (
+                self.current_session["session_id"] if self.current_session else None
+            ),
         }
         return response
 
     def _handle_monitor_disconnect(self, client_id):
         """处理Monitor断开连接"""
         self.logger.warning(f"Monitor {client_id} disconnected")
-        
+
         # 进入安全模式：停止当前充电会话
         if self.is_charging:
-            self.logger.warning("Monitor disconnected during charging - stopping charging session for safety")
+            self.logger.warning(
+                "Monitor disconnected during charging - stopping charging session for safety"
+            )
             self._stop_charging_session(ev_id=None)
-        
+
         # 设置状态为故障，等待Monitor重连
         self.logger.warning("Engine entering fault mode due to monitor disconnection")
 
     def _start_monitor_server(self):
-        """启动服务器等待Monitor连接 """
+        """启动服务器等待Monitor连接"""
         try:
             self.monitor_server = MySocketServer(
                 host=self.engine_listen_address[0],
                 port=self.engine_listen_address[1],
                 logger=self.logger,
-                message_callback=self._process_monitor_message,  
+                message_callback=self._process_monitor_message,
                 disconnect_callback=self._handle_monitor_disconnect,
             )
 
-            self.monitor_server.start()  
+            self.monitor_server.start()
             self.logger.info(
                 f"Monitor server started on {self.engine_listen_address[0]}:{self.engine_listen_address[1]}"
             )
@@ -222,10 +228,8 @@ class EV_CP_E:
             if not self._start_monitor_server():
                 raise Exception("Failed to start monitor server")
 
-            # TODO: 初始化Kafka客户端
-            self.logger.info(
-                f"Will connect to broker at {self.args.broker[0]}:{self.args.broker[1]}"
-            )
+            # 初始化Kafka客户端
+            # self._init_kafka()
 
             self.running = True
             return True
@@ -233,6 +237,20 @@ class EV_CP_E:
         except Exception as e:
             self.logger.error(f"Error initializing connections: {e}")
             return False
+
+    def _init_kafka(self):
+        """初始化Kafka连接"""
+        try:
+            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+            self.kafka_manager = KafkaManager(broker_address, self.logger)
+
+            if self.kafka_manager.init_producer():
+                self.kafka_manager.start()
+                self.logger.info("Kafka producer initialized successfully")
+            else:
+                self.logger.warning("Failed to initialize Kafka producer")
+        except Exception as e:
+            self.logger.error(f"Error initializing Kafka: {e}")
 
     def _shutdown_system(self):
         """关闭系统"""
@@ -246,111 +264,133 @@ class EV_CP_E:
         if self.monitor_server:
             self.monitor_server.stop()  # 使用现有的stop()方法
 
+        if self.kafka_manager:
+            self.kafka_manager.stop()
+
         self.logger.info("System shutdown complete")
 
     def _start_charging_session(self, ev_id):
         """启动充电会话"""
         self.logger.info(f"Starting charging session for EV: {ev_id}")
-        
+
         if self.is_charging:
             self.logger.warning("Already charging, cannot start new session")
             return False
-            
+
         self.is_charging = True
         self.current_session = {
             "session_id": str(uuid.uuid4()),
             "ev_id": ev_id,
             "start_time": time.time(),
             "energy_consumed": 0.0,
-            "total_cost": 0.0
+            "total_cost": 0.0,
         }
-        
+
         # 重置充电数据
         self.charging_data["energy_consumed"] = 0.0
         self.charging_data["total_cost"] = 0.0
         self.charging_data["charging_rate"] = random.uniform(0.1, 0.3)  # 随机充电速率
-        
+
         # 启动充电线程
-        self.charging_thread = threading.Thread(target=self._charging_process, daemon=True)
+        self.charging_thread = threading.Thread(
+            target=self._charging_process, daemon=True
+        )
         self.charging_thread.start()
-        
-        self.logger.info(f"Charging session {self.current_session['session_id']} started")
+
+        self.logger.info(
+            f"Charging session {self.current_session['session_id']} started"
+        )
         return True
 
     def _stop_charging_session(self, ev_id):
         """停止充电会话"""
         self.logger.info(f"Stopping charging session for EV: {ev_id}")
-        
+
         if not self.is_charging:
             self.logger.warning("No active charging session to stop")
             return False
-            
+
         self.is_charging = False
-        
+
         if self.current_session:
             # 计算最终数据
             end_time = time.time()
             duration = end_time - self.current_session["start_time"]
-            
+
             self.current_session["end_time"] = end_time
             self.current_session["duration"] = duration
-            self.current_session["energy_consumed"] = self.charging_data["energy_consumed"]
+            self.current_session["energy_consumed"] = self.charging_data[
+                "energy_consumed"
+            ]
             self.current_session["total_cost"] = self.charging_data["total_cost"]
-            
-            self.logger.info(f"Charging session {self.current_session['session_id']} completed:")
+
+            self.logger.info(
+                f"Charging session {self.current_session['session_id']} completed:"
+            )
             self.logger.info(f"  Duration: {duration:.1f} seconds")
-            self.logger.info(f"  Energy consumed: {self.charging_data['energy_consumed']:.2f} kWh")
+            self.logger.info(
+                f"  Energy consumed: {self.charging_data['energy_consumed']:.2f} kWh"
+            )
             self.logger.info(f"  Total cost: €{self.charging_data['total_cost']:.2f}")
-            
+
             # 发送充电完成通知到Monitor
             self._send_charging_completion()
-            
+
             self.current_session = None
-        
+
         return True
 
     def _charging_process(self):
         """充电过程模拟"""
         self.logger.info("Charging process started")
-        
+
         while self.is_charging and self.running:
             try:
                 # 模拟充电数据更新（每秒）
                 time.sleep(1)
-                
+
                 if not self.is_charging:
                     break
-                
+
                 # 计算这一秒消耗的电量
-                energy_this_second = self.charging_data["charging_rate"] / 3600  # 转换为kWh
+                energy_this_second = (
+                    self.charging_data["charging_rate"] / 3600
+                )  # 转换为kWh
                 self.charging_data["energy_consumed"] += energy_this_second
-                
+
                 # 计算费用
                 self.charging_data["total_cost"] = (
-                    self.charging_data["energy_consumed"] * self.charging_data["price_per_kwh"]
+                    self.charging_data["energy_consumed"]
+                    * self.charging_data["price_per_kwh"]
                 )
-                
+
                 # 更新会话数据
                 if self.current_session:
-                    self.current_session["energy_consumed"] = self.charging_data["energy_consumed"]
-                    self.current_session["total_cost"] = self.charging_data["total_cost"]
-                
+                    self.current_session["energy_consumed"] = self.charging_data[
+                        "energy_consumed"
+                    ]
+                    self.current_session["total_cost"] = self.charging_data[
+                        "total_cost"
+                    ]
+
                 # 发送充电数据到Monitor
                 self._send_charging_data()
-                
-                self.logger.debug(f"Charging progress: {self.charging_data['energy_consumed']:.3f} kWh, €{self.charging_data['total_cost']:.2f}")
-                
+
+                self.logger.debug(
+                    f"Charging progress: {self.charging_data['energy_consumed']:.3f} kWh, €{self.charging_data['total_cost']:.2f}"
+                )
+
             except Exception as e:
                 self.logger.error(f"Error in charging process: {e}")
                 break
-        
+
         self.logger.info("Charging process ended")
 
     def _send_charging_data(self):
         """发送充电数据到Monitor"""
         if not self.monitor_server or not self.current_session:
             return
-            
+
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -358,15 +398,23 @@ class EV_CP_E:
             "energy_consumed_kwh": round(self.charging_data["energy_consumed"], 3),
             "total_cost": round(self.charging_data["total_cost"], 2),
             "charging_rate": self.charging_data["charging_rate"],
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
-        
+
         # 通过Monitor服务器发送给连接的Monitor客户端
         try:
-            if self.monitor_server and hasattr(self.monitor_server, 'clients') and self.monitor_server.clients:
+            if (
+                self.monitor_server
+                and hasattr(self.monitor_server, "clients")
+                and self.monitor_server.clients
+            ):
                 for client_id in self.monitor_server.clients.keys():
-                    self.monitor_server.send_message_to_client(client_id, charging_data_message)
-                self.logger.debug(f"Charging data sent to Monitor: {charging_data_message}")
+                    self.monitor_server.send_message_to_client(
+                        client_id, charging_data_message
+                    )
+                self.logger.debug(
+                    f"Charging data sent to Monitor: {charging_data_message}"
+                )
         except Exception as e:
             self.logger.error(f"Failed to send charging data to Monitor: {e}")
 
@@ -374,7 +422,7 @@ class EV_CP_E:
         """发送充电完成通知"""
         if not self.current_session:
             return
-            
+
         completion_message = {
             "type": "charging_completion",
             "message_id": str(uuid.uuid4()),
@@ -382,15 +430,23 @@ class EV_CP_E:
             "energy_consumed_kwh": round(self.charging_data["energy_consumed"], 3),
             "total_cost": round(self.charging_data["total_cost"], 2),
             "duration": self.current_session.get("duration", 0),
-            "timestamp": int(time.time())
+            "timestamp": int(time.time()),
         }
-        
+
         # 通过Monitor服务器发送给连接的Monitor客户端
         try:
-            if self.monitor_server and hasattr(self.monitor_server, 'clients') and self.monitor_server.clients:
+            if (
+                self.monitor_server
+                and hasattr(self.monitor_server, "clients")
+                and self.monitor_server.clients
+            ):
                 for client_id in self.monitor_server.clients.keys():
-                    self.monitor_server.send_message_to_client(client_id, completion_message)
-                self.logger.info(f"Charging completion sent to Monitor: {completion_message}")
+                    self.monitor_server.send_message_to_client(
+                        client_id, completion_message
+                    )
+                self.logger.info(
+                    f"Charging completion sent to Monitor: {completion_message}"
+                )
         except Exception as e:
             self.logger.error(f"Failed to send charging completion to Monitor: {e}")
 
@@ -414,9 +470,11 @@ class EV_CP_E:
 
         try:
             # 启动交互式命令处理线程
-            command_thread = threading.Thread(target=self._interactive_commands, daemon=True)
+            command_thread = threading.Thread(
+                target=self._interactive_commands, daemon=True
+            )
             command_thread.start()
-            
+
             while self.running:
                 time.sleep(1)  # 保持运行
 
@@ -433,30 +491,32 @@ class EV_CP_E:
         self.logger.info("  - Press 's' + Enter to start charging")
         self.logger.info("  - Press 'e' + Enter to end charging")
         self.logger.info("  - Press 'q' + Enter to quit")
-        
+
         while self.running:
             try:
                 command = input().strip().lower()
-                
-                if command == 'q':
+
+                if command == "q":
                     self.logger.info("Quit command received")
                     self.running = False
                     break
-                elif command == 's':
+                elif command == "s":
                     if not self.is_charging:
                         self._start_charging_session("manual_ev")
                         self.logger.info("Manual charging started")
                     else:
                         self.logger.info("Already charging")
-                elif command == 'e':
+                elif command == "e":
                     if self.is_charging:
                         self._stop_charging_session("manual_ev")
                         self.logger.info("Manual charging stopped")
                     else:
                         self.logger.info("No active charging session")
                 else:
-                    self.logger.info("Unknown command. Use 's' to start, 'e' to end, 'q' to quit")
-                    
+                    self.logger.info(
+                        "Unknown command. Use 's' to start, 'e' to end, 'q' to quit"
+                    )
+
             except EOFError:
                 # 处理输入结束
                 break

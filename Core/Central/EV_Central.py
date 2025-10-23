@@ -15,6 +15,7 @@ from Common.CustomLogger import CustomLogger
 from Common.ConfigManager import ConfigManager
 from Common.MySocketServer import MySocketServer
 from Common.Status import Status
+from Common.KafkaManager import KafkaManager, KafkaTopics
 from Core.Central.MessageDispatcher import MessageDispatcher
 
 
@@ -26,10 +27,11 @@ class EV_Central:
         self.logger = logger
         self.socket_server = None
         self.db_manager = None  # 这个用来存储数据库管理对象
+        self.kafka_manager = None  # Kafka管理器
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.running = False
-        
+
         self._cp_connections = {}  # {cp_id: client_socket}
         self._client_to_cp = {}  # {client_id: cp_id}
         if not self.debug_mode:
@@ -145,27 +147,81 @@ class EV_Central:
 
         return self.message_dispatcher.dispatch_message(client_id, message)
 
-    def _init_kafka_producer(self):  # TODO: implement
+    def _init_kafka_producer(self):
+        """初始化Kafka生产者"""
         self.logger.debug("Initializing Kafka producer")
-        pass
+        try:
+            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+            self.kafka_manager = KafkaManager(broker_address, self.logger)
 
-    def _init_kafka_consumer(self):  # TODO: implement
+            if self.kafka_manager.init_producer():
+                self.logger.info("Kafka producer initialized successfully")
+                return True
+            else:
+                self.logger.error("Failed to initialize Kafka producer")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error initializing Kafka producer: {e}")
+            return False
+
+    def _init_kafka_consumer(self):
+        """初始化Kafka消费者"""
         self.logger.debug("Initializing Kafka consumer")
-        pass
+        try:
+            if not self.kafka_manager:
+                self.logger.error("Kafka manager not initialized")
+                return False
+
+            # 启动Kafka管理器
+            self.kafka_manager.start()
+
+            # 初始化消费者订阅相关主题
+            topics_to_subscribe = [
+                (KafkaTopics.CHARGING_POINT_HEARTBEAT, "central_group"),
+                (KafkaTopics.CHARGING_POINT_FAULT, "central_group"),
+                (KafkaTopics.SYSTEM_ALERTS, "central_group"),
+            ]
+
+            for topic, group_id in topics_to_subscribe:
+                self.kafka_manager.init_consumer(
+                    topic, group_id, self._handle_kafka_message
+                )
+
+            self.logger.info("Kafka consumers initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error initializing Kafka consumer: {e}")
+            return False
+
+    def _handle_kafka_message(self, message):
+        """处理来自Kafka的消息"""
+        try:
+            self.logger.debug(f"Received Kafka message: {message}")
+            # 这里可以添加具体的消息处理逻辑
+        except Exception as e:
+            self.logger.error(f"Error handling Kafka message: {e}")
 
     def initialize_systems(self):
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
 
-        # self._init_kafka_producer()
-        # self._init_kafka_consumer()
+        # 初始化Kafka
+        # if self._init_kafka_producer():
+        #     self._init_kafka_consumer()
+        # else:
+        #     self.logger.warning(
+        #         "Kafka initialization failed, continuing without Kafka support"
+        #     )
+
         self.logger.info("All systems initialized successfully.")
 
     def shutdown_systems(self):
         self.logger.info("Shutting down systems...")
         if self.socket_server:
             self.socket_server.stop()
+        if self.kafka_manager:
+            self.kafka_manager.stop()
         if self.db_manager:
             try:
                 self.db_manager.set_all_charging_points_status(

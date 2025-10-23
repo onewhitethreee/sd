@@ -33,6 +33,8 @@ class MessageDispatcher:
         self.socket_server = socket_server
         self._cp_connections = charging_points_connections
         self._client_to_cp = client_to_ref
+        self._driver_connections = {}  # {driver_id: client_id} 映射Driver连接
+        self._client_to_driver = {}  # {client_id: driver_id} 反向映射
         self.handlers = {
             "register_request": self._handle_register_message,
             "heartbeat_request": self._handle_heartbeat_message,
@@ -47,7 +49,7 @@ class MessageDispatcher:
         }
 
     def dispatch_message(self, client_id, message):
-        
+
         handler = self.handlers.get(message.get("type"))
         if not handler:
             return {
@@ -57,14 +59,17 @@ class MessageDispatcher:
                 "info": f"未知消息类型: {message.get('type')}",
             }
         return handler(client_id, message)
-    
-    def _create_failure_response(self, message_type: str, message_id, info: str) -> dict:
+
+    def _create_failure_response(
+        self, message_type: str, message_id, info: str
+    ) -> dict:
         return MessageFormatter.create_response_message(
             cp_type=f"{message_type}_response",
             message_id=message_id,
             status="failure",
             info=info,
         )
+
     def _check_missing_fields(self, message: dict, required_fields: list):
         missing = [field for field in required_fields if message.get(field) is None]
         if missing:
@@ -204,7 +209,7 @@ class MessageDispatcher:
         cp_id = message.get("cp_id")
         driver_id = message.get("driver_id")
         message_id = message.get("message_id")
-        
+
         missing_info = self._check_missing_fields(
             message, ["cp_id", "driver_id", "message_id"]
         )
@@ -214,6 +219,12 @@ class MessageDispatcher:
                 message_id=message_id or "",
                 info=missing_info,
             )
+
+        # 注册Driver连接（如果尚未注册）
+        if driver_id not in self._driver_connections:
+            self._driver_connections[driver_id] = client_id
+            self._client_to_driver[client_id] = driver_id
+            self.logger.info(f"已注册Driver连接: {driver_id} -> {client_id}")
 
         # 检查充电点是否已注册且可用
         if not self.db_manager.is_charging_point_registered(cp_id):
@@ -252,7 +263,9 @@ class MessageDispatcher:
                 raise Exception("创建充电会话失败")
 
             # 更新充电点状态为充电中
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=Status.CHARGING.value)
+            self.db_manager.update_charging_point_status(
+                cp_id=cp_id, status=Status.CHARGING.value
+            )
 
             # 向Monitor发送启动充电命令
             self._send_start_charging_to_monitor(cp_id, session_id, driver_id)
@@ -286,7 +299,14 @@ class MessageDispatcher:
         message_id = message.get("message_id")
 
         missing_info = self._check_missing_fields(
-            message, ["session_id", "energy_consumed_kwh", "total_cost", "charging_rate", "message_id"]
+            message,
+            [
+                "session_id",
+                "energy_consumed_kwh",
+                "total_cost",
+                "charging_rate",
+                "message_id",
+            ],
         )
         if missing_info:
             return self._create_failure_response(
@@ -354,7 +374,15 @@ class MessageDispatcher:
         message_id = message.get("message_id")
 
         missing_info = self._check_missing_fields(
-            message, ["cp_id", "driver_id", "energy_consumed_kwh", "total_cost", "message_id", "driver_id"]
+            message,
+            [
+                "cp_id",
+                "driver_id",
+                "energy_consumed_kwh",
+                "total_cost",
+                "message_id",
+                "driver_id",
+            ],
         )
         if missing_info:
             return self._create_failure_response(
@@ -388,11 +416,26 @@ class MessageDispatcher:
             )
 
             # 更新充电点状态为活跃
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=Status.ACTIVE.value)
+            self.db_manager.update_charging_point_status(
+                cp_id=cp_id, status=Status.ACTIVE.value
+            )
 
             self.logger.info(
                 f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed}kWh, 费用: €{total_cost}"
             )
+
+            # 向Driver发送充电完成通知
+            if driver_id:
+                self._send_charge_completion_to_driver(
+                    driver_id,
+                    {
+                        "session_id": session_id,
+                        "cp_id": cp_id,
+                        "energy_consumed_kwh": energy_consumed,
+                        "total_cost": total_cost,
+                        "timestamp": int(time.time()),
+                    },
+                )
 
             return MessageFormatter.create_response_message(
                 cp_type="charge_completion_response",
@@ -430,7 +473,9 @@ class MessageDispatcher:
 
         try:
             # 更新充电点状态为故障
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=Status.FAULTY.value)
+            self.db_manager.update_charging_point_status(
+                cp_id=cp_id, status=Status.FAULTY.value
+            )
 
             self.logger.error(f"充电点 {cp_id} 故障: {failure_info}")
 
@@ -472,7 +517,13 @@ class MessageDispatcher:
             )
 
         # 验证状态值是否有效
-        valid_statuses = [Status.ACTIVE.value, Status.STOPPED.value, Status.DISCONNECTED.value, Status.CHARGING.value, Status.FAULTY.value]
+        valid_statuses = [
+            Status.ACTIVE.value,
+            Status.STOPPED.value,
+            Status.DISCONNECTED.value,
+            Status.CHARGING.value,
+            Status.FAULTY.value,
+        ]
         if new_status not in valid_statuses:
             return self._create_failure_response(
                 "status_update",
@@ -511,9 +562,7 @@ class MessageDispatcher:
 
         message_id = message.get("message_id")
         driver_id = message.get("driver_id")
-        missing_info = self._check_missing_fields(
-            message, ["message_id", "driver_id"]
-        )
+        missing_info = self._check_missing_fields(message, ["message_id", "driver_id"])
         if missing_info:
             return self._create_failure_response(
                 "available_cps",
@@ -578,20 +627,19 @@ class MessageDispatcher:
         cp_id = message.get("id")
         recovery_info = message.get("recovery_info", "故障已修复")
         message_id = message.get("message_id")
-        missing_info = self._check_missing_fields(
-            message, ["id", "message_id"]
-        )
+        missing_info = self._check_missing_fields(message, ["id", "message_id"])
         if missing_info:
             return self._create_failure_response(
                 "recovery_response",
                 message_id=message_id or "",
                 info=missing_info,
             )
-        
 
         try:
             # 更新充电点状态为活跃
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=Status.ACTIVE.value)
+            self.db_manager.update_charging_point_status(
+                cp_id=cp_id, status=Status.ACTIVE.value
+            )
 
             self.logger.info(f"充电点 {cp_id} 已恢复: {recovery_info}")
 
@@ -646,10 +694,69 @@ class MessageDispatcher:
         """
         向指定司机发送充电状态更新
         """
-        self.logger.debug(f"向司机 {driver_id} 发送充电状态更新: {charging_data}")
-        self.logger.warning(
-            "此功能尚未实现，需要通过消息队列或其他方式发送给司机应用程序"
-        )
+        try:
+            # 查找Driver的客户端连接
+            driver_client_id = self._driver_connections.get(driver_id)
+            if not driver_client_id:
+                self.logger.warning(
+                    f"未找到司机 {driver_id} 的连接，无法发送充电状态更新"
+                )
+                return False
+
+            # 构建充电状态更新消息
+            status_message = {
+                "type": "charging_status_update",
+                "message_id": str(uuid.uuid4()),
+                "driver_id": driver_id,
+                "session_id": charging_data.get("session_id"),
+                "energy_consumed_kwh": charging_data.get("energy_consumed_kwh"),
+                "total_cost": charging_data.get("total_cost"),
+                "charging_rate": charging_data.get("charging_rate"),
+                "timestamp": charging_data.get("timestamp", int(time.time())),
+            }
+
+            # 发送给Driver
+            self._send_message_to_client(driver_client_id, status_message)
+            self.logger.debug(f"充电状态更新已发送给司机 {driver_id}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"向司机 {driver_id} 发送充电状态更新失败: {e}")
+            return False
+
+    def _send_charge_completion_to_driver(self, driver_id, completion_data):
+        """
+        向指定司机发送充电完成通知
+        """
+        try:
+            # 查找Driver的客户端连接
+            driver_client_id = self._driver_connections.get(driver_id)
+            if not driver_client_id:
+                self.logger.warning(
+                    f"未找到司机 {driver_id} 的连接，无法发送充电完成通知"
+                )
+                return False
+
+            # 构建充电完成通知消息
+            completion_message = {
+                "type": "charge_completion_notification",
+                "message_id": str(uuid.uuid4()),
+                "driver_id": driver_id,
+                "session_id": completion_data.get("session_id"),
+                "cp_id": completion_data.get("cp_id"),
+                "energy_consumed_kwh": completion_data.get("energy_consumed_kwh"),
+                "total_cost": completion_data.get("total_cost"),
+                "timestamp": completion_data.get("timestamp", int(time.time())),
+            }
+
+            # 发送给Driver
+            self._send_message_to_client(driver_client_id, completion_message)
+            self.logger.info(f"充电完成通知已发送给司机 {driver_id}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"向司机 {driver_id} 发送充电完成通知失败: {e}")
+            return False
 
     def _send_start_charging_to_monitor(self, cp_id, session_id, driver_id):
         """
@@ -682,6 +789,7 @@ class MessageDispatcher:
         except Exception as e:
             self.logger.error(f"发送启动充电命令失败: {e}")
             return False
+
     def _send_message_to_client(self, client_id, message):
         """
         向指定客户端发送消息
