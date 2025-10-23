@@ -67,7 +67,6 @@ class EV_Central:
         self.logger.debug("Initializing database connection")
         try:
             # 连接到 SQLite 数据库
-            # 对这个属性进行操作，而不是直接使用 SqliteConnection 类
             self.db_manager = SqliteConnection(
                 db_path=self.db_path,
                 sql_schema_file=self.sql_schema,

@@ -54,9 +54,9 @@ class MySocketServer:
             self.logger.debug(f"Started thread to accept clients, listening on {self.host}:{self.port}")
         except Exception as e:
             self.logger.error(f"Failed to start server: {e}")
-            
+
             self.running_event.clear()  # 标记服务器已停止
-            
+
             if self.server_socket:
                 self.server_socket.close()
             raise
@@ -68,9 +68,9 @@ class MySocketServer:
             try:
                 client_socket, client_address = self.server_socket.accept()
                 self.logger.info(f"Accepted connection from {client_address}")
-                
+
                 client_socket.settimeout(1.0)  # 设置 recv 的超时时间
-                
+
                 client_thread = threading.Thread(
                     # 处理与客户端的通信
                     target=self._handle_client,
@@ -92,7 +92,7 @@ class MySocketServer:
         self.logger.info(f"Handling client {client_id}")
         with self.clients_lock:
             self.clients[client_id] = client_socket
-        
+
         buffer = b""  # 消息缓冲区
 
         try:
@@ -149,8 +149,6 @@ class MySocketServer:
                         self.logger.error(f"Error closing socket for {client_id}: {e}")
                     del self.clients[client_id]
 
-
-
     def send_to_client(self, client_id, message) -> bool:
         """发送消息给特定客户端"""
         with self.clients_lock:
@@ -168,46 +166,69 @@ class MySocketServer:
                 self.logger.warning(f"Client {client_id} not connected")
                 return False
 
-    def send_to_all(self, message, exclude_client=None):
-        """向所有客户端广播消息"""
-        packed_message = MessageFormatter.pack_message(message)
+    def send_broadcast_message(self, message) -> bool: # 返回是否成功广播（至少一个）
+        """向所有连接的客户端广播消息"""
+        if not self.running_event.is_set():
+            self.logger.warning("Server is not running, cannot broadcast message.")
+            return False
 
+        packed_message = MessageFormatter.pack_message(message)
+        sent_to_any_client = False
+
+        # 使用一个副本，以便安全地在迭代中修改 clients
         with self.clients_lock:
-            client_items = list(self.clients.items())  # 复制一份以避免在迭代时修改字典
+            client_items = list(self.clients.items())
+
         for client_id, client_socket in client_items:
-            if client_id != exclude_client:
-                try:
-                    client_socket.send(packed_message)
-                    self.logger.info(f"Broadcast to {client_id}: {message}")
-                except Exception as e:
-                    self.logger.error(f"Error broadcasting to {client_id}: {e}")
+            try:
+                client_socket.send(packed_message)
+                self.logger.debug(f"Broadcast to {client_id}: {message.get('type')}")
+                sent_to_any_client = True
+            except (socket.error, OSError) as e: # 捕获更具体的socket错误
+                self.logger.error(f"Error broadcasting to {client_id}: {e}. Removing client.", exc_info=False) # 不需要完整堆栈
+                # 如果发送失败，说明连接可能已死，进行清理
+                with self.clients_lock:
+                    if client_id in self.clients: # 再次检查以防其他线程已清理
+                        try:
+                            self.clients[client_id].close()
+                        except Exception as close_e:
+                            self.logger.warning(f"Error closing socket for {client_id} after send failure: {close_e}")
+                        del self.clients[client_id]
+                        if self.disconnect_callback:
+                            try:
+                                self.disconnect_callback(client_id)
+                            except Exception as cb_e:
+                                self.logger.error(f"Error in disconnect callback after broadcast failure for {client_id}: {cb_e}")
+            except Exception as e:
+                self.logger.error(f"Unexpected error when broadcasting to {client_id}: {e}", exc_info=True)
+
+        return sent_to_any_client
+
 
     def stop(self):
         """停止服务器"""
         self.logger.info("Stopping socket server...")
         self.running_event.clear()  # 标记服务器停止
-        if self.server_socket:
-            self.server_socket.close()
-
-        # 向所有客户端发送关闭通知
-        shutdown_msg = {"type": "SERVER_SHUTDOWN", "message": "Server is shutting down"}
-        self.send_to_all(shutdown_msg)
 
         with self.clients_lock:
-            # 获取所有客户端的列表，防止在迭代时字典被修改
-            # 此时，我们不再期望 _handle_client 线程会自己清理，
-            # 因为它们可能因为服务器关闭而突然中断。这里是强制清理。
-            remaining_client_ids = list(self.clients.keys())
-            for client_id in remaining_client_ids:
+            for client_id, client_socket in list(self.clients.items()): # 迭代副本
                 try:
-                    client_socket = self.clients[client_id]
-                    client_socket.close() # 强制关闭 socket
-                    del self.clients[client_id] # 从字典中移除
-                    self.logger.info(f"Forcibly closed and removed client {client_id} during server shutdown.")
+                    client_socket.shutdown(socket.SHUT_RDWR) # 尝试优雅关闭
+                    client_socket.close()
+                    self.logger.debug(f"Forcibly closed client socket {client_id}.")
+                except OSError as e: # 捕获操作系统级别的关闭错误
+                    self.logger.warning(f"Error shutting down/closing client socket {client_id}: {e}")
                 except Exception as e:
-                    self.logger.warning(f"Error during final client cleanup for {client_id}: {e}")
-            self.clients.clear() # 确保字典最终为空
-        self.logger.info("Socket server stopped")
+                    self.logger.error(f"Unexpected error closing client socket {client_id}: {e}")
+            self.clients.clear() # 清空客户端字典
+
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None # 清空引用
+            self.logger.info("Server listening socket closed.")
+
+        self.logger.info("Socket server stopped.")
+
 
     def get_connected_clients(self):
         """获取所有连接的客户端"""
@@ -219,9 +240,13 @@ class MySocketServer:
         with self.clients_lock:
             return client_id in self.clients
 
-    def send_message_to_client(self, client_id, message):
-        """发送消息给特定客户端"""
-        return self.send_to_client(client_id, message)
+    def has_active_clients(self) -> bool:
+        """
+        检查当前是否有活跃的客户端连接。
+        """
+        with self.clients_lock:
+            return bool(self.clients) # 直接返回字典是否为空的布尔值
+
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

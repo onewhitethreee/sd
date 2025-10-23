@@ -209,7 +209,7 @@ class KafkaTopics:
     CHARGING_SESSION_START = "charging_session_start"
     CHARGING_SESSION_DATA = "charging_session_data"
     CHARGING_SESSION_COMPLETE = "charging_session_complete"
-
+    
     # 司机相关主题
     DRIVER_CHARGING_STATUS = "driver_charging_status"
     DRIVER_CHARGING_COMPLETE = "driver_charging_complete"

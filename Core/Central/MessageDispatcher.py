@@ -30,7 +30,7 @@ class MessageDispatcher:
     ):
         self.logger = logger
         self.db_manager = db_manager
-        self.socket_server = socket_server
+        self.socket_server: MySocketServer = socket_server
         self._cp_connections = charging_points_connections
         self._client_to_cp = client_to_ref
         self._driver_connections = {}  # {driver_id: client_id} 映射Driver连接
@@ -796,7 +796,7 @@ class MessageDispatcher:
         """
         try:
             if self.socket_server:
-                self.socket_server.send_message_to_client(client_id, message)
+                self.socket_server.send_to_client(client_id, message)
                 self.logger.debug(f"消息已发送给客户端 {client_id}: {message}")
             else:
                 self.logger.error("Socket服务器未初始化")
