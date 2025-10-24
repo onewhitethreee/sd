@@ -364,12 +364,29 @@ class EV_CP_M:
                 "Not connected to Central, cannot forward charging data."
             )
             return False
+
+        # Validate required fields from Engine message
+        required_fields = [
+            "session_id",
+            "energy_consumed_kwh",
+            "total_cost",
+            "charging_rate",
+        ]
+        missing_fields = [
+            field for field in required_fields if message.get(field) is None
+        ]
+        if missing_fields:
+            self.logger.error(
+                f"Charging data from Engine missing required fields: {', '.join(missing_fields)}"
+            )
+            return False
+
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": message.get("session_id"),
-            "energy_consumed": message.get("energy_consumed_kwh"),
+            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
             "charging_rate": message.get("charging_rate"),
         }
@@ -390,12 +407,24 @@ class EV_CP_M:
                 "Not connected to Central, cannot forward charging completion."
             )
             return False
+
+        # Validate required fields from Engine message
+        required_fields = ["session_id", "energy_consumed_kwh", "total_cost"]
+        missing_fields = [
+            field for field in required_fields if message.get(field) is None
+        ]
+        if missing_fields:
+            self.logger.error(
+                f"Charging completion from Engine missing required fields: {', '.join(missing_fields)}"
+            )
+            return False
+
         completion_message = {
             "type": "charge_completion",
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": message.get("session_id"),
-            "energy_consumed": message.get("energy_consumed_kwh"),
+            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
         }
         if self.central_conn_mgr.send(completion_message):
@@ -431,7 +460,7 @@ class EV_CP_M:
 
         elif message_type == "charging_data":
             self._handle_charging_data_from_engine(message)
-        elif message_type == "charging_completion":
+        elif message_type == "charge_completion":
             self._handle_charging_completion_from_engine(message)
         else:
             self.logger.warning(f"Unknown message type from EV_CP_E: {message_type}")

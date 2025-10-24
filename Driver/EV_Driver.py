@@ -115,7 +115,7 @@ class Driver:
                         "cp_id": message.get("cp_id"),
                         "start_time": datetime.now(),
                         "status": "authorized",
-                        "energy_consumed": 0.0,
+                        "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
                         "charging_rate": 0.0,
                     }
@@ -127,17 +127,19 @@ class Driver:
         """处理充电状态更新"""
         with self.lock:
             if self.current_charging_session:
-                energy_consumed = message.get("energy_consumed_kwh", 0)
+                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
                 total_cost = message.get("total_cost", 0)
                 charging_rate = message.get("charging_rate", 0)
 
                 # 更新会话数据
-                self.current_charging_session["energy_consumed"] = energy_consumed
+                self.current_charging_session["energy_consumed_kwh"] = (
+                    energy_consumed_kwh
+                )
                 self.current_charging_session["total_cost"] = total_cost
                 self.current_charging_session["charging_rate"] = charging_rate
 
                 self.logger.info(
-                    f"🔋 Charging progress - Energy: {energy_consumed:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                    f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
                 )
 
     def _handle_charging_data(self, message):
@@ -148,16 +150,18 @@ class Driver:
                 self.current_charging_session
                 and self.current_charging_session.get("session_id") == session_id
             ):
-                energy_consumed = message.get("energy_consumed_kwh", 0)
+                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
                 total_cost = message.get("total_cost", 0)
                 charging_rate = message.get("charging_rate", 0)
 
-                self.current_charging_session["energy_consumed"] = energy_consumed
+                self.current_charging_session["energy_consumed_kwh"] = (
+                    energy_consumed_kwh
+                )
                 self.current_charging_session["total_cost"] = total_cost
                 self.current_charging_session["charging_rate"] = charging_rate
 
                 self.logger.info(
-                    f"🔋 Real-time charging data - Energy: {energy_consumed:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                    f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
                 )
 
     def _handle_charge_completion(self, message):
@@ -165,12 +169,12 @@ class Driver:
         with self.lock:
             if self.current_charging_session:
                 session_id = message.get("session_id")
-                energy_consumed = message.get("energy_consumed_kwh", 0)
+                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
                 total_cost = message.get("total_cost", 0)
 
                 self.logger.info(f"✅ Charging completed!")
                 self.logger.info(f"Session ID: {session_id}")
-                self.logger.info(f"Total Energy: {energy_consumed:.3f}kWh")
+                self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
                 self.logger.info(f"Total Cost: €{total_cost:.2f}")
 
                 # 保存到历史记录
@@ -178,7 +182,7 @@ class Driver:
                     "session_id": session_id,
                     "cp_id": self.current_charging_session.get("cp_id"),
                     "completion_time": datetime.now(),
-                    "energy_consumed": energy_consumed,
+                    "energy_consumed_kwh": energy_consumed_kwh,
                     "total_cost": total_cost,
                 }
                 self.charging_history.append(completion_record)
@@ -276,7 +280,7 @@ class Driver:
             self.logger.info(f"\n【{i}】 Session: {record['session_id']}")
             self.logger.info(f"    CP ID: {record['cp_id']}")
             self.logger.info(f"    Completion Time: {record['completion_time']}")
-            self.logger.info(f"    Energy: {record['energy_consumed']:.3f}kWh")
+            self.logger.info(f"    Energy: {record['energy_consumed_kwh']:.3f}kWh")
             self.logger.info(f"    Cost: €{record['total_cost']:.2f}")
         self.logger.info("=" * 60 + "\n")
 
@@ -321,7 +325,7 @@ class Driver:
                             )
                             self.logger.info(f"  CP ID: {session['cp_id']}")
                             self.logger.info(
-                                f"  Energy: {session['energy_consumed']:.3f}kWh"
+                                f"  Energy: {session['energy_consumed_kwh']:.3f}kWh"
                             )
                             self.logger.info(f"  Cost: €{session['total_cost']:.2f}")
                             self.logger.info(

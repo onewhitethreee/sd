@@ -277,7 +277,7 @@ class MessageDispatcher:
 
         cp_id = message.get("cp_id")
         session_id = message.get("session_id")
-        energy_consumed = message.get("energy_consumed")
+        energy_consumed_kwh = message.get("energy_consumed_kwh")
         total_cost = message.get("total_cost")
         charging_rate = message.get("charging_rate")
         message_id = message.get("message_id")
@@ -287,7 +287,7 @@ class MessageDispatcher:
             [
                 "cp_id",
                 "session_id",
-                "energy_consumed",
+                "energy_consumed_kwh",
                 "total_cost",
                 "charging_rate",
                 "message_id",
@@ -304,7 +304,7 @@ class MessageDispatcher:
             # 使用ChargingSession管理器更新充电会话
             self.charging_session_manager.update_charging_session(
                 session_id=session_id,
-                energy_consumed=energy_consumed,
+                energy_consumed_kwh=energy_consumed_kwh,
                 total_cost=total_cost,
                 status="in_progress",
             )
@@ -321,7 +321,7 @@ class MessageDispatcher:
                     driver_id,
                     {
                         "session_id": session_id,
-                        "energy_consumed_kwh": energy_consumed,
+                        "energy_consumed_kwh": energy_consumed_kwh,
                         "total_cost": total_cost,
                         "charging_rate": charging_rate,
                         "timestamp": int(time.time()),
@@ -329,7 +329,7 @@ class MessageDispatcher:
                 )
 
                 self.logger.info(
-                    f"充电数据更新: 会话 {session_id}, 电量: {energy_consumed}kWh, 费用: €{total_cost}"
+                    f"充电数据更新: 会话 {session_id}, 电量: {energy_consumed_kwh}kWh, 费用: €{total_cost}"
                 )
 
             return MessageFormatter.create_response_message(
@@ -355,7 +355,7 @@ class MessageDispatcher:
 
         cp_id = message.get("cp_id")
         session_id = message.get("session_id")
-        energy_consumed = message.get("energy_consumed")
+        energy_consumed_kwh = message.get("energy_consumed_kwh")
         total_cost = message.get("total_cost")
         message_id = message.get("message_id")
 
@@ -364,7 +364,7 @@ class MessageDispatcher:
             [
                 "cp_id",
                 "session_id",
-                "energy_consumed",
+                "energy_consumed_kwh",
                 "total_cost",
                 "message_id",
             ],
@@ -395,7 +395,7 @@ class MessageDispatcher:
             success, session_data = (
                 self.charging_session_manager.complete_charging_session(
                     session_id=session_id,
-                    energy_consumed=energy_consumed,
+                    energy_consumed_kwh=energy_consumed_kwh,
                     total_cost=total_cost,
                 )
             )
@@ -409,7 +409,7 @@ class MessageDispatcher:
             )
 
             self.logger.info(
-                f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed}kWh, 费用: €{total_cost}"
+                f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed_kwh}kWh, 费用: €{total_cost}"
             )
 
             # 向Driver发送充电完成通知
@@ -419,7 +419,7 @@ class MessageDispatcher:
                     {
                         "session_id": session_id,
                         "cp_id": cp_id,
-                        "energy_consumed_kwh": energy_consumed,
+                        "energy_consumed_kwh": energy_consumed_kwh,
                         "total_cost": total_cost,
                         "timestamp": int(time.time()),
                     },

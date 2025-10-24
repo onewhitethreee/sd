@@ -74,14 +74,14 @@ class ChargingSession:
             return None, str(e)
 
     def update_charging_session(
-        self, session_id, energy_consumed, total_cost, status="in_progress"
+        self, session_id, energy_consumed_kwh, total_cost, status="in_progress"
     ):
         """
         更新充电会话数据
 
         Args:
             session_id: 会话ID
-            energy_consumed: 消耗的电量（kWh）
+            energy_consumed_kwh: 消耗的电量（kWh）
             total_cost: 总费用
             status: 会话状态
 
@@ -96,18 +96,18 @@ class ChargingSession:
             # 更新数据库
             self.db_manager.update_charging_session(
                 session_id=session_id,
-                energy_consumed=energy_consumed,
+                energy_consumed_kwh=energy_consumed_kwh,
                 total_cost=total_cost,
                 status=status,
             )
 
             # 更新内存
-            self._charging_sessions[session_id]["energy_consumed_kwh"] = energy_consumed
+            self._charging_sessions[session_id]["energy_consumed_kwh"] = energy_consumed_kwh
             self._charging_sessions[session_id]["total_cost"] = total_cost
             self._charging_sessions[session_id]["status"] = status
 
             self.logger.debug(
-                f"会话 {session_id} 已更新: 电量={energy_consumed}kWh, 费用=€{total_cost}"
+                f"会话 {session_id} 已更新: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
             )
             return True
 
@@ -115,13 +115,13 @@ class ChargingSession:
             self.logger.error(f"更新充电会话 {session_id} 失败: {e}")
             return False
 
-    def complete_charging_session(self, session_id, energy_consumed, total_cost):
+    def complete_charging_session(self, session_id, energy_consumed_kwh, total_cost):
         """
         完成充电会话
 
         Args:
             session_id: 会话ID
-            energy_consumed: 消耗的电量（kWh）
+            energy_consumed_kwh: 消耗的电量（kWh）
             total_cost: 总费用
 
         Returns:
@@ -138,7 +138,7 @@ class ChargingSession:
             self.db_manager.update_charging_session(
                 session_id=session_id,
                 end_time=end_time,
-                energy_consumed=energy_consumed,
+                energy_consumed_kwh=energy_consumed_kwh,
                 total_cost=total_cost,
                 status="completed",
             )
@@ -146,14 +146,14 @@ class ChargingSession:
             # 更新内存
             session_data = self._charging_sessions[session_id].copy()
             session_data["end_time"] = end_time
-            session_data["energy_consumed_kwh"] = energy_consumed
+            session_data["energy_consumed_kwh"] = energy_consumed_kwh
             session_data["total_cost"] = total_cost
             session_data["status"] = "completed"
 
             self._charging_sessions[session_id] = session_data
 
             self.logger.info(
-                f"充电会话 {session_id} 已完成: 电量={energy_consumed}kWh, 费用=€{total_cost}"
+                f"充电会话 {session_id} 已完成: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
             )
             return True, session_data
 

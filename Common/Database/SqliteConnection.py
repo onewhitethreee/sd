@@ -3,9 +3,10 @@ import os
 import logging
 import threading
 
+
 class SqliteConnection:
     def __init__(self, db_path, sql_schema_file=None, create_tables_if_not_exist=True):
-        self.db_path = db_path 
+        self.db_path = db_path
         self.sql_schema_file = sql_schema_file
         self.connection = None
         self.create_tables_if_not_exist = create_tables_if_not_exist
@@ -13,10 +14,14 @@ class SqliteConnection:
         self.local = threading.local()
 
         if self.create_tables_if_not_exist and not os.path.exists(self.db_path):
-            logging.debug(f"Database file '{self.db_path}' does not exist. Attempting to create and set up schema.")
+            logging.debug(
+                f"Database file '{self.db_path}' does not exist. Attempting to create and set up schema."
+            )
             self._execute_sql_from_file()
         else:
-            logging.debug(f"Database file '{self.db_path}' already exists. Skipping initial schema creation.")
+            logging.debug(
+                f"Database file '{self.db_path}' already exists. Skipping initial schema creation."
+            )
 
     def get_connection(self):
         """为每个线程获取独立的连接"""
@@ -89,15 +94,21 @@ class SqliteConnection:
             return True
 
         except sqlite3.Error as e:
-            logging.error(f"SQLite error while checking availability of '{self.db_path}': {e}")
+            logging.error(
+                f"SQLite error while checking availability of '{self.db_path}': {e}"
+            )
             return False
-        except Exception as e: 
-            logging.error(f"An unexpected error occurred during availability check: {e}")
+        except Exception as e:
+            logging.error(
+                f"An unexpected error occurred during availability check: {e}"
+            )
             return False
         finally:
             if self.connection:
                 self.connection.close()
-                logging.debug(f"Connection to database '{self.db_path}' closed after availability check.")
+                logging.debug(
+                    f"Connection to database '{self.db_path}' closed after availability check."
+                )
 
     def get_all_charging_points(self):
         """获取所有充电桩"""
@@ -127,21 +138,28 @@ class SqliteConnection:
             os.remove(self.db_path)
 
     # TODO 添加事务实现，防止并发问题
-    def insert_or_update_charging_point(self, cp_id, location, price_per_kwh, status, last_connection_time):
+    def insert_or_update_charging_point(
+        self, cp_id, location, price_per_kwh, status, last_connection_time
+    ):
         """插入或更新充电桩信息"""
         connection = self.get_connection()
         cursor = connection.cursor()
         try:
             # 使用 INSERT OR REPLACE 来处理重复
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO ChargingPoints 
                 (cp_id, location, price_per_kwh, status, last_connection_time)
                 VALUES (?, ?, ?, ?, ?)
-            """, (cp_id, location, price_per_kwh, status, last_connection_time))
+            """,
+                (cp_id, location, price_per_kwh, status, last_connection_time),
+            )
 
             connection.commit()
 
-            logging.info(f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}")
+            logging.info(
+                f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}"
+            )
 
             return True
 
@@ -153,7 +171,7 @@ class SqliteConnection:
     def update_charging_point_status(self, cp_id, status, last_connection_time=None):
         """
         更新充电桩状态
-        
+
         Args:
             cp_id: 充电桩ID
             status: 新状态
@@ -161,27 +179,24 @@ class SqliteConnection:
         """
         connection = self.get_connection()
         cursor = connection.cursor()
-        
+
         if last_connection_time is not None:
             cursor.execute(
-                "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?", 
-                (status, last_connection_time, cp_id)
+                "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?",
+                (status, last_connection_time, cp_id),
             )
         else:
             cursor.execute(
-                "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?", 
-                (status, cp_id)
+                "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?", (status, cp_id)
             )
-        
+
         connection.commit()
 
     def get_charging_point_status(self, cp_id):
         """获取充电桩状态"""
         connection = self.get_connection()
         cursor = connection.cursor()
-        cursor.execute(
-            "SELECT status FROM ChargingPoints WHERE cp_id = ?", (cp_id,)
-        )
+        cursor.execute("SELECT status FROM ChargingPoints WHERE cp_id = ?", (cp_id,))
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -189,18 +204,14 @@ class SqliteConnection:
         """检查充电桩是否已注册"""
         connection = self.get_connection()
         cursor = connection.cursor()
-        cursor.execute(
-            "SELECT 1 FROM ChargingPoints WHERE cp_id = ?", (cp_id,)
-        )
+        cursor.execute("SELECT 1 FROM ChargingPoints WHERE cp_id = ?", (cp_id,))
         return cursor.fetchone() is not None
 
     def set_all_charging_points_status(self, status):
         """设置所有充电桩的状态"""
         connection = self.get_connection()
         cursor = connection.cursor()
-        cursor.execute(
-            "UPDATE ChargingPoints SET status = ? WHERE 1", (status,)
-        )
+        cursor.execute("UPDATE ChargingPoints SET status = ? WHERE 1", (status,))
         connection.commit()
 
     def create_charging_session(self, session_id, cp_id, driver_id, start_time):
@@ -208,12 +219,15 @@ class SqliteConnection:
         connection = self.get_connection()
         cursor = connection.cursor()
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO ChargingSessions 
                 (session_id, cp_id, driver_id, start_time, status)
                 VALUES (?, ?, ?, ?, ?)
-            """, (session_id, cp_id, driver_id, start_time, "in_progress"))
-            
+            """,
+                (session_id, cp_id, driver_id, start_time, "in_progress"),
+            )
+
             connection.commit()
             logging.info(f"充电会话 {session_id} 创建成功")
             return True
@@ -222,7 +236,14 @@ class SqliteConnection:
             logging.error(f"创建充电会话失败: {e}")
             return False
 
-    def update_charging_session(self, session_id, end_time=None, energy_consumed=None, total_cost=None, status=None):
+    def update_charging_session(
+        self,
+        session_id,
+        end_time=None,
+        energy_consumed_kwh=None,
+        total_cost=None,
+        status=None,
+    ):
         """更新充电会话"""
         connection = self.get_connection()
         cursor = connection.cursor()
@@ -230,33 +251,35 @@ class SqliteConnection:
             # 构建动态更新语句
             updates = []
             params = []
-            
+
             if end_time is not None:
                 updates.append("end_time = ?")
                 params.append(end_time)
-            
-            if energy_consumed is not None:
+
+            if energy_consumed_kwh is not None:
                 updates.append("energy_consumed_kwh = ?")
-                params.append(energy_consumed)
-            
+                params.append(energy_consumed_kwh)
+
             if total_cost is not None:
                 updates.append("total_cost = ?")
                 params.append(total_cost)
-            
+
             if status is not None:
                 updates.append("status = ?")
                 params.append(status)
-            
+
             if not updates:
                 logging.warning("没有提供要更新的字段")
                 return False
-            
+
             params.append(session_id)
-            query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
-            
+            query = (
+                f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
+            )
+
             cursor.execute(query, params)
             connection.commit()
-            
+
             logging.info(f"充电会话 {session_id} 更新成功")
             return True
         except Exception as e:
@@ -269,13 +292,16 @@ class SqliteConnection:
         connection = self.get_connection()
         cursor = connection.cursor()
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT session_id, cp_id, driver_id, start_time, end_time, 
                        energy_consumed_kwh, total_cost, status
                 FROM ChargingSessions 
                 WHERE session_id = ?
-            """, (session_id,))
-            
+            """,
+                (session_id,),
+            )
+
             row = cursor.fetchone()
             if row:
                 return {
@@ -286,7 +312,7 @@ class SqliteConnection:
                     "end_time": row[4],
                     "energy_consumed_kwh": row[5],
                     "total_cost": row[6],
-                    "status": row[7]
+                    "status": row[7],
                 }
             return None
         except Exception as e:
@@ -298,13 +324,15 @@ class SqliteConnection:
         connection = self.get_connection()
         cursor = connection.cursor()
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT session_id, cp_id, driver_id, start_time, 
                        energy_consumed_kwh, total_cost, status
                 FROM ChargingSessions 
                 WHERE status = 'in_progress'
-            """)
-            
+            """
+            )
+
             rows = cursor.fetchall()
             return [
                 {
@@ -314,7 +342,7 @@ class SqliteConnection:
                     "start_time": row[3],
                     "energy_consumed_kwh": row[4],
                     "total_cost": row[5],
-                    "status": row[6]
+                    "status": row[6],
                 }
                 for row in rows
             ]
@@ -328,14 +356,18 @@ class SqliteConnection:
         cursor = connection.cursor()
         try:
             from datetime import datetime
+
             current_time = datetime.now().isoformat()
-            
-            cursor.execute("""
+
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO Drivers 
                 (driver_id, username, created_at)
                 VALUES (?, ?, ?)
-            """, (driver_id, username, current_time))
-            
+            """,
+                (driver_id, username, current_time),
+            )
+
             connection.commit()
             logging.info(f"司机 {driver_id} 注册成功")
             return True
@@ -344,14 +376,21 @@ class SqliteConnection:
             logging.error(f"注册司机失败: {e}")
             return False
 
+
 if __name__ == "__main__":
 
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     db_file = "test.db"
     sql_schema_file_path = os.path.join("Core", "BD", "table.sql")
 
-    db_manager_new = SqliteConnection(db_path=db_file, sql_schema_file=sql_schema_file_path, create_tables_if_not_exist=True)
+    db_manager_new = SqliteConnection(
+        db_path=db_file,
+        sql_schema_file=sql_schema_file_path,
+        create_tables_if_not_exist=True,
+    )
 
     if db_manager_new.is_sqlite_available():
         logging.info("SUCCESS: SQLite database is available and tables are set up.")

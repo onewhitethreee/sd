@@ -38,6 +38,7 @@ class EV_CP_E:
 
             class Args:
                 broker = self.config.get_broker()
+                id_cp = self.config.get_id_cp()
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
@@ -357,7 +358,9 @@ class EV_CP_E:
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": self.current_session["session_id"],
-            "energy_consumed": round(self.current_session["energy_consumed_kwh"], 3),
+            "energy_consumed_kwh": round(
+                self.current_session["energy_consumed_kwh"], 3
+            ),
             "total_cost": round(self.current_session["total_cost"], 2),
             "charging_rate": round(self.current_session["charging_rate_kw"], 1),
         }
@@ -393,7 +396,7 @@ class EV_CP_E:
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": final_session_data["session_id"],
-            "energy_consumed": round(final_session_data["energy_consumed_kwh"], 3),
+            "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
         }
         # --- 重点：使用 MySocketServer 的新广播 API ---
