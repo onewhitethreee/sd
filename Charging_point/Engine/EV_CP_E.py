@@ -62,6 +62,10 @@ class EV_CP_E:
     def is_charging(self):
         return self.current_session is not None
 
+    @is_charging.setter
+    def is_charging(self, value):
+        self._is_charging = value
+
     def get_current_status(self):
         """返回Engine当前状态"""
         if self.is_charging:
@@ -73,12 +77,7 @@ class EV_CP_E:
 
     def _process_monitor_message(self, client_id, message):
         """处理来自Monitor的消息"""
-        from Common.Message.MessageTransformer import MessageTransformer
-
-        # 如果message是字符串列表，转换为字典
-        if isinstance(message, list):
-            message = MessageTransformer.to_dict_with_defaults(message)
-
+        # 消息已经是字典格式（JSON）
         try:
             msg_type = message.get("type")
             self.logger.debug(f"Received message from Monitor {client_id}: {msg_type}")
@@ -356,13 +355,11 @@ class EV_CP_E:
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
+            "cp_id": self.args.id_cp,
             "session_id": self.current_session["session_id"],
-            "energy_consumed_kwh": round(
-                self.current_session["energy_consumed_kwh"], 3
-            ),
+            "energy_consumed": round(self.current_session["energy_consumed_kwh"], 3),
             "total_cost": round(self.current_session["total_cost"], 2),
-            "charging_rate_kw": round(self.current_session["charging_rate_kw"], 1),
-            "timestamp": int(time.time()),
+            "charging_rate": round(self.current_session["charging_rate_kw"], 1),
         }
         # --- 重点：使用 MySocketServer 的新广播 API ---
         if self.monitor_server and self.monitor_server.has_active_clients():
@@ -392,13 +389,12 @@ class EV_CP_E:
         if not final_session_data:  # 如果没有数据，直接返回
             return
         completion_message = {
-            "type": "charging_completion",
+            "type": "charge_completion",
             "message_id": str(uuid.uuid4()),
+            "cp_id": self.args.id_cp,
             "session_id": final_session_data["session_id"],
-            "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
+            "energy_consumed": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
-            "duration": round(final_session_data.get("duration", 0), 1),
-            "timestamp": int(time.time()),
         }
         # --- 重点：使用 MySocketServer 的新广播 API ---
         if self.monitor_server and self.monitor_server.has_active_clients():

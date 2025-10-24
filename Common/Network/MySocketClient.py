@@ -3,7 +3,6 @@ import socket
 import threading
 import time
 from Common.Message.MessageFormatter import MessageFormatter
-from Common.Message.MessageTransformer import MessageTransformer
 
 
 class MySocketClient:
@@ -96,11 +95,9 @@ class MySocketClient:
             return False
 
         try:
-            # 使用 MessageTransformer 转换消息格式
-            message_list = MessageTransformer.to_list(message)
-            packed = MessageFormatter.pack_message(message_list)
+            # 直接打包JSON消息
+            packed = MessageFormatter.pack_message(message)
             self.socket.send(packed)
-            # self.logger.debug(f"Sent message: {packed}")
             return True
         except Exception as e:
             self.logger.error(f"Send failed: {e}")

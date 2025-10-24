@@ -28,12 +28,10 @@ class EV_Central:
         self.socket_server = None
         self.db_manager = None  # 这个用来存储数据库管理对象
         self.kafka_manager = None  # Kafka管理器
+        self.message_dispatcher = None  # 消息分发器
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.running = False
-
-        self._cp_connections = {}  # {cp_id: client_socket}
-        self._client_to_cp = {}  # {client_id: cp_id}
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 app_name="EV_Central",
@@ -110,44 +108,30 @@ class EV_Central:
         except Exception as e:
             self.logger.error(f"Failed to initialize socket server: {e}")
             sys.exit(1)
+
+        # 初始化消息分发器
         self.message_dispatcher = MessageDispatcher(
             logger=self.logger,
             db_manager=self.db_manager,
             socket_server=self.socket_server,
-            charging_points_connections=self._cp_connections,
-            client_to_ref=self._client_to_cp,
         )
 
     def _handle_client_disconnect(self, client_id):
         """处理客户端断开连接"""
-        if client_id in self._client_to_cp:
-            cp_id = self._client_to_cp[client_id]
+        # 使用ChargingPoint管理器处理断开连接
+        cp_id = self.message_dispatcher.charging_point_manager.handle_client_disconnect(
+            client_id
+        )
+
+        if cp_id:
             self.logger.info(f"Client {client_id} (CP: {cp_id}) disconnected")
-
-            # 更新数据库状态为离线
-            try:
-                self.db_manager.update_charging_point_status(
-                    cp_id=cp_id,
-                    status=Status.DISCONNECTED.value,
-                )
-                self.logger.info(f"Charging point {cp_id} set to DISCONNECTED.")
-            except Exception as e:
-                self.logger.error(f"Failed to update status for {cp_id}: {e}")
-
-            # 清理映射关系
-            del self._cp_connections[cp_id]
-            del self._client_to_cp[client_id]
+            self.logger.info(f"Charging point {cp_id} set to DISCONNECTED.")
 
     def _process_charging_point_message(self, client_id, message):
         """
         作为消息的分发中心。根据消息的 'type' 字段，调用相应的处理方法。
         """
-        from Common.Message.MessageTransformer import MessageTransformer
-
-        # 如果message是字符串列表，转换为字典
-        if isinstance(message, list):
-            message = MessageTransformer.to_dict_with_defaults(message)
-
+        # 消息已经是字典格式（JSON）
         self.logger.info(f"收到来自客户端 {client_id} 的消息: {message}")
 
         return self.message_dispatcher.dispatch_message(client_id, message)

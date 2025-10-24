@@ -13,11 +13,12 @@ import uuid
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Database.SqliteConnection import SqliteConnection
 from Common.Message.MessageFormatter import MessageFormatter
-from Common.Message.MessageTransformer import MessageTransformer
 from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
+from Core.Central.ChargingPoint import ChargingPoint
+from Core.Central.ChargingSession import ChargingSession
 
 
 class MessageDispatcher:
@@ -26,16 +27,19 @@ class MessageDispatcher:
         logger: CustomLogger,
         db_manager: SqliteConnection,
         socket_server,
-        charging_points_connections,
-        client_to_ref,
     ):
         self.logger = logger
         self.db_manager = db_manager
         self.socket_server: MySocketServer = socket_server
-        self._cp_connections = charging_points_connections
-        self._client_to_cp = client_to_ref
-        self._driver_connections = {}  # {driver_id: client_id} 映射Driver连接
-        self._client_to_driver = {}  # {client_id: driver_id} 反向映射
+
+        # 使用新的ChargingPoint和ChargingSession管理器
+        self.charging_point_manager = ChargingPoint(logger, db_manager)
+        self.charging_session_manager = ChargingSession(logger, db_manager)
+
+        # Driver连接映射
+        self._driver_connections = {}  # {driver_id: client_id}
+        self._client_to_driver = {}  # {client_id: driver_id}
+
         self.handlers = {
             "register_request": self._handle_register_message,
             "heartbeat_request": self._handle_heartbeat_message,
@@ -59,10 +63,10 @@ class MessageDispatcher:
                 "status": "failure",
                 "info": f"未知消息类型: {message.get('type')}",
             }
-            return MessageTransformer.to_list(response)
+            return response
 
         response = handler(client_id, message)
-        return MessageTransformer.to_list(response)
+        return response
 
     def _create_failure_response(
         self, message_type: str, message_id, info: str
@@ -107,33 +111,21 @@ class MessageDispatcher:
                 info=missing_info,
             )
 
-        # 插入数据库
-        try:
-            price_per_kwh = float(price_per_kwh)
-            if price_per_kwh < 0:
-                raise ValueError("price_per_kwh must be non-negative")
+        # 使用ChargingPoint管理器注册充电桩
+        success, error_msg = self.charging_point_manager.register_charging_point(
+            cp_id, location, price_per_kwh
+        )
 
-            self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
-            self.db_manager.insert_or_update_charging_point(
-                cp_id=cp_id,
-                location=location,
-                price_per_kwh=price_per_kwh,
-                status=Status.DISCONNECTED.value,  # 初始状态为 DISCONNECTED，等待心跳消息更新
-                last_connection_time=None,
-            )
-            self.logger.info(f"充电桩 {cp_id} 注册成功！")
-        except Exception as e:
-            self.logger.debug(f"注册充电桩 {cp_id} 失败: {e}")
+        if not success:
             return MessageFormatter.create_response_message(
                 cp_type="register_response",
                 message_id=message_id,
                 status="failure",
-                info=f"注册失败: {e}",
+                info=f"注册失败: {error_msg}",
             )
 
-        # 维护连接映射
-        self._cp_connections[cp_id] = client_id
-        self._client_to_cp[client_id] = cp_id
+        # 更新连接映射
+        self.charging_point_manager.update_charging_point_connection(cp_id, client_id)
 
         self._show_registered_charging_points()
 
@@ -160,19 +152,12 @@ class MessageDispatcher:
             )
 
         # 检查充电桩是否已注册
-        if self.db_manager.is_charging_point_registered(cp_id):
-            current_time = datetime.now(timezone.utc).isoformat()
+        if self.charging_point_manager.is_charging_point_registered(cp_id):
             try:
-                # 直接更新状态和最后连接时间
-                self.db_manager.update_charging_point_status(
-                    cp_id=cp_id,
-                    status=Status.ACTIVE.value,
-                    last_connection_time=current_time,
+                # 更新连接信息
+                self.charging_point_manager.update_charging_point_connection(
+                    cp_id, client_id
                 )
-
-                # 更新连接映射
-                self._cp_connections[cp_id] = client_id
-                self._client_to_cp[client_id] = cp_id
 
                 self.logger.info(f"Heartbeat from {cp_id} processed successfully")
                 self._show_registered_charging_points()
@@ -231,7 +216,7 @@ class MessageDispatcher:
             self.logger.info(f"已注册Driver连接: {driver_id} -> {client_id}")
 
         # 检查充电点是否已注册且可用
-        if not self.db_manager.is_charging_point_registered(cp_id):
+        if not self.charging_point_manager.is_charging_point_registered(cp_id):
             return MessageFormatter.create_response_message(
                 cp_type="charge_request_response",
                 message_id=message_id,
@@ -239,7 +224,7 @@ class MessageDispatcher:
                 info=f"充电点 {cp_id} 未注册",
             )
 
-        cp_status = self.db_manager.get_charging_point_status(cp_id)
+        cp_status = self.charging_point_manager.get_charging_point_status(cp_id)
 
         if cp_status != Status.ACTIVE.value:
             return self._create_failure_response(
@@ -252,22 +237,16 @@ class MessageDispatcher:
         self.logger.info(f"授权充电请求: CP {cp_id}, Driver {driver_id}")
 
         try:
-            # 生成充电会话ID
+            # 使用ChargingSession管理器创建充电会话
+            session_id, error_msg = (
+                self.charging_session_manager.create_charging_session(cp_id, driver_id)
+            )
 
-            session_id = str(uuid.uuid4())
-
-            # 注册司机（如果尚未注册）
-            self.db_manager.register_driver(driver_id, f"driver_{driver_id}")
-
-            start_time = datetime.now().isoformat()
-
-            if not self.db_manager.create_charging_session(
-                session_id, cp_id, driver_id, start_time
-            ):
-                raise Exception("创建充电会话失败")
+            if not session_id:
+                raise Exception(error_msg or "创建充电会话失败")
 
             # 更新充电点状态为充电中
-            self.db_manager.update_charging_point_status(
+            self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.CHARGING.value
             )
 
@@ -296,8 +275,9 @@ class MessageDispatcher:
         """
         self.logger.info(f"正在处理来自 {client_id} 的充电数据...")
 
+        cp_id = message.get("cp_id")
         session_id = message.get("session_id")
-        energy_consumed = message.get("energy_consumed_kwh")
+        energy_consumed = message.get("energy_consumed")
         total_cost = message.get("total_cost")
         charging_rate = message.get("charging_rate")
         message_id = message.get("message_id")
@@ -305,8 +285,9 @@ class MessageDispatcher:
         missing_info = self._check_missing_fields(
             message,
             [
+                "cp_id",
                 "session_id",
-                "energy_consumed_kwh",
+                "energy_consumed",
                 "total_cost",
                 "charging_rate",
                 "message_id",
@@ -320,8 +301,8 @@ class MessageDispatcher:
             )
 
         try:
-            # 更新数据库中的充电会话
-            self.db_manager.update_charging_session(
+            # 使用ChargingSession管理器更新充电会话
+            self.charging_session_manager.update_charging_session(
                 session_id=session_id,
                 energy_consumed=energy_consumed,
                 total_cost=total_cost,
@@ -329,9 +310,10 @@ class MessageDispatcher:
             )
 
             # 获取充电会话信息
-            session_info = self.db_manager.get_charging_session(session_id)
+            session_info = self.charging_session_manager.get_charging_session(
+                session_id
+            )
             if session_info:
-                cp_id = session_info["cp_id"]
                 driver_id = session_info["driver_id"]
 
                 # 发送充电状态更新给Driver
@@ -372,8 +354,8 @@ class MessageDispatcher:
         self.logger.info(f"正在处理来自 {client_id} 的充电完成通知...")
 
         cp_id = message.get("cp_id")
-        driver_id = message.get("driver_id")
-        energy_consumed = message.get("energy_consumed_kwh")
+        session_id = message.get("session_id")
+        energy_consumed = message.get("energy_consumed")
         total_cost = message.get("total_cost")
         message_id = message.get("message_id")
 
@@ -381,11 +363,10 @@ class MessageDispatcher:
             message,
             [
                 "cp_id",
-                "driver_id",
-                "energy_consumed_kwh",
+                "session_id",
+                "energy_consumed",
                 "total_cost",
                 "message_id",
-                "driver_id",
             ],
         )
         if missing_info:
@@ -396,31 +377,34 @@ class MessageDispatcher:
             )
 
         try:
-            # 获取会话ID
-            session_id = message.get("session_id")
-            if not session_id:
+            # 从会话中获取driver_id
+            session_info = self.charging_session_manager.get_charging_session(
+                session_id
+            )
+            if not session_info:
                 return MessageFormatter.create_response_message(
                     cp_type="charge_completion_response",
                     message_id=message_id,
                     status="failure",
-                    info="充电完成消息中缺少会话ID",
+                    info=f"充电会话 {session_id} 不存在",
                 )
 
-            # 更新充电会话
-            from datetime import datetime
+            driver_id = session_info.get("driver_id")
 
-            end_time = datetime.now().isoformat()
-
-            self.db_manager.update_charging_session(
-                session_id=session_id,
-                end_time=end_time,
-                energy_consumed=energy_consumed,
-                total_cost=total_cost,
-                status="completed",
+            # 使用ChargingSession管理器完成充电会话
+            success, session_data = (
+                self.charging_session_manager.complete_charging_session(
+                    session_id=session_id,
+                    energy_consumed=energy_consumed,
+                    total_cost=total_cost,
+                )
             )
 
+            if not success:
+                raise Exception("完成充电会话失败")
+
             # 更新充电点状态为活跃
-            self.db_manager.update_charging_point_status(
+            self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.ACTIVE.value
             )
 
@@ -476,8 +460,8 @@ class MessageDispatcher:
             )
 
         try:
-            # 更新充电点状态为故障
-            self.db_manager.update_charging_point_status(
+            # 使用ChargingPoint管理器更新充电点状态为故障
+            self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.FAULTY.value
             )
 
@@ -536,8 +520,10 @@ class MessageDispatcher:
             )
 
         try:
-            # 更新数据库中的状态
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=new_status)
+            # 使用ChargingPoint管理器更新状态
+            self.charging_point_manager.update_charging_point_status(
+                cp_id=cp_id, status=new_status
+            )
 
             self.logger.info(f"充电点 {cp_id} 状态已更新为: {new_status}")
 
@@ -574,29 +560,30 @@ class MessageDispatcher:
                 info=missing_info,
             )
         try:
-            # 获取所有充电点
-            charging_points = self.get_all_registered_charging_points()
+            # 使用ChargingPoint管理器获取可用充电点
+            available_cps = self.charging_point_manager.get_available_charging_points()
 
-            # 过滤可用充电点（状态为ACTIVE的）
-            available_cps = [
+            # 格式化响应数据
+            available_cps_data = [
                 {
-                    "id": cp["id"],
+                    "id": cp["cp_id"],
                     "location": cp["location"],
                     "price_per_kwh": cp["price_per_kwh"],
                     "status": cp["status"],
                 }
-                for cp in charging_points
-                if cp["status"] == Status.ACTIVE.value
+                for cp in available_cps
             ]
 
-            self.logger.info(f"Found {len(available_cps)} available charging points")
+            self.logger.info(
+                f"Found {len(available_cps_data)} available charging points"
+            )
 
             return {
                 "type": "available_cps_response",
                 "message_id": message_id,
                 "status": "success",
                 "driver_id": driver_id,
-                "charging_points": available_cps,
+                "charging_points": available_cps_data,
                 "timestamp": int(time.time()),
             }
 
@@ -611,9 +598,7 @@ class MessageDispatcher:
                 "timestamp": int(time.time()),
             }
 
-    def _handle_authorization_message(
-        self, cp_id, client_id, message
-    ):  # TODO: implement
+    def _handle_authorization_message(self, client_id, message):  # TODO: implement
         """
         处理来自司机应用程序或充电点本身的充电授权请求。
         需要验证充电点是否可用，并决定是否授权。
@@ -640,8 +625,8 @@ class MessageDispatcher:
             )
 
         try:
-            # 更新充电点状态为活跃
-            self.db_manager.update_charging_point_status(
+            # 使用ChargingPoint管理器更新充电点状态为活跃
+            self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.ACTIVE.value
             )
 
@@ -666,7 +651,7 @@ class MessageDispatcher:
         """
         打印所有已注册的充电桩及其状态。
         """
-        charging_points = self.get_all_registered_charging_points()
+        charging_points = self.charging_point_manager.get_all_charging_points()
         if not charging_points:
             print("No registered charging points found.")
             return
@@ -676,23 +661,12 @@ class MessageDispatcher:
         print("╚" + "═" * 60 + "╝\n")
 
         for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 charging point {cp['id']}")
+            print(f"【{i}】 charging point {cp['cp_id']}")
             print(f"    ├─ Location: {cp['location']}")
             print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
             print(f"    ├─ Status: {cp['status']}")
             print(f"    └─ Last Connection: {cp['last_connection_time']}")
             print()
-
-    def get_all_registered_charging_points(self):
-        """
-        Retrieve all registered charging points from the database.
-        Returns a list of dictionaries with charging point details.
-        """
-        if not self.db_manager:
-            self.logger.error("Database connection is not initialized.")
-            return []
-
-        return self.db_manager.get_all_charging_points()
 
     def _send_charging_status_to_driver(self, driver_id, charging_data):
         """
@@ -807,7 +781,7 @@ class MessageDispatcher:
         except Exception as e:
             self.logger.error(f"向客户端 {client_id} 发送消息失败: {e}")
 
-    def _handle_manual_command(self, cp_id, command):  # TODO: implement
+    def _handle_manual_command(self):  # TODO: implement
         """
         处理来自管理员的手动命令，如启动或停止充电点。
         这些命令需要通过消息队列发送到相应的充电点。
@@ -819,15 +793,11 @@ if __name__ == "__main__":
     logger = CustomLogger.get_logger()
     db_connection = SqliteConnection("ev_central.db")
     socket_server = None  # Placeholder, should be an instance of MySocketServer
-    charging_points_connections = {}  # Placeholder for actual connections
-    client_to_ref = {}  # Placeholder for actual client to reference mapping
 
     message_dispatcher = MessageDispatcher(
         logger=logger,
         db_manager=db_connection,
         socket_server=socket_server,
-        charging_points_connections=charging_points_connections,
-        client_to_ref=client_to_ref,
     )
     # Example usage
     example_message = {

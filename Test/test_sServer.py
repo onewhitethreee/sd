@@ -9,35 +9,10 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 from Common.Message.MessageFormatter import MessageFormatter
-from Common.Message.MessageTransformer import MessageTransformer
 from Common.Config.CustomLogger import CustomLogger
 
 SERVER_HOST = "localhost"
 SERVER_PORT = 5002  # 确保这个端口和 EV_Central.py 中的一致
-
-
-def dict_to_message_list(message_dict):
-    """
-    将字典消息转换为字符串列表格式
-    根据消息类型确定字段顺序
-    """
-    message_type = message_dict.get("type", "")
-
-    # 定义各种消息类型的字段顺序
-    field_order = {
-        "register_request": ["type", "message_id", "id", "location", "price_per_kwh"],
-        "heartbeat_request": ["type", "message_id", "id"],
-        "charge_request": ["type", "message_id", "driver_id", "cp_id"],
-        "available_cps_request": ["type", "message_id", "driver_id"],
-    }
-
-    fields = field_order.get(message_type, list(message_dict.keys()))
-    result = []
-    for field in fields:
-        value = message_dict.get(field, "")
-        result.append(str(value) if value is not None else "")
-
-    return result
 
 
 def send_message(sock, message_dict):
@@ -45,12 +20,8 @@ def send_message(sock, message_dict):
     print(f"\n[客户端] 准备发送消息:")
     print(json.dumps(message_dict, indent=2))
 
-    # 将字典转换为字符串列表
-    message_list = dict_to_message_list(message_dict)
-    print(f"[客户端] 转换后的消息列表: {message_list}")
-
-    # 打包消息
-    serialized_message = MessageFormatter.pack_message(message_list)
+    # 直接打包JSON消息
+    serialized_message = MessageFormatter.pack_message(message_dict)
     print(f"[客户端] 发送的原始数据: {serialized_message}")
     sock.sendall(serialized_message)
     print("[客户端] 消息已发送！")
@@ -73,15 +44,11 @@ def receive_message(sock):
         print(f"[客户端] 收到原始数据: {data}")
 
         # 尝试从缓冲区提取完整消息
-        buffer, message_list = MessageFormatter.extract_complete_message(buffer)
+        buffer, message_dict = MessageFormatter.extract_complete_message(buffer)
 
-        if message_list:
+        if message_dict:
             print("[客户端] 收到服务器的回应:")
-            print(f"[客户端] 解包后的消息列表: {message_list}")
-
-            # 将字符串列表转换为字典
-            message_dict = MessageTransformer.to_dict_with_defaults(message_list)
-            print(f"[客户端] 转换后的消息字典:")
+            print(f"[客户端] 解包后的消息字典:")
             print(json.dumps(message_dict, indent=2))
             return message_dict
         else:

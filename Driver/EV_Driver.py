@@ -69,12 +69,7 @@ class Driver:
 
     def _handle_central_message(self, message):
         """处理来自中央系统的消息"""
-        from Common.Message.MessageTransformer import MessageTransformer
-
-        # 如果message是字符串列表，转换为字典
-        if isinstance(message, list):
-            message = MessageTransformer.to_dict_with_defaults(message)
-
+        # 消息已经是字典格式（JSON）
         message_type = message.get("type")
 
         try:

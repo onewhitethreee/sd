@@ -58,7 +58,9 @@ class EV_CP_M:
         self._engine_health_thread = None
 
         self.HEARTBEAT_INTERVAL = 30  # 向 Central 发送心跳的间隔（秒）
-        self.ENGINE_HEALTH_TIMEOUT = 90  # 如果超过这个时间没有收到 Engine 的健康响应，则认为故障（秒）
+        self.ENGINE_HEALTH_TIMEOUT = (
+            90  # 如果超过这个时间没有收到 Engine 的健康响应，则认为故障（秒）
+        )
         self.ENGINE_HEALTH_CHECK_INTERVAL = 30  # 向 Engine 发送健康
 
     def _register_with_central(self):
@@ -114,6 +116,7 @@ class EV_CP_M:
                 self._report_failure("EV_CP_E connection lost")
                 self.update_cp_status("FAULTY")
                 self._stop_engine_health_check_thread()  # 停止健康检查
+
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""
         if self._engine_health_thread and self._engine_health_thread.is_alive():
@@ -124,6 +127,7 @@ class EV_CP_M:
             # 实际上，线程会在下一次循环时检测到条件变化并退出
         else:
             self.logger.debug("Engine health check thread is not running.")
+
     def _stop_heartbeat_thread(self):
         """停止发送心跳的线程"""
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
@@ -134,6 +138,7 @@ class EV_CP_M:
             # 实际上，线程会在下一次循环时检测到条件变化并退出
         else:
             self.logger.debug("Heartbeat thread for Central is not running.")
+
     def _start_engine_health_check_thread(self):
         """启动对 Engine 的健康检查线程"""
         if self._engine_health_thread and self._engine_health_thread.is_alive():
@@ -223,7 +228,6 @@ class EV_CP_M:
                 "type": "health_check_request",
                 "message_id": str(uuid.uuid4()),
                 "id": self.args.id_cp,
-                "timestamp": int(current_time),
             }
             if self.engine_conn_mgr.send(health_check_msg):
                 self.logger.debug("Health check sent to EV_CP_E")
@@ -286,7 +290,6 @@ class EV_CP_M:
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "status": status,
-            "timestamp": int(time.time()),
         }
         if self.central_conn_mgr.send(status_message):
             self.logger.info(f"Status update sent to Central: {status}")
@@ -341,8 +344,6 @@ class EV_CP_M:
             "cp_id": cp_id,
             "session_id": session_id,
             "driver_id": driver_id,
-            "ev_id": f"ev_{driver_id}",
-            "timestamp": int(time.time()),
         }
         if self.engine_conn_mgr.send(start_charging_message):
             self.logger.info(
@@ -366,11 +367,11 @@ class EV_CP_M:
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
+            "cp_id": self.args.id_cp,
             "session_id": message.get("session_id"),
-            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
+            "energy_consumed": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
             "charging_rate": message.get("charging_rate"),
-            "timestamp": message.get("timestamp", int(time.time())),
         }
         if self.central_conn_mgr.send(charging_data_message):
             self.logger.debug("Charging data forwarded to Central.")
@@ -394,9 +395,8 @@ class EV_CP_M:
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
             "session_id": message.get("session_id"),
-            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
+            "energy_consumed": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
-            "timestamp": message.get("timestamp", int(time.time())),
         }
         if self.central_conn_mgr.send(completion_message):
             self.logger.info("Charging completion forwarded to Central.")
@@ -462,11 +462,11 @@ class EV_CP_M:
             self._handle_start_charging_command(message)
         elif message_type == "charging_data_response":
             self.logger.warning(f"Charging data response from Central: {message}")
-        elif message_type == 'fault_notification_response':
+        elif message_type == "fault_notification_response":
             self.logger.warning(f"Fault notification response from Central: {message}")
         elif message_type == "status_update_response":
             self.logger.warning(f"Status update response from Central: {message}")
-        elif message_type == 'charge_completion_response':
+        elif message_type == "charge_completion_response":
             self.logger.warning(f"Charge completion response from Central: {message}")
         else:
             self.logger.warning(f"Unknown message type from Central: {message_type}")

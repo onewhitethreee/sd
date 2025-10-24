@@ -60,12 +60,7 @@ class ConnectionManager:
         底层MySocketClient接收到消息后的内部处理函数。
         这里我们捕获连接断开的特殊消息，并更新状态。
         """
-        from Common.Message.MessageTransformer import MessageTransformer
-
-        # 如果message是字符串列表，转换为字典
-        if isinstance(message, list):
-            message = MessageTransformer.to_dict_with_defaults(message)
-
+        # 消息已经是字典格式（JSON）
         msg_type = message.get("type")
         if msg_type == "CONNECTION_LOST" or msg_type == "SERVER_SHUTDOWN":
             self.logger.warning(
