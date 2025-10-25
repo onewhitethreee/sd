@@ -113,7 +113,7 @@ class MessageDispatcher:
                 info=f"注册失败: {error_msg}",
             )
 
-        # 更新连接映射
+        # 更新连接映射, 将CP设置为ACTIVE
         self.charging_point_manager.update_charging_point_connection(cp_id, client_id)
 
         self._show_registered_charging_points()
@@ -137,7 +137,7 @@ class MessageDispatcher:
             return self._create_failure_response(
                 "heartbeat",
                 message_id=message.get("message_id", ""),
-                info="Heartbeat message missing 'id' field",
+                info="heartbeat 缺少充电桩ID",
             )
 
         # 检查充电桩是否已注册
@@ -147,33 +147,26 @@ class MessageDispatcher:
                 self.charging_point_manager.update_charging_point_connection(
                     cp_id, client_id
                 )
-
-                self.logger.info(f"Heartbeat from {cp_id} processed successfully")
                 self._show_registered_charging_points()
 
                 return MessageFormatter.create_response_message(
                     cp_type="heartbeat_response",
                     message_id=message.get("message_id", ""),
                     status="success",
-                    info="Heartbeat received and last connection time updated.",
+                    info="heartbeat更新最后连接时间成功",
                 )
             except Exception as e:
-                self.logger.error(
-                    f"Failed to update last connection time for {cp_id}: {e}"
-                )
+                # TODO 这里如果更新不成功需要设置为faulty吗
                 return self._create_failure_response(
                     "heartbeat",
                     message_id=message.get("message_id", ""),
                     info=f"Failed to update last connection time: {e}",
                 )
         else:
-            self.logger.warning(
-                f"Received heartbeat from unregistered charging point {cp_id}"
-            )
             return self._create_failure_response(
                 "heartbeat",
                 message_id=message.get("message_id", ""),
-                info=f"Charging point {cp_id} is not registered.",
+                info=f"Charging point {cp_id} is not registered with heartbeat message.",
             )
 
     def _handle_charge_request_message(self, client_id, message):
@@ -398,7 +391,7 @@ class MessageDispatcher:
             )
 
             self.logger.info(
-                f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed_kwh}kWh, 费用: €{total_cost}"
+                f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed_kwh}kWh, 费用: €{total_cost} session_data: {session_data}"
             )
 
             # 向Driver发送充电完成通知
@@ -761,7 +754,7 @@ class MessageDispatcher:
 
     def _send_message_to_client(self, client_id, message):
         """
-        向指定客户端发送消息
+        向指定Driver 客户端发送消息
         """
         try:
             if self.socket_server:
@@ -772,7 +765,7 @@ class MessageDispatcher:
         except Exception as e:
             self.logger.error(f"向客户端 {client_id} 发送消息失败: {e}")
 
-    def _handle_manual_command(self):  # TODO: implement
+    def _handle_manual_command(self, client_id, message):  # TODO: implement
         """
         处理来自管理员的手动命令，如启动或停止充电点。
         这些命令需要通过消息队列发送到相应的充电点。

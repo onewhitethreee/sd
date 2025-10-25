@@ -7,6 +7,7 @@ import os
 import uuid
 import time
 import threading
+import random
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
@@ -52,7 +53,7 @@ class EV_CP_M:
         self.engine_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.running = False
 
-        self._current_status = "UNKNOWN"  # 当前充电点状态
+        self._current_status = Status.DISCONNECTED.value  # 当前充电点状态
 
         self._heartbeat_thread = None
         self._engine_health_thread = None
@@ -75,7 +76,7 @@ class EV_CP_M:
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "location": "Location_Info",
-            "price_per_kwh": 0.20,
+            "price_per_kwh": random.uniform(0.15, 0.25),
         }
         return self.central_conn_mgr.send(register_message)
 

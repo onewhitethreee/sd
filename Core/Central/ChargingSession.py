@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Config.Status import Status
 from Common.Database.SqliteConnection import SqliteConnection
 
 
@@ -75,7 +76,7 @@ class ChargingSession:
             return None, str(e)
 
     def update_charging_session(
-        self, session_id, energy_consumed_kwh, total_cost, status="in_progress"
+        self, session_id, energy_consumed_kwh, total_cost, status=Status.CHARGING.value
     ):
         """
         更新充电会话数据
