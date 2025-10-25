@@ -80,8 +80,8 @@ class EV_CP_M:
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "location": self.config.get_location(),
-            "price_per_kwh": round(random.uniform(0.15, 0.25), 2),
-            "max_charging_rate_kw": round(random.uniform(7.0, 22.0), 2),  # 模拟不同的充电桩能力
+            "price_per_kwh": (random.uniform(0.15, 0.25)),
+            "max_charging_rate_kw": random.uniform(7.0, 22.0),  # 模拟不同的充电桩能力
         }
         return self.central_conn_mgr.send(register_message)
 

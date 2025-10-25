@@ -202,8 +202,6 @@ class EV_CP_E:
             "price_per_kwh": price_per_kwh,  # 每度电价格
         }
         # 启动充电线程
-        # 注意：这里如果 charging_thread 已经结束，但 self.is_charging 为 True
-        # 需要确保线程可以被安全地重新赋值或等待。更好的做法是确保 _charging_process 不会死循环。
         charging_thread = threading.Thread(
             target=self._charging_process,
             args=(session_id,),
@@ -287,9 +285,6 @@ class EV_CP_E:
         if not self.current_session:  # 如果没有活跃会话，直接返回
             return
 
-        # 构建充电数据消息
-        # charging_rate_kw 是内部使用的充电速率（千瓦）
-        # 在消息中作为 charging_rate 发送给Monitor和Driver
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -301,9 +296,9 @@ class EV_CP_E:
             "total_cost": round(self.current_session["total_cost"], 2),
             "charging_rate": round(
                 self.current_session["charging_rate_kw"], 1
-            ),  # 转换为消息字段
+            ), 
         }
-
+        # 发送到 Monitor
         if self.monitor_server and self.monitor_server.has_active_clients():
             self.monitor_server.send_broadcast_message(charging_data_message)
             self.logger.debug(
