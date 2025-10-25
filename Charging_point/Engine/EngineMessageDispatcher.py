@@ -201,3 +201,5 @@ class EngineMessageDispatcher:
             "message": "Charging started" if success else "Failed to start charging",
             "session_id": session_id if success else None,
         }
+
+# TODO 修复在停止central模块的情况下Engine还会继续charge

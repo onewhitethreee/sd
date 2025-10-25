@@ -137,7 +137,7 @@ class MySocketServer:
                     # 处理消息并获取响应
                     # 这里调用的是外部的处理函数
                     response = self.message_callback(client_id, message)
-                    
+
                     if response:
                         self.send_to_client(client_id, response)
                         # self.logger.debug(f"Sent response to {client_id}: {response}")
@@ -161,22 +161,38 @@ class MySocketServer:
                     del self.clients[client_id]
 
     def send_to_client(self, client_id, message) -> bool:
-        """发送消息给特定客户端"""
+        """发送消息给特定客户端 - 处理partial send"""
         with self.clients_lock:
             client_socket = self.clients.get(client_id)
-            if client_socket:
-                try:
-                    packed_message = MessageFormatter.pack_message(message)
-                    client_socket.send(packed_message)
-                    return True
-                except Exception as e:
-                    return False
-            else:
+            if not client_socket:
                 self.logger.warning(f"Client {client_id} not connected")
                 return False
 
+        try:
+            packed_message = MessageFormatter.pack_message(message)
+            total_sent = 0
+
+            # 循环发送直到完整
+            while total_sent < len(packed_message):
+                try:
+                    sent = client_socket.send(packed_message[total_sent:])
+                    if sent == 0:
+                        self.logger.error(
+                            f"Socket connection broken with client {client_id}"
+                        )
+                        return False
+                    total_sent += sent
+                except socket.timeout:
+                    # 超时，继续尝试
+                    continue
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Send to client {client_id} failed: {e}")
+            return False
+
     def send_broadcast_message(self, message) -> bool:  # 返回是否成功广播（至少一个）
-        """向所有连接的客户端广播消息"""
+        """向所有连接的客户端广播消息 - 处理partial send"""
         if not self.running_event.is_set():
             self.logger.warning("Server is not running, cannot broadcast message.")
             return False
@@ -191,7 +207,18 @@ class MySocketServer:
 
         for client_id, client_socket in client_items:
             try:
-                client_socket.send(packed_message)
+                total_sent = 0
+                # 循环发送直到完整
+                while total_sent < len(packed_message):
+                    try:
+                        sent = client_socket.send(packed_message[total_sent:])
+                        if sent == 0:
+                            raise socket.error("Socket connection broken")
+                        total_sent += sent
+                    except socket.timeout:
+                        # 超时，继续尝试
+                        continue
+
                 self.logger.debug(f"Broadcast to {client_id}: {message.get('type')}")
                 sent_to_any_client = True
             except (socket.error, OSError) as e:  # 捕获更具体的socket错误
