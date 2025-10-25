@@ -131,7 +131,6 @@ class MessageDispatcher:
         处理充电桩发送的心跳消息，更新其最后连接时间。
         这个函数是用来检测充电桩是否在线的。要求每30秒发送一次心跳消息。
         """
-        self.logger.info(f"Processing heartbeat from client {client_id}")
         cp_id = message.get("id")
 
         if not cp_id:
@@ -472,7 +471,6 @@ class MessageDispatcher:
         处理充电点发送的状态更新消息。
         需要更新其在数据库中的状态，并可能触发其他操作（如通知管理员）。
         """
-        self.logger.info(f"正在处理来自 {client_id} 的状态更新...")
 
         cp_id = message.get("id")
         new_status = message.get("status")

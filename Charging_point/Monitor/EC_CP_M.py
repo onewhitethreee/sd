@@ -65,6 +65,9 @@ class EV_CP_M:
         )
         self.ENGINE_HEALTH_CHECK_INTERVAL = 30  # 向 Engine 发送健康
 
+        # 用于追踪最后一次收到Engine健康检查响应的时间
+        self._last_health_response_time = None
+
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
@@ -210,17 +213,30 @@ class EV_CP_M:
         }
         return self.central_conn_mgr.send(auth_message)
 
+    def _update_last_health_response(self):
+        """
+        更新最后一次收到Engine健康检查响应的时间。
+        这个方法由MonitorMessageDispatcher在收到health_check_response时调用。
+        """
+        self._last_health_response_time = time.time()
+
     def _check_engine_health(self):
         """
         检查EV_CP_E的健康状态。
         """
         self.logger.info("Starting health check thread for EV_CP_E")
-        last_health_response = time.time()
+        # 初始化为当前时间，这样不会立即超时
+        self._last_health_response_time = time.time()
         while (
             self.running and self.engine_conn_mgr and self.engine_conn_mgr.is_connected
         ):
             current_time = time.time()
-            if current_time - last_health_response > self.ENGINE_HEALTH_TIMEOUT:
+            # 检查是否超过超时时间
+            if (
+                self._last_health_response_time is not None
+                and current_time - self._last_health_response_time
+                > self.ENGINE_HEALTH_TIMEOUT
+            ):
                 self.logger.error("EV_CP_E health check timeout. Reporting failure.")
                 self._report_failure("EV_CP_E health check timeout")
                 self.update_cp_status("FAULTY")
@@ -228,7 +244,7 @@ class EV_CP_M:
                 # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
                 # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
                 # 并且如果是正常状态，CP status会再次更新。
-                break # 退出循环，等待CM重连和新的健康检查线程启动
+                break  # 退出循环，等待CM重连和新的健康检查线程启动
 
             health_check_msg = {
                 "type": "health_check_request",
@@ -337,8 +353,7 @@ class EV_CP_M:
         session_id = message.get("session_id")
         driver_id = message.get("driver_id")
         price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
-        max_charging_rate_kw = message.get(
-            "max_charging_rate_kw")
+        max_charging_rate_kw = message.get("max_charging_rate_kw")
 
         if not cp_id or not session_id:
             self.logger.error("Start charging command missing required fields.")

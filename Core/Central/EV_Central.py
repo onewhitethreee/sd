@@ -131,8 +131,6 @@ class EV_Central:
         """
         作为消息的分发中心。根据消息的 'type' 字段，调用相应的处理方法。
         """
-        # 消息已经是字典格式（JSON）
-        self.logger.info(f"收到来自客户端 {client_id} 的消息: {message}")
 
         return self.message_dispatcher.dispatch_message(client_id, message)
 

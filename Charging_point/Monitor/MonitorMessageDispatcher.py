@@ -7,7 +7,7 @@ Monitor消息分发器
 """
 
 import uuid
-
+from Charging_point.Monitor.EC_CP_M import EV_CP_M
 
 class MonitorMessageDispatcher:
     """
@@ -24,7 +24,7 @@ class MonitorMessageDispatcher:
             monitor: EV_CP_M实例，用于访问Monitor的业务逻辑
         """
         self.logger = logger
-        self.monitor = monitor
+        self.monitor : EV_CP_M = monitor
 
         # 来自Central的消息处理器
         self.central_handlers = {
@@ -86,7 +86,9 @@ class MonitorMessageDispatcher:
         if message.get("status") == "success":
             self.logger.info("Registration successful.")
         else:
-            self.logger.error(f"Registration failed: {message.get('reason', 'Unknown')}")
+            self.logger.error(
+                f"Registration failed: {message.get('reason', 'Unknown')}"
+            )
         return True
 
     def _handle_heartbeat_response(self, message):
@@ -128,6 +130,10 @@ class MonitorMessageDispatcher:
         """处理来自Engine的健康检查响应"""
         self.logger.debug(f"Health check response from Engine: {message}")
 
+        # 更新最后一次收到健康检查响应的时间
+        # 这是防止健康检查超时的关键
+        self.monitor._update_last_health_response()
+
         engine_status = message.get("engine_status")
         if engine_status == "FAULTY":
             self.logger.warning("Engine reports FAULTY status.")
@@ -152,8 +158,8 @@ class MonitorMessageDispatcher:
         """处理来自Engine的充电完成通知"""
         self.logger.info("Received charging completion from Engine.")
         return self.monitor._handle_charging_completion_from_engine(message)
+
     def _handle_command_response(self, message):
         """处理来自Engine的命令响应"""
         self.logger.debug(f"Command response from Engine: {message}")
         return True
-
