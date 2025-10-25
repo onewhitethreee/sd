@@ -89,14 +89,12 @@ class EngineMessageDispatcher:
         Returns:
             dict: 健康检查响应消息
         """
-        self.logger.debug("Processing health check request")
 
         response = {
             "type": "health_check_response",
             "message_id": message.get("message_id"),
             "status": "success",
             "engine_status": self.engine.get_current_status(),
-            "timestamp": int(time.time()),
             "is_charging": self.engine.is_charging,
         }
 

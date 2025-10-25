@@ -234,7 +234,7 @@ class SqliteConnection:
                 )
 
             connection.commit()
-            logging.info(f"充电桩 {cp_id} 状态更新成功: {status}")
+            # logging.info(f"充电桩 {cp_id} 状态更新成功: {status}")
             return True
         except Exception as e:
             connection.rollback()

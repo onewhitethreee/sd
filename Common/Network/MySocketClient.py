@@ -30,7 +30,18 @@ class MySocketClient:
             )
             self.receive_thread.start()
             return True
-
+        except socket.timeout:
+            self.logger.error(f"Connection timed out: {host}:{port}")
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+            return False
+        except ConnectionRefusedError:
+            self.logger.error(f"Connection refused: {host}:{port}")
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+            return False
         except Exception as e:
             self.logger.error(f"Connection failed: {e} {host}:{port}")
 

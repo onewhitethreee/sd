@@ -90,7 +90,7 @@ class EV_CP_M:
         由 ConnectionManager 回调，处理连接状态变化。
         这就是 EV_CP_M 响应底层网络事件的核心逻辑。
         """
-        self.logger.info(f"Connection status for {source_name} changed to {status}")
+        self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
             if status == "CONNECTED":
                 self.logger.info("Central is now connected. Attempting to register...")
@@ -228,7 +228,7 @@ class EV_CP_M:
                 # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
                 # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
                 # 并且如果是正常状态，CP status会再次更新。
-                # break # 退出循环，等待CM重连和新的健康检查线程启动
+                break # 退出循环，等待CM重连和新的健康检查线程启动
 
             health_check_msg = {
                 "type": "health_check_request",

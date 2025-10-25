@@ -232,7 +232,7 @@ class ChargingPoint:
             del self._cp_connections[cp_id]
             del self._client_to_cp[client_id]
 
-            self.logger.info(f"充电桩 {cp_id} 已断开连接")
+            self.logger.warning(f"充电桩 {cp_id} 已断开连接")
             return cp_id
 
         except Exception as e:

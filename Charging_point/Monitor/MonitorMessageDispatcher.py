@@ -42,6 +42,7 @@ class MonitorMessageDispatcher:
             "health_check_response": self._handle_health_check_response,
             "charging_data": self._handle_charging_data_from_engine,
             "charge_completion": self._handle_charging_completion_from_engine,
+            "command_response": self._handle_command_response,
         }
 
     def dispatch_message(self, source, message):
@@ -90,9 +91,8 @@ class MonitorMessageDispatcher:
 
     def _handle_heartbeat_response(self, message):
         """处理来自Central的心跳响应"""
-        self.logger.debug("Received heartbeat response from Central.")
         if message.get("status") == "success":
-            self.logger.debug("Heartbeat acknowledged by Central")
+            self.logger.debug("Monitor成功接收心跳响应")
         else:
             self.logger.warning("Heartbeat not acknowledged by Central")
         return True
@@ -109,7 +109,7 @@ class MonitorMessageDispatcher:
 
     def _handle_fault_notification_response(self, message):
         """处理来自Central的故障通知响应"""
-        self.logger.debug(f"Fault notification response from Central: {message}")
+        self.logger.error(f"Fault notification response from Central: {message}")
         return True
 
     def _handle_status_update_response(self, message):
@@ -152,4 +152,8 @@ class MonitorMessageDispatcher:
         """处理来自Engine的充电完成通知"""
         self.logger.info("Received charging completion from Engine.")
         return self.monitor._handle_charging_completion_from_engine(message)
+    def _handle_command_response(self, message):
+        """处理来自Engine的命令响应"""
+        self.logger.debug(f"Command response from Engine: {message}")
+        return True
 

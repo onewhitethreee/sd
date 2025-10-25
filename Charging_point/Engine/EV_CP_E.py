@@ -359,7 +359,6 @@ class EV_CP_E:
         return self._init_connections()
 
     def start(self):
-        self.logger.info("Starting EV_CP_E module")
         self.logger.info(
             f"Will listen for Monitor on {self.engine_listen_address[0]}:{self.engine_listen_address[1]}"
         )
@@ -372,12 +371,8 @@ class EV_CP_E:
             sys.exit(1)
 
         try:
-            # 启动交互式命令处理线程
-            command_thread = threading.Thread(
-                target=self._interactive_commands, daemon=True
-            )
-            command_thread.start()
 
+            self.running = True
             while self.running:
                 time.sleep(1)  # 保持运行
 
@@ -388,69 +383,7 @@ class EV_CP_E:
             self.logger.error(f"Unexpected error: {e}")
             self._shutdown_system()
 
-    def _interactive_commands(self):
-        """交互式命令处理 用于debug模式"""
-        if not self.debug_mode:
-            return
-        self.logger.info("\n--- Interactive commands available (DEBUG MODE) ---")
-        self.logger.info("  - Press 'c' + Enter to simulate a Monitor connection")
-        self.logger.info("  - Press 'd' + Enter to simulate a Monitor disconnect")
-        self.logger.info("  - Press 's' + Enter to start charging (manual_ev)")
-        self.logger.info("  - Press 'e' + Enter to end charging")
-        self.logger.info("  - Press 'q' + Enter to quit")
-        self.logger.info("---------------------------------------------------\n")
-        while self.running:
-            try:
-                command = input().strip().lower()
-                if command == "q":
-                    self.logger.info("Quit command received.")
-                    self.running = False
-                    break
-                elif command == "c":
-                    self.logger.info("Simulating Monitor connection...")
-                    # 模拟 Monitor 连接，客户端ID为 'test_monitor'
-                    if self.monitor_server:
-                        self.monitor_server._simulate_client_connect("test_monitor")
-                    else:
-                        self.logger.warning("Monitor server not running.")
-                elif command == "d":
-                    self.logger.info("Simulating Monitor disconnection...")
-                    # 模拟 Monitor 断开
-                    if self.monitor_server:
-                        self.monitor_server._simulate_client_disconnect("test_monitor")
-                    else:
-                        self.logger.warning("Monitor server not running.")
-
-                elif command == "s":
-                    if not self.is_charging:
-                        session_id = str(uuid.uuid4())
-                        self._start_charging_session(self.args.id_cp, session_id)
-                        self.logger.info(
-                            f"Manual charging session '{session_id}' started."
-                        )
-                    else:
-                        self.logger.info(
-                            f"Already charging session '{self.current_session['session_id']}'."
-                        )
-                elif command == "e":
-                    if self.is_charging:
-                        self._stop_charging_session()
-                        self.logger.info("Manual charging stopped.")
-                    else:
-                        self.logger.info("No active charging session to stop.")
-                else:
-                    self.logger.info(
-                        "Unknown command. Use 'c' connect, 'd' disconnect, 's' start, 'e' end, 'q' quit"
-                    )
-            except EOFError:
-                self.logger.info(
-                    "EOF received in interactive commands. Exiting command thread."
-                )
-                break
-            except Exception as e:
-                self.logger.error(f"Error in interactive commands: {e}", exc_info=True)
-                break
-
+    
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

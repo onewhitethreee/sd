@@ -111,6 +111,9 @@ class MySocketServer:
                     if not self.running_event.is_set():
                         break  # 服务器停止，退出循环
                     continue  # 继续等待数据
+                except ConnectionResetError:
+                    self.logger.info(f"Client {client_id} disconnected")
+                    break
                 except socket.error as e:
                     self.logger.error(f"Socket error with client {client_id}: {e}")
                     break
@@ -119,7 +122,7 @@ class MySocketServer:
                     break
                 # 将新数据添加到缓冲区
                 buffer += data
-                self.logger.debug(f"Received raw data from {client_id}: {data}")
+                # self.logger.debug(f"Received raw data from {client_id}: {data}")
                 # 处理缓冲区中的完整消息
                 while True:
                     buffer, message = self.message_formatter.extract_complete_message(
@@ -134,12 +137,10 @@ class MySocketServer:
                     # 处理消息并获取响应
                     # 这里调用的是外部的处理函数
                     response = self.message_callback(client_id, message)
-                    self.logger.info(
-                        f"Processed message from {client_id}: {message} and got response: {response}"
-                    )
+                    
                     if response:
                         self.send_to_client(client_id, response)
-                        self.logger.debug(f"Sent response to {client_id}: {response}")
+                        # self.logger.debug(f"Sent response to {client_id}: {response}")
 
         except Exception as e:
             self.logger.error(f"Error handling client {client_id}: {e}")
