@@ -28,8 +28,6 @@ class ChargingSession:
         """
         self.logger = logger
         self.db_manager: SqliteConnection = db_manager
-        # 内存中的充电会话映射：{session_id: session_info}
-        self._charging_sessions = {}
 
     def create_charging_session(self, cp_id, driver_id):
         """
@@ -47,7 +45,7 @@ class ChargingSession:
             start_time = datetime.now().isoformat()
 
             # 确保充电桩存在于数据库（外键约束）
-            if not self.db_manager.charging_point_exists(cp_id):
+            if not self.db_manager.is_charging_point_registered(cp_id):
                 self.logger.warning(f"充电桩 {cp_id} 不存在于数据库，创建默认记录...")
                 # 创建一个默认的充电桩记录
                 if not self.db_manager.insert_or_update_charging_point(
@@ -68,18 +66,6 @@ class ChargingSession:
                 session_id, cp_id, driver_id, start_time
             ):
                 raise Exception("创建充电会话失败")
-
-            # 保存到内存
-            self._charging_sessions[session_id] = {
-                "session_id": session_id,
-                "cp_id": cp_id,
-                "driver_id": driver_id,
-                "start_time": start_time,
-                "end_time": None,
-                "energy_consumed_kwh": 0.0,
-                "total_cost": 0.0,
-                "status": "in_progress",
-            }
 
             self.logger.info(f"充电会话 {session_id} 创建成功")
             return session_id, None
@@ -104,14 +90,11 @@ class ChargingSession:
             bool: 是否成功
         """
         try:
-            # Check if session exists in memory, if not try to load from database
-            if session_id not in self._charging_sessions:
-                db_session = self.db_manager.get_charging_session(session_id)
-                if not db_session:
-                    self.logger.warning(f"充电会话 {session_id} 不存在")
-                    return False
-                # Load into memory cache
-                self._charging_sessions[session_id] = db_session
+            # 检查会话是否存在
+            db_session = self.db_manager.get_charging_session(session_id)
+            if not db_session:
+                self.logger.warning(f"充电会话 {session_id} 不存在")
+                return False
 
             # 更新数据库
             self.db_manager.update_charging_session(
@@ -120,13 +103,6 @@ class ChargingSession:
                 total_cost=total_cost,
                 status=status,
             )
-
-            # 更新内存
-            self._charging_sessions[session_id][
-                "energy_consumed_kwh"
-            ] = energy_consumed_kwh
-            self._charging_sessions[session_id]["total_cost"] = total_cost
-            self._charging_sessions[session_id]["status"] = status
 
             self.logger.debug(
                 f"会话 {session_id} 已更新: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
@@ -150,14 +126,11 @@ class ChargingSession:
             tuple: (success: bool, session_data: dict or None)
         """
         try:
-            # Check if session exists in memory, if not try to load from database
-            if session_id not in self._charging_sessions:
-                db_session = self.db_manager.get_charging_session(session_id)
-                if not db_session:
-                    self.logger.warning(f"充电会话 {session_id} 不存在")
-                    return False, None
-                # Load into memory cache
-                self._charging_sessions[session_id] = db_session
+            # 检查会话是否存在
+            db_session = self.db_manager.get_charging_session(session_id)
+            if not db_session:
+                self.logger.warning(f"充电会话 {session_id} 不存在")
+                return False, None
 
             end_time = datetime.now().isoformat()
 
@@ -170,14 +143,8 @@ class ChargingSession:
                 status="completed",
             )
 
-            # 更新内存
-            session_data = self._charging_sessions[session_id].copy()
-            session_data["end_time"] = end_time
-            session_data["energy_consumed_kwh"] = energy_consumed_kwh
-            session_data["total_cost"] = total_cost
-            session_data["status"] = "completed"
-
-            self._charging_sessions[session_id] = session_data
+            # 从数据库获取更新后的会话数据
+            session_data = self.db_manager.get_charging_session(session_id)
 
             self.logger.info(
                 f"充电会话 {session_id} 已完成: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
@@ -198,29 +165,13 @@ class ChargingSession:
         Returns:
             dict: 会话信息或None
         """
-        # First check in-memory cache
-        session = self._charging_sessions.get(session_id)
-        if session:
-            return session
-
-        # If not in memory, try to load from database
-        # This handles cases where the session was created but not yet in memory
-        # or if the Central process was restarted
         try:
-            db_session = self.db_manager.get_charging_session(session_id)
-            if db_session:
-                # Load into memory cache for future access
-                self._charging_sessions[session_id] = db_session
-                self.logger.debug(
-                    f"Loaded charging session {session_id} from database into memory cache"
-                )
-                return db_session
+            return self.db_manager.get_charging_session(session_id)
         except Exception as e:
             self.logger.warning(
                 f"Failed to load charging session {session_id} from database: {e}"
             )
-
-        return None
+            return None
 
     def is_session_active(self, session_id):
         """
@@ -232,7 +183,7 @@ class ChargingSession:
         Returns:
             bool: 是否活跃
         """
-        session = self._charging_sessions.get(session_id)
+        session = self.db_manager.get_charging_session(session_id)
         return session is not None and session["status"] == "in_progress"
 
     def get_active_sessions_for_charging_point(self, cp_id):
@@ -245,11 +196,7 @@ class ChargingSession:
         Returns:
             list: 活跃会话列表
         """
-        return [
-            session
-            for session in self._charging_sessions.values()
-            if session["cp_id"] == cp_id and session["status"] == "in_progress"
-        ]
+        return self.db_manager.get_active_sessions_for_charging_point(cp_id)
 
     def get_active_sessions_for_driver(self, driver_id):
         """
@@ -261,11 +208,7 @@ class ChargingSession:
         Returns:
             list: 活跃会话列表
         """
-        return [
-            session
-            for session in self._charging_sessions.values()
-            if session["driver_id"] == driver_id and session["status"] == "in_progress"
-        ]
+        return self.db_manager.get_active_sessions_for_driver(driver_id)
 
     def get_all_charging_sessions(self):
         """
@@ -274,6 +217,4 @@ class ChargingSession:
         Returns:
             list: 所有会话列表
         """
-        return list(self._charging_sessions.values())
-
-# TODO 不需要保存到内存，只需要随时的从数据库中读取
+        return self.db_manager.get_active_charging_sessions()

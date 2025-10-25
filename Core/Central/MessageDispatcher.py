@@ -90,7 +90,6 @@ class MessageDispatcher:
         price_per_kwh = message.get("price_per_kwh")
         message_id = message.get("message_id")
 
-        
         missing_info = self._check_missing_fields(
             message, ["id", "location", "price_per_kwh", "message_id"]
         )
@@ -732,7 +731,9 @@ class MessageDispatcher:
         """
         try:
             # 查找连接到该充电点的Monitor客户端
-            monitor_client_id = self._cp_connections.get(cp_id)
+            monitor_client_id = (
+                self.charging_point_manager.get_client_id_for_charging_point(cp_id)
+            )
             if not monitor_client_id:
                 self.logger.error(f"未找到充电点 {cp_id} 的Monitor连接")
                 return False

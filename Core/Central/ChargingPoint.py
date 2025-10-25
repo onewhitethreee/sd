@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.Status import Status
-
+from Common.Database.SqliteConnection import SqliteConnection
 
 class ChargingPoint:
     """
@@ -28,10 +28,8 @@ class ChargingPoint:
             db_manager: 数据库管理器
         """
         self.logger = logger
-        self.db_manager = db_manager
-        # 内存中的充电桩映射：{cp_id: charging_point_info}
-        self._charging_points = {}
-        # 连接映射：{cp_id: client_id}
+        self.db_manager : SqliteConnection = db_manager
+        # 连接映射：{cp_id: client_id}（仅保留连接映射，数据从数据库读取）
         self._cp_connections = {}
         # 反向映射：{client_id: cp_id}
         self._client_to_cp = {}
@@ -65,16 +63,6 @@ class ChargingPoint:
                 last_connection_time=None,
             )
 
-            # 保存到内存
-            self._charging_points[cp_id] = {
-                "cp_id": cp_id,
-                "location": location,
-                "price_per_kwh": price_per_kwh,
-                "status": Status.DISCONNECTED.value,
-                "last_connection_time": None,
-                "client_id": None,
-            }
-
             self.logger.info(f"充电桩 {cp_id} 注册成功！")
             return True, None
 
@@ -94,7 +82,8 @@ class ChargingPoint:
             bool: 是否成功
         """
         try:
-            if cp_id not in self._charging_points:
+            # 检查充电桩是否已注册
+            if not self.db_manager.is_charging_point_registered(cp_id):
                 self.logger.warning(f"充电桩 {cp_id} 未注册")
                 return False
 
@@ -106,11 +95,6 @@ class ChargingPoint:
                 status=Status.ACTIVE.value,
                 last_connection_time=current_time,
             )
-
-            # 更新内存
-            self._charging_points[cp_id]["status"] = Status.ACTIVE.value
-            self._charging_points[cp_id]["last_connection_time"] = current_time
-            self._charging_points[cp_id]["client_id"] = client_id
 
             # 更新连接映射
             self._cp_connections[cp_id] = client_id
@@ -135,15 +119,13 @@ class ChargingPoint:
             bool: 是否成功
         """
         try:
-            if cp_id not in self._charging_points:
+            # 检查充电桩是否已注册
+            if not self.db_manager.is_charging_point_registered(cp_id):
                 self.logger.warning(f"充电桩 {cp_id} 未注册")
                 return False
 
             # 更新数据库
             self.db_manager.update_charging_point_status(cp_id=cp_id, status=status)
-
-            # 更新内存
-            self._charging_points[cp_id]["status"] = status
 
             self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
             return True
@@ -162,7 +144,7 @@ class ChargingPoint:
         Returns:
             dict: 充电桩信息或None
         """
-        return self._charging_points.get(cp_id)
+        return self.db_manager.get_charging_point(cp_id)
 
     def is_charging_point_registered(self, cp_id):
         """
@@ -174,7 +156,7 @@ class ChargingPoint:
         Returns:
             bool: 是否已注册
         """
-        return cp_id in self._charging_points
+        return self.db_manager.is_charging_point_registered(cp_id)
 
     def get_charging_point_status(self, cp_id):
         """
@@ -186,8 +168,7 @@ class ChargingPoint:
         Returns:
             str: 充电桩状态或None
         """
-        cp = self._charging_points.get(cp_id)
-        return cp["status"] if cp else None
+        return self.db_manager.get_charging_point_status(cp_id)
 
     def get_client_id_for_charging_point(self, cp_id):
         """
@@ -235,11 +216,6 @@ class ChargingPoint:
                 status=Status.DISCONNECTED.value,
             )
 
-            # 更新内存
-            if cp_id in self._charging_points:
-                self._charging_points[cp_id]["status"] = Status.DISCONNECTED.value
-                self._charging_points[cp_id]["client_id"] = None
-
             # 清理映射关系
             del self._cp_connections[cp_id]
             del self._client_to_cp[client_id]
@@ -258,7 +234,7 @@ class ChargingPoint:
         Returns:
             list: 所有充电桩信息列表
         """
-        return list(self._charging_points.values())
+        return self.db_manager.get_all_charging_points()
 
     def get_available_charging_points(self):
         """
@@ -267,10 +243,4 @@ class ChargingPoint:
         Returns:
             list: 可用充电桩列表
         """
-        return [
-            cp
-            for cp in self._charging_points.values()
-            if cp["status"] == Status.ACTIVE.value
-        ]
-
-# TODO 不需要保存到内存，只需要随时的从数据库中读取
+        return self.db_manager.get_available_charging_points()

@@ -127,7 +127,7 @@ class SqliteConnection:
             rows = cursor.fetchall()
             return [
                 {
-                    "id": row[0],
+                    "cp_id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
                     "status": row[3],
@@ -137,6 +137,30 @@ class SqliteConnection:
             ]
         except Exception as e:
             logging.error(f"Error fetching charging points: {e}")
+            return []
+
+    def get_available_charging_points(self):
+        """获取所有可用的充电桩（状态为ACTIVE）"""
+        connection = self.get_connection()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints WHERE status = ?",
+                ("ACTIVE",),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "cp_id": row[0],
+                    "location": row[1],
+                    "price_per_kwh": row[2],
+                    "status": row[3],
+                    "last_connection_time": row[4],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.error(f"Error fetching available charging points: {e}")
             return []
 
     def clean_database(self):
@@ -204,6 +228,33 @@ class SqliteConnection:
             connection.rollback()
             logging.error(f"更新充电桩 {cp_id} 状态失败: {e}")
             return False
+
+    def get_charging_point(self, cp_id):
+        """获取充电桩完整信息"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT cp_id, location, price_per_kwh, status, last_connection_time
+                FROM ChargingPoints
+                WHERE cp_id = ?
+                """,
+                (cp_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "cp_id": row[0],
+                    "location": row[1],
+                    "price_per_kwh": row[2],
+                    "status": row[3],
+                    "last_connection_time": row[4],
+                }
+            return None
+        except Exception as e:
+            logging.error(f"获取充电桩 {cp_id} 信息失败: {e}")
+            return None
 
     def get_charging_point_status(self, cp_id):
         """获取充电桩状态"""
@@ -346,9 +397,9 @@ class SqliteConnection:
         try:
             cursor.execute(
                 """
-                SELECT session_id, cp_id, driver_id, start_time, 
+                SELECT session_id, cp_id, driver_id, start_time, end_time,
                        energy_consumed_kwh, total_cost, status
-                FROM ChargingSessions 
+                FROM ChargingSessions
                 WHERE status = 'in_progress'
             """
             )
@@ -360,14 +411,79 @@ class SqliteConnection:
                     "cp_id": row[1],
                     "driver_id": row[2],
                     "start_time": row[3],
-                    "energy_consumed_kwh": row[4],
-                    "total_cost": row[5],
-                    "status": row[6],
+                    "end_time": row[4],
+                    "energy_consumed_kwh": row[5],
+                    "total_cost": row[6],
+                    "status": row[7],
                 }
                 for row in rows
             ]
         except Exception as e:
             logging.error(f"获取活跃充电会话失败: {e}")
+            return []
+
+    def get_active_sessions_for_charging_point(self, cp_id):
+        """获取充电桩的所有活跃会话"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT session_id, cp_id, driver_id, start_time, end_time,
+                       energy_consumed_kwh, total_cost, status
+                FROM ChargingSessions
+                WHERE cp_id = ? AND status = 'in_progress'
+                """,
+                (cp_id,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "session_id": row[0],
+                    "cp_id": row[1],
+                    "driver_id": row[2],
+                    "start_time": row[3],
+                    "end_time": row[4],
+                    "energy_consumed_kwh": row[5],
+                    "total_cost": row[6],
+                    "status": row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.error(f"获取充电桩 {cp_id} 的活跃会话失败: {e}")
+            return []
+
+    def get_active_sessions_for_driver(self, driver_id):
+        """获取司机的所有活跃会话"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT session_id, cp_id, driver_id, start_time, end_time,
+                       energy_consumed_kwh, total_cost, status
+                FROM ChargingSessions
+                WHERE driver_id = ? AND status = 'in_progress'
+                """,
+                (driver_id,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "session_id": row[0],
+                    "cp_id": row[1],
+                    "driver_id": row[2],
+                    "start_time": row[3],
+                    "end_time": row[4],
+                    "energy_consumed_kwh": row[5],
+                    "total_cost": row[6],
+                    "status": row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.error(f"获取司机 {driver_id} 的活跃会话失败: {e}")
             return []
 
     def register_driver(self, driver_id, username):
