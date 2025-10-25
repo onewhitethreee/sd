@@ -35,6 +35,7 @@ class EV_CP_E:
                 help="IP y puerto del Broker/Bootstrap-server (formato IP:PORT)",
             )
             self.args = self.tools.parse_args()
+            # TODO 这里需要检查一下当用命令行来创建多个 ChargingPoint 时，id_cp 是如何处理的
         else:
 
             class Args:
@@ -76,7 +77,6 @@ class EV_CP_E:
 
     def _process_monitor_message(self, client_id, message):
         """处理来自Monitor的消息"""
-        # 消息已经是字典格式（JSON）
         self.logger.debug(
             f"Received message from Monitor {client_id}: {message.get('type')}"
         )
@@ -90,7 +90,7 @@ class EV_CP_E:
             self.logger.warning(
                 "Monitor disconnected during charging - stopping charging for safety"
             )
-            self._stop_charging_session()  # 移除 ev_id 参数
+            self._stop_charging_session()
 
         # 不要立即进入 FAULTY 状态，Monitor 可能会重连。
         #  TODO 如果长时间没有 monitor 连接，可以考虑定时检查并切换状态。
@@ -153,7 +153,7 @@ class EV_CP_E:
         self.running = False
 
         if self.is_charging:
-            self._stop_charging_session(ev_id=None)
+            self._stop_charging_session()
             self.is_charging = False
 
         if self.monitor_server:
@@ -164,21 +164,44 @@ class EV_CP_E:
 
         self.logger.info("System shutdown complete")
 
-    def _start_charging_session(self, ev_id: str, session_id: str):
-        """启动充电会话。Engine 自己生成 session_id。"""
-        self.logger.info(f"Starting charging session '{session_id}' for EV: {ev_id}")
+    def _start_charging_session(
+        self,
+        ev_id: str,
+        session_id: str,
+        price_per_kwh: float = 0.0,
+        max_charging_rate_kw: float = 11.0,
+    ):
+        """
+        启动充电会话。
+
+        Args:
+            ev_id: 电动车ID
+            session_id: 充电会话ID（由Central通过Monitor提供）
+            price_per_kwh: 每度电价格（从Central/ChargingPoint获取）
+            max_charging_rate_kw: 最大充电速率（从Central/ChargingPoint获取）
+        """
+        self.logger.info(
+            f"Starting charging session '{session_id}' for EV: {ev_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW"
+        )
         if self.is_charging:
             self.logger.warning("Already charging, cannot start new session.")
             return False
-        # --- 重点：所有会话数据都在 current_session 里 ---
+
+        # 充电速率：在最大充电速率范围内随机生成（模拟不同的充电功率）
+        # 实际充电速率不会超过充电桩的最大能力
+        min_rate = min(5.0, max_charging_rate_kw * 0.5)  # 最小速率为最大速率的50%或5kW
+        charging_rate_kw = random.uniform(min_rate, max_charging_rate_kw)
+
         self.current_session = {
             "session_id": session_id,
             "ev_id": ev_id,
             "start_time": time.time(),
             "energy_consumed_kwh": 0.0,  # 初始能量
             "total_cost": 0.0,  # 初始费用
-            "charging_rate_kw": random.uniform(5.0, 22.0),  # 定义：这是千瓦 (kW)
-            "price_per_kwh": 0.20,  # 每千瓦时价格
+            "charging_rate_kw": charging_rate_kw,  # 充电速率（千瓦）
+            "price_per_kwh": (
+                price_per_kwh if price_per_kwh > 0 else 0.2
+            ),  # 从Central获取，默认0.2
         }
         # 启动充电线程
         # 注意：这里如果 charging_thread 已经结束，但 self.is_charging 为 True
@@ -195,7 +218,7 @@ class EV_CP_E:
         return True
 
     def _stop_charging_session(self):
-        """停止充电会话。不再需要 ev_id 参数。"""
+        """停止充电会话。不再需要 ev_id 参数。 因为一个ChargingPoint只能有一个充电会话。"""
         if not self.is_charging:
             self.logger.warning("No active charging session to stop.")
             return False
@@ -265,6 +288,10 @@ class EV_CP_E:
         """发送充电数据到Monitor和Kafka"""
         if not self.current_session:  # 如果没有活跃会话，直接返回
             return
+
+        # 构建充电数据消息
+        # charging_rate_kw 是内部使用的充电速率（千瓦）
+        # 在消息中作为 charging_rate 发送给Monitor和Driver
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -274,19 +301,19 @@ class EV_CP_E:
                 self.current_session["energy_consumed_kwh"], 3
             ),
             "total_cost": round(self.current_session["total_cost"], 2),
-            "charging_rate": round(self.current_session["charging_rate_kw"], 1),
+            "charging_rate": round(
+                self.current_session["charging_rate_kw"], 1
+            ),  # 转换为消息字段
         }
-        # --- 重点：使用 MySocketServer 的新广播 API ---
+
         if self.monitor_server and self.monitor_server.has_active_clients():
-            self.monitor_server.send_broadcast_message(
-                charging_data_message
-            )  # 使用新的 API
+            self.monitor_server.send_broadcast_message(charging_data_message)
             self.logger.debug(
                 f"Charging data sent to Monitor: {charging_data_message['session_id']}"
             )
         else:
             self.logger.debug("No active monitor clients to send charging data.")
-        # --- 重点：发送到 Kafka ---
+        # 发送到 Kafka
         if self.kafka_manager:
             self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_DATA, charging_data_message
@@ -311,11 +338,8 @@ class EV_CP_E:
             "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
         }
-        # --- 重点：使用 MySocketServer 的新广播 API ---
         if self.monitor_server and self.monitor_server.has_active_clients():
-            self.monitor_server.send_broadcast_message(
-                completion_message
-            )  # 使用新的 API
+            self.monitor_server.send_broadcast_message(completion_message)
             self.logger.info(
                 f"Charging completion sent to Monitor: {completion_message['session_id']}"
             )
@@ -323,7 +347,7 @@ class EV_CP_E:
             self.logger.warning(
                 "No active monitor clients to send charging completion."
             )
-        # --- 重点：发送到 Kafka ---
+        # 发送到 Kafka
         if self.kafka_manager:
             self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_COMPLETE, completion_message
@@ -372,7 +396,9 @@ class EV_CP_E:
             self._shutdown_system()
 
     def _interactive_commands(self):
-        """交互式命令处理"""
+        """交互式命令处理 用于debug模式"""
+        if not self.debug_mode:
+            return
         self.logger.info("\n--- Interactive commands available (DEBUG MODE) ---")
         self.logger.info("  - Press 'c' + Enter to simulate a Monitor connection")
         self.logger.info("  - Press 'd' + Enter to simulate a Monitor disconnect")
@@ -404,8 +430,8 @@ class EV_CP_E:
 
                 elif command == "s":
                     if not self.is_charging:
-                        session_id = str(uuid.uuid4())  # 手动模式也创建会话ID
-                        self._start_charging_session("manual_ev", session_id)
+                        session_id = str(uuid.uuid4())
+                        self._start_charging_session(self.args.id_cp, session_id)
                         self.logger.info(
                             f"Manual charging session '{session_id}' started."
                         )
@@ -424,7 +450,6 @@ class EV_CP_E:
                         "Unknown command. Use 'c' connect, 'd' disconnect, 's' start, 'e' end, 'q' quit"
                     )
             except EOFError:
-                # 处理输入结束，比如管道关闭
                 self.logger.info(
                     "EOF received in interactive commands. Exiting command thread."
                 )

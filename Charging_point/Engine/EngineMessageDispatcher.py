@@ -25,7 +25,7 @@ class EngineMessageDispatcher:
             engine: EV_CP_E实例，用于访问Engine的业务逻辑
         """
         self.logger = logger
-        self.engine = engine
+        self.engine = engine  # 不使用类型注解以避免循环导入
 
         # 消息处理器映射
         self.handlers = {
@@ -60,9 +60,7 @@ class EngineMessageDispatcher:
 
         except Exception as e:
             self.logger.error(f"Error dispatching message: {e}")
-            return self._create_error_response(
-                message.get("message_id"), str(e)
-            )
+            return self._create_error_response(message.get("message_id"), str(e))
 
     def _create_error_response(self, message_id, error_msg):
         """
@@ -156,7 +154,11 @@ class EngineMessageDispatcher:
         处理开始充电命令
 
         Args:
-            message: 开始充电命令消息
+            message: 开始充电命令消息，包含：
+                - session_id: 充电会话ID
+                - ev_id: 电动车ID（可选）
+                - price_per_kwh: 每度电价格（从Central获取）
+                - max_charging_rate_kw: 最大充电速率（从Central获取）
 
         Returns:
             dict: 命令响应消息
@@ -175,6 +177,10 @@ class EngineMessageDispatcher:
             }
 
         ev_id = message.get("ev_id", "unknown_ev")
+        price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
+        max_charging_rate_kw = message.get(
+            "max_charging_rate_kw", 11.0
+        )  # 从Central获取最大充电速率
 
         # 检查是否已在充电
         if self.engine.is_charging:
@@ -186,8 +192,10 @@ class EngineMessageDispatcher:
                 "session_id": self.engine.current_session["session_id"],
             }
 
-        # 启动充电会话
-        success = self.engine._start_charging_session(ev_id, session_id)
+        # 启动充电会话，传递price_per_kwh和max_charging_rate_kw
+        success = self.engine._start_charging_session(
+            ev_id, session_id, price_per_kwh, max_charging_rate_kw
+        )
         return {
             "type": "command_response",
             "message_id": message.get("message_id"),
@@ -195,4 +203,3 @@ class EngineMessageDispatcher:
             "message": "Charging started" if success else "Failed to start charging",
             "session_id": session_id if success else None,
         }
-

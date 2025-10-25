@@ -88,6 +88,7 @@ class MessageDispatcher:
         cp_id = message.get("id")
         location = message.get("location")
         price_per_kwh = message.get("price_per_kwh")
+        max_charging_rate_kw = message.get("max_charging_rate_kw", 11.0)
         message_id = message.get("message_id")
 
         missing_info = self._check_missing_fields(
@@ -102,7 +103,7 @@ class MessageDispatcher:
 
         # 使用ChargingPoint管理器注册充电桩
         success, error_msg = self.charging_point_manager.register_charging_point(
-            cp_id, location, price_per_kwh
+            cp_id, location, price_per_kwh, max_charging_rate_kw
         )
 
         if not success:
@@ -731,6 +732,13 @@ class MessageDispatcher:
                 self.logger.error(f"未找到充电点 {cp_id} 的Monitor连接")
                 return False
 
+            # 从数据库获取充电点信息（包括price_per_kwh和max_charging_rate_kw）
+            cp_info = self.charging_point_manager.get_charging_point(cp_id)
+            price_per_kwh = cp_info.get("price_per_kwh", 0.0) if cp_info else 0.0
+            max_charging_rate_kw = (
+                cp_info.get("max_charging_rate_kw", 11.0) if cp_info else 11.0
+            )
+
             # 构建启动充电命令
             start_charging_message = {
                 "type": "start_charging_command",
@@ -738,13 +746,15 @@ class MessageDispatcher:
                 "cp_id": cp_id,
                 "session_id": session_id,
                 "driver_id": driver_id,
+                "price_per_kwh": price_per_kwh,  # 从数据库获取
+                "max_charging_rate_kw": max_charging_rate_kw,  # 从数据库获取
                 "timestamp": int(time.time()),
             }
 
             # 发送给Monitor
             self._send_message_to_client(monitor_client_id, start_charging_message)
             self.logger.info(
-                f"启动充电命令已发送给Monitor: CP {cp_id}, 会话 {session_id}"
+                f"启动充电命令已发送给Monitor: CP {cp_id}, 会话 {session_id}, 价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW"
             )
             return True
 

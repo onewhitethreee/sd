@@ -81,6 +81,7 @@ class EV_CP_M:
             "id": self.args.id_cp,
             "location": self.config.get_location(),
             "price_per_kwh": random.uniform(0.15, 0.25),
+            "max_charging_rate_kw": random.uniform(7.0, 22.0),  # 模拟不同的充电桩能力
         }
         return self.central_conn_mgr.send(register_message)
 
@@ -335,6 +336,10 @@ class EV_CP_M:
         cp_id = message.get("cp_id")
         session_id = message.get("session_id")
         driver_id = message.get("driver_id")
+        price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
+        max_charging_rate_kw = message.get(
+            "max_charging_rate_kw")
+
         if not cp_id or not session_id:
             self.logger.error("Start charging command missing required fields.")
             return False
@@ -343,16 +348,20 @@ class EV_CP_M:
                 "Cannot forward start charging command: not connected to Engine."
             )
             return False
+
+        # 转发启动充电命令到Engine，包含price_per_kwh和max_charging_rate_kw
         start_charging_message = {
             "type": "start_charging_command",
             "message_id": str(uuid.uuid4()),
             "cp_id": cp_id,
             "session_id": session_id,
             "driver_id": driver_id,
+            "price_per_kwh": price_per_kwh,  # 转发价格信息
+            "max_charging_rate_kw": max_charging_rate_kw,  # 转发最大充电速率
         }
         if self.engine_conn_mgr.send(start_charging_message):
             self.logger.info(
-                f"Start charging command sent to Engine for session {session_id}."
+                f"Start charging command sent to Engine for session {session_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW."
             )
             return True
         else:
@@ -426,8 +435,8 @@ class EV_CP_M:
 
         completion_message = {
             "type": "charge_completion",
-            "message_id": str(uuid.uuid4()),
-            "cp_id": self.args.id_cp,
+            "message_id": message.get("message_id"),
+            "cp_id": message.get("cp_id"),
             "session_id": message.get("session_id"),
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),

@@ -14,6 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from Common.Config.Status import Status
 from Common.Database.SqliteConnection import SqliteConnection
 
+
 class ChargingPoint:
     """
     充电桩管理类，负责充电桩的生命周期管理和状态维护。
@@ -28,13 +29,15 @@ class ChargingPoint:
             db_manager: 数据库管理器
         """
         self.logger = logger
-        self.db_manager : SqliteConnection = db_manager
+        self.db_manager: SqliteConnection = db_manager
         # 连接映射：{cp_id: client_id}（仅保留连接映射，数据从数据库读取）
         self._cp_connections = {}
         # 反向映射：{client_id: cp_id}
         self._client_to_cp = {}
 
-    def register_charging_point(self, cp_id, location, price_per_kwh):
+    def register_charging_point(
+        self, cp_id, location, price_per_kwh, max_charging_rate_kw=11.0
+    ):
         """
         注册一个新的充电桩
 
@@ -42,6 +45,7 @@ class ChargingPoint:
             cp_id: 充电桩ID
             location: 位置
             price_per_kwh: 每度电价格
+            max_charging_rate_kw: 最大充电速率（千瓦），默认11.0
 
         Returns:
             tuple: (success: bool, error_message: str or None)
@@ -52,6 +56,11 @@ class ChargingPoint:
             if price_per_kwh < 0:
                 return False, "price_per_kwh must be non-negative"
 
+            # 验证充电速率
+            max_charging_rate_kw = float(max_charging_rate_kw)
+            if max_charging_rate_kw <= 0:
+                return False, "max_charging_rate_kw must be positive"
+
             self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
 
             # 保存到数据库
@@ -61,9 +70,12 @@ class ChargingPoint:
                 price_per_kwh=price_per_kwh,
                 status=Status.DISCONNECTED.value,
                 last_connection_time=None,
+                max_charging_rate_kw=max_charging_rate_kw,
             )
 
-            self.logger.info(f"充电桩 {cp_id} 注册成功！")
+            self.logger.info(
+                f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW)"
+            )
             return True, None
 
         except Exception as e:

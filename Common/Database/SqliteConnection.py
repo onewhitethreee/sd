@@ -169,7 +169,13 @@ class SqliteConnection:
 
     # TODO 添加事务实现，防止并发问题
     def insert_or_update_charging_point(
-        self, cp_id, location, price_per_kwh, status, last_connection_time
+        self,
+        cp_id,
+        location,
+        price_per_kwh,
+        status,
+        last_connection_time,
+        max_charging_rate_kw=11.0,
     ):
         """插入或更新充电桩信息"""
         connection = self.get_connection()
@@ -178,17 +184,24 @@ class SqliteConnection:
             # 使用 INSERT OR REPLACE 来处理重复
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO ChargingPoints 
-                (cp_id, location, price_per_kwh, status, last_connection_time)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO ChargingPoints
+                (cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (cp_id, location, price_per_kwh, status, last_connection_time),
+                (
+                    cp_id,
+                    location,
+                    price_per_kwh,
+                    max_charging_rate_kw,
+                    status,
+                    last_connection_time,
+                ),
             )
 
             connection.commit()
 
             logging.info(
-                f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}"
+                f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, 最大充电速率: {max_charging_rate_kw}kW, 状态: {status}, 时间: {last_connection_time}, rows affected: {cursor.rowcount}"
             )
 
             return True
@@ -236,7 +249,7 @@ class SqliteConnection:
         try:
             cursor.execute(
                 """
-                SELECT cp_id, location, price_per_kwh, status, last_connection_time
+                SELECT cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time
                 FROM ChargingPoints
                 WHERE cp_id = ?
                 """,
@@ -248,8 +261,9 @@ class SqliteConnection:
                     "cp_id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
-                    "status": row[3],
-                    "last_connection_time": row[4],
+                    "max_charging_rate_kw": row[3],
+                    "status": row[4],
+                    "last_connection_time": row[5],
                 }
             return None
         except Exception as e:
