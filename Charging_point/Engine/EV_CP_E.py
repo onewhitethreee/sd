@@ -16,6 +16,7 @@ from Common.Config.CustomLogger import CustomLogger
 from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
+from Charging_point.Engine.EngineMessageDispatcher import EngineMessageDispatcher
 
 
 class EV_CP_E:
@@ -52,12 +53,9 @@ class EV_CP_E:
         self.kafka_manager: KafkaManager = None  # Kafka管理器
 
         self.current_session = None
-        self.message_handlers = {
-            "health_check_request": self._handle_health_check,
-            "stop_command": self._handle_stop_command,
-            "resume_command": self._handle_resume_command,
-            "start_charging_command": self._handle_start_charging_command,
-        }
+
+        # 初始化消息分发器
+        self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
 
     @property
     def is_charging(self):
@@ -79,108 +77,10 @@ class EV_CP_E:
     def _process_monitor_message(self, client_id, message):
         """处理来自Monitor的消息"""
         # 消息已经是字典格式（JSON）
-        try:
-            msg_type = message.get("type")
-            self.logger.debug(f"Received message from Monitor {client_id}: {msg_type}")
-
-            handler = self.message_handlers.get(msg_type)
-            if handler:
-                return handler(message)
-            else:
-                self.logger.warning(f"Unknown message type from Monitor: {msg_type}")
-                return {
-                    "type": "error_response",
-                    "message_id": message.get("message_id"),
-                    "error": "Unknown message type",
-                }
-
-        except Exception as e:
-            self.logger.error(f"Error processing monitor message: {e}")
-            return {
-                "type": "error_response",
-                "message_id": message.get("message_id"),
-                "error": str(e),
-            }
-
-    def _handle_health_check(self, message):
-        """处理健康检查请求"""
-
-        response = {
-            "type": "health_check_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "engine_status": self.get_current_status(),
-            "timestamp": int(time.time()),
-            "is_charging": self.is_charging,
-        }
-
-        self.logger.debug(f"Health check response prepared {response}")
-        return response
-
-    def _handle_stop_command(self, message):
-        """处理停止命令"""
-        self.logger.info("Received stop command from Monitor")
-
-        if self.is_charging:
-            self._stop_charging_session(ev_id=None)
-
-        response = {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "message": "Stop command executed",
-        }
-        return response
-
-    def _handle_resume_command(self, message):
-        """处理恢复命令"""
-        self.logger.info("Received resume command from Monitor")
-        # 实际的恢复逻辑可能更复杂，这里仅重置状态
-        if not self.running:  # 假设 resume 意味着重新启动主循环（如果它停止了）
-            self.running = True
-            self.logger.info("Engine resumed operation")
-        return {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "message": "Resume command executed",
-        }
-
-    def _handle_start_charging_command(self, message):
-        """处理开始充电命令"""
-        self.logger.info("Received start charging command from Monitor")
-
-        # Use session_id provided by Central (via Monitor)
-        session_id = message.get("session_id")
-        if not session_id:
-            self.logger.error("Start charging command missing session_id from Central")
-            return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "failure",
-                "message": "Missing session_id",
-            }
-
-        ev_id = message.get("ev_id", "unknown_ev")
-
-        if self.is_charging:
-            return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "failure",
-                "message": "Already charging",
-                "session_id": self.current_session["session_id"],  # 返回当前session ID
-            }
-
-        # Use the session_id from Central instead of generating a new one
-        success = self._start_charging_session(ev_id, session_id)
-        return {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success" if success else "failure",
-            "message": "Charging started" if success else "Failed to start charging",
-            "session_id": session_id if success else None,
-        }
+        self.logger.debug(
+            f"Received message from Monitor {client_id}: {message.get('type')}"
+        )
+        return self.message_dispatcher.dispatch_message(message)
 
     def _handle_monitor_disconnect(self, client_id):
         """处理Monitor断开连接"""

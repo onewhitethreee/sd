@@ -13,8 +13,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
-from ConnectionManager import ConnectionManager
+from Charging_point.Monitor.ConnectionManager import ConnectionManager
 from Common.Config.Status import Status
+from Charging_point.Monitor.MonitorMessageDispatcher import MonitorMessageDispatcher
 
 
 class EV_CP_M:
@@ -63,6 +64,9 @@ class EV_CP_M:
             90  # 如果超过这个时间没有收到 Engine 的健康响应，则认为故障（秒）
         )
         self.ENGINE_HEALTH_CHECK_INTERVAL = 30  # 向 Engine 发送健康
+
+        # 初始化消息分发器
+        self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
     def _register_with_central(self):
         """
@@ -155,7 +159,7 @@ class EV_CP_M:
 
     def _send_heartbeat(self):
         """
-        发送心跳消息以保持与中央的连接。
+        发送心跳消息以保持与central的连接。
         """
         while (
             self.running
@@ -435,71 +439,15 @@ class EV_CP_M:
             self.logger.error("Failed to forward charging completion to Central.")
             return False
 
-    def _handle_message_from_engine(
-        self, source_name: str, message: dict
-    ):  # 新的 Engine 消息入口
-        """
-        处理来自EV_CP_E的消息。注意：CONNECTION_LOST/SERVER_SHUTDOWN 已经在 ConnectionManager 内部处理了。
-        """
-        message_type = message.get("type")
-        if message_type == "health_check_response":
-            self.logger.debug(f"Health check response from EV_CP_E: {message}")
-            # 更新最后健康检查响应时间（如果需要，可以在 EV_CP_M 内部维护这个状态）
-            # self.last_health_response = time.time() # 这东西现在要改一下逻辑，不再是EV_CP_M直接维护时间
-            engine_status = message.get("engine_status")
-            if engine_status == "FAULTY":
-                self.logger.warning("EV_CP_E reports FAULTY status.")
-                self.update_cp_status("FAULTY")
-            elif engine_status == "ACTIVE":
-                self.logger.debug("EV_CP_E reports ACTIVE status.")
-                # 如果当前状态是故障，尝试恢复 (Central也需正常)
-                if (
-                    self._current_status == "FAULTY"
-                    and self.central_conn_mgr.is_connected
-                ):
-                    self.update_cp_status("ACTIVE")
+    def _handle_message_from_engine(self, source_name: str, message: dict):
+        """处理来自EV_CP_E的消息"""
+        # source_name 由ConnectionManager提供，这里我们直接使用"Engine"
+        self.message_dispatcher.dispatch_message("Engine", message)
 
-        elif message_type == "charging_data":
-            self._handle_charging_data_from_engine(message)
-        elif message_type == "charge_completion":
-            self._handle_charging_completion_from_engine(message)
-        else:
-            self.logger.warning(f"Unknown message type from EV_CP_E: {message_type}")
-
-    def _handle_message_from_central(
-        self, source_name: str, message: dict
-    ):  # 新的 Central 消息入口
-        """
-        处理来自central的消息。
-        """
-        message_type = message.get("type")
-        if message_type == "register_response":
-            self.logger.info("Received registration response from Central.")
-            self.logger.warning(f"Registration response details: {message}")
-            if message.get("status") == "success":
-                self.logger.info("Registration successful.")
-            else:
-                self.logger.error(
-                    f"Registration failed: {message.get('reason', 'Unknown')}"
-                )
-        elif message_type == "heartbeat_response":
-            self.logger.warning("Received heartbeat response from Central.")
-            if message.get("status") == "success":
-                self.logger.warning(f"Heartbeat acknowledged by Central {message}")
-            else:
-                self.logger.warning(f"Heartbeat not acknowledged by Central {message}")
-        elif message_type == "start_charging_command":
-            self._handle_start_charging_command(message)
-        elif message_type == "charging_data_response":
-            self.logger.warning(f"Charging data response from Central: {message}")
-        elif message_type == "fault_notification_response":
-            self.logger.warning(f"Fault notification response from Central: {message}")
-        elif message_type == "status_update_response":
-            self.logger.warning(f"Status update response from Central: {message}")
-        elif message_type == "charge_completion_response":
-            self.logger.warning(f"Charge completion response from Central: {message}")
-        else:
-            self.logger.warning(f"Unknown message type from Central: {message_type}")
+    def _handle_message_from_central(self, source_name: str, message: dict):
+        """处理来自central的消息"""
+        # source_name 由ConnectionManager提供，这里我们直接使用"Central"
+        self.message_dispatcher.dispatch_message("Central", message)
 
     def _graceful_shutdown(self):
         """
