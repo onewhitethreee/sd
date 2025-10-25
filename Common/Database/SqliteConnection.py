@@ -19,9 +19,10 @@ class SqliteConnection:
             )
             self._execute_sql_from_file()
         else:
-            logging.debug(
-                f"Database file '{self.db_path}' already exists. Skipping initial schema creation."
-            )
+            # logging.debug(
+            #     f"Database file '{self.db_path}' already exists. Skipping initial schema creation."
+            # )
+            pass
 
     def get_connection(self):
         """为每个线程获取独立的连接"""
@@ -35,7 +36,7 @@ class SqliteConnection:
             # 设置 isolation_level 为 None 以禁用隐式事务，但这会导致 autocommit 模式
             # 我们保持默认行为，需要显式 commit()
             thread_id = threading.current_thread().ident
-            logging.debug(f"Created new connection for thread {thread_id}")
+            # logging.debug(f"Created new connection for thread {thread_id}")
         return self.local.connection
 
     def close_connection(self):
@@ -76,7 +77,6 @@ class SqliteConnection:
         Check if the SQLite database is available and has the expected tables.
         Returns True if available, False otherwise.
         """
-        logging.debug(f"Checking availability of SQLite database at '{self.db_path}'.")
         try:
             self.connection = sqlite3.connect(self.db_path)
             cursor = self.connection.cursor()
@@ -112,9 +112,7 @@ class SqliteConnection:
         finally:
             if self.connection:
                 self.connection.close()
-                logging.debug(
-                    f"Connection to database '{self.db_path}' closed after availability check."
-                )
+                
 
     def get_all_charging_points(self):
         """获取所有充电桩"""

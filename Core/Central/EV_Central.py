@@ -33,7 +33,7 @@ class EV_Central:
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.running = False
-        
+
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 app_name="EV_Central",
@@ -64,7 +64,6 @@ class EV_Central:
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
     def _init_database(self):
-        self.logger.debug("Initializing database connection")
         try:
             # 连接到 SQLite 数据库
             self.db_manager = SqliteConnection(
@@ -92,7 +91,6 @@ class EV_Central:
         """
         Initialize the socket server to listen for incoming connections from charging points.
         """
-        self.logger.debug("Initializing socket server")
 
         try:
             # 将自定义消息处理函数分配给 socket 服务器
@@ -224,13 +222,9 @@ class EV_Central:
         self.running = False
 
     def start(self):
-        self.logger.debug(f"Starting EV Central on port {self.args.listen_port}")
-        self.logger.debug(
-            f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
-        )
-        self.logger.debug(
-            f"Connecting to Database at {self.args.db[0]}:{self.args.db[1]}"
-        )
+        # self.logger.debug(
+        #     f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
+        # )
 
         self.initialize_systems()
 
