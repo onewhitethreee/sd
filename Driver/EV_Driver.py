@@ -369,3 +369,4 @@ if __name__ == "__main__":
     driver.start()
 
 # TODO 掉线了应该有一个重试机制
+# TODO 在driver发送stop命令后，应该停止现有的充电，而不是继续发送，目前这是一个bug
