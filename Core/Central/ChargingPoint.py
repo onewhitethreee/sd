@@ -272,3 +272,5 @@ class ChargingPoint:
             for cp in self._charging_points.values()
             if cp["status"] == Status.ACTIVE.value
         ]
+
+# TODO 不需要保存到内存，只需要随时的从数据库中读取

@@ -150,6 +150,17 @@ class EV_CP_E:
         """处理开始充电命令"""
         self.logger.info("Received start charging command from Monitor")
 
+        # Use session_id provided by Central (via Monitor)
+        session_id = message.get("session_id")
+        if not session_id:
+            self.logger.error("Start charging command missing session_id from Central")
+            return {
+                "type": "command_response",
+                "message_id": message.get("message_id"),
+                "status": "failure",
+                "message": "Missing session_id",
+            }
+
         ev_id = message.get("ev_id", "unknown_ev")
 
         if self.is_charging:
@@ -160,7 +171,8 @@ class EV_CP_E:
                 "message": "Already charging",
                 "session_id": self.current_session["session_id"],  # 返回当前session ID
             }
-        session_id = str(uuid.uuid4())  # Engine 自己生成 ID
+
+        # Use the session_id from Central instead of generating a new one
         success = self._start_charging_session(ev_id, session_id)
         return {
             "type": "command_response",

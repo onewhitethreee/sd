@@ -54,16 +54,11 @@ class MessageDispatcher:
         }
 
     def dispatch_message(self, client_id, message):
-
         handler = self.handlers.get(message.get("type"))
         if not handler:
-            response = {
-                "type": "error_response",
-                "message_id": message.get("message_id", ""),
-                "status": "failure",
-                "info": f"未知消息类型: {message.get('type')}",
-            }
-            return response
+            return self._create_failure_response(
+                message.get("type"), message.get("message_id", ""), "未知消息类型"
+            )
 
         response = handler(client_id, message)
         return response
@@ -95,12 +90,7 @@ class MessageDispatcher:
         price_per_kwh = message.get("price_per_kwh")
         message_id = message.get("message_id")
 
-        if message_id is None:
-            return self._create_failure_response(
-                "register",
-                message_id="",
-                info="注册消息中缺少 message_id 字段",
-            )
+        
         missing_info = self._check_missing_fields(
             message, ["id", "location", "price_per_kwh", "message_id"]
         )

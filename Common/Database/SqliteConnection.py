@@ -26,8 +26,14 @@ class SqliteConnection:
     def get_connection(self):
         """为每个线程获取独立的连接"""
         if not hasattr(self.local, "connection") or self.local.connection is None:
-            self.local.connection = sqlite3.connect(self.db_path)
+            # 使用 isolation_level=None 来禁用自动事务，但我们会手动管理事务
+            # 实际上，保持默认的 isolation_level="" 来启用自动事务管理
+            self.local.connection = sqlite3.connect(
+                self.db_path, check_same_thread=False
+            )
             self.local.connection.execute("PRAGMA foreign_keys = ON;")
+            # 设置 isolation_level 为 None 以禁用隐式事务，但这会导致 autocommit 模式
+            # 我们保持默认行为，需要显式 commit()
             thread_id = threading.current_thread().ident
             logging.debug(f"Created new connection for thread {thread_id}")
         return self.local.connection
@@ -179,18 +185,25 @@ class SqliteConnection:
         """
         connection = self.get_connection()
         cursor = connection.cursor()
+        try:
+            if last_connection_time is not None:
+                cursor.execute(
+                    "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?",
+                    (status, last_connection_time, cp_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?",
+                    (status, cp_id),
+                )
 
-        if last_connection_time is not None:
-            cursor.execute(
-                "UPDATE ChargingPoints SET status = ?, last_connection_time = ? WHERE cp_id = ?",
-                (status, last_connection_time, cp_id),
-            )
-        else:
-            cursor.execute(
-                "UPDATE ChargingPoints SET status = ? WHERE cp_id = ?", (status, cp_id)
-            )
-
-        connection.commit()
+            connection.commit()
+            logging.info(f"充电桩 {cp_id} 状态更新成功: {status}")
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"更新充电桩 {cp_id} 状态失败: {e}")
+            return False
 
     def get_charging_point_status(self, cp_id):
         """获取充电桩状态"""
@@ -211,8 +224,15 @@ class SqliteConnection:
         """设置所有充电桩的状态"""
         connection = self.get_connection()
         cursor = connection.cursor()
-        cursor.execute("UPDATE ChargingPoints SET status = ? WHERE 1", (status,))
-        connection.commit()
+        try:
+            cursor.execute("UPDATE ChargingPoints SET status = ? WHERE 1", (status,))
+            connection.commit()
+            logging.info(f"所有充电桩状态已更新为: {status}")
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"更新所有充电桩状态失败: {e}")
+            return False
 
     def create_charging_session(self, session_id, cp_id, driver_id, start_time):
         """创建充电会话"""

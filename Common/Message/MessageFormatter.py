@@ -2,11 +2,7 @@ import json
 
 
 class MessageFormatter:
-    """
-    JSON格式的消息处理器。
-    使用STX、ETX和LRC进行消息边界和完整性检查。
-    """
-
+    
     STX = b"\x02"  # Start of Text (ASCII)
     ETX = b"\x03"  # End of Text (ASCII)
 
@@ -15,7 +11,7 @@ class MessageFormatter:
 
     @staticmethod
     def _calculate_lrc(data):
-        """计算LRC校验码"""
+        """Calular el LRC de los datos."""
         lrc = 0
         for byte in data:
             lrc ^= byte
@@ -24,14 +20,7 @@ class MessageFormatter:
     @staticmethod
     def pack_message(message_dict, encoding="utf-8"):
         """
-        将JSON消息字典打包为字节字符串格式。
-
-        Args:
-            message_dict: 消息字典
-            encoding: 编码方式
-
-        Returns:
-            打包后的字节字符串 (STX + JSON + ETX + LRC)
+        
         """
         if not isinstance(message_dict, dict):
             raise TypeError("消息必须是字典格式")

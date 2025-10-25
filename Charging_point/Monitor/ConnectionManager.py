@@ -149,3 +149,7 @@ class ConnectionManager:
         # 循环结束时，确保客户端断开
         self._client.disconnect()
         self.logger.info(f"[{self.name}] Reconnect loop terminated.")
+
+# Charging point instasnce how many have ?
+# Message formatter should be string cointaning # to seperate?
+# 

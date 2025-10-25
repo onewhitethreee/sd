@@ -26,12 +26,14 @@ class EV_Central:
 
         self.logger = logger
         self.socket_server = None
+
         self.db_manager = None  # 这个用来存储数据库管理对象
         self.kafka_manager = None  # Kafka管理器
         self.message_dispatcher = None  # 消息分发器
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.running = False
+        
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 app_name="EV_Central",
