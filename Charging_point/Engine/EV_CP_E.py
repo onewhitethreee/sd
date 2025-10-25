@@ -215,6 +215,7 @@ class EV_CP_E:
 
     def _stop_charging_session(self):
         """停止充电会话。不再需要 ev_id 参数。 因为一个ChargingPoint只能有一个充电会话。"""
+        self.logger.info(f"Stopping charging for session {self.current_session['session_id']}... ")
         if not self.is_charging:
             self.logger.warning("No active charging session to stop.")
             return False
