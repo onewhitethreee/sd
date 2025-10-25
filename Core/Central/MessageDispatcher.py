@@ -44,6 +44,7 @@ class MessageDispatcher:
             "register_request": self._handle_register_message,
             "heartbeat_request": self._handle_heartbeat_message,
             "charge_request": self._handle_charge_request_message,
+            "stop_charging_request": self._handle_stop_charging_request,
             "charging_data": self._handle_charging_data_message,
             "charge_completion": self._handle_charge_completion_message,
             "fault_notification": self._handle_fault_notification_message,
@@ -247,6 +248,56 @@ class MessageDispatcher:
                 "charge_request",
                 message_id=message_id,
                 info=f"授权失败: {e}",
+            )
+
+    def _handle_stop_charging_request(self, client_id, message):
+        """处理停止充电请求"""
+        self.logger.info(f"正在处理来自 {client_id} 的停止充电请求...")
+
+        session_id = message.get("session_id")
+        cp_id = message.get("cp_id")
+        driver_id = message.get("driver_id")
+        message_id = message.get("message_id")
+
+        missing_info = self._check_missing_fields(
+            message, ["session_id", "cp_id", "driver_id", "message_id"]
+        )
+        if missing_info:
+            return self._create_failure_response(
+                "stop_charging",
+                message_id=message_id,
+                info=missing_info,
+            )
+
+        try:
+            # 验证会话存在
+            session_info = self.charging_session_manager.get_charging_session(
+                session_id
+            )
+            if not session_info:
+                return self._create_failure_response(
+                    "stop_charging",
+                    message_id=message_id,
+                    info=f"充电会话 {session_id} 不存在",
+                )
+
+            # 向Monitor发送停止充电命令
+            self._send_stop_charging_to_monitor(cp_id, session_id, driver_id)
+
+            self.logger.info(f"停止充电命令已发送: CP {cp_id}, 会话 {session_id}")
+
+            return MessageFormatter.create_response_message(
+                cp_type="stop_charging_response",
+                message_id=message_id,
+                status="success",
+                info=f"停止充电请求已处理，充电点 {cp_id} 正在停止充电",
+            )
+        except Exception as e:
+            self.logger.error(f"处理停止充电请求失败: {e}")
+            return self._create_failure_response(
+                "stop_charging",
+                message_id=message_id,
+                info=f"处理失败: {e}",
             )
 
     def _handle_charging_data_message(self, client_id, message):
@@ -548,8 +599,9 @@ class MessageDispatcher:
                 {
                     "id": cp["cp_id"],
                     "location": cp["location"],
-                    "price_per_kwh": cp["price_per_kwh"],
+                    "price_per_kwh": round(cp["price_per_kwh"], 3),
                     "status": cp["status"],
+                    "max_charging_rate_kw": round(cp["max_charging_rate_kw"], 3),
                 }
                 for cp in available_cps
             ]
@@ -758,6 +810,35 @@ class MessageDispatcher:
 
         except Exception as e:
             self.logger.error(f"发送启动充电命令失败: {e}")
+            return False
+
+    def _send_stop_charging_to_monitor(self, cp_id, session_id, driver_id):
+        """向Monitor发送停止充电命令"""
+        try:
+            monitor_client_id = self.charging_point_manager.get_monitor_client_id(cp_id)
+            if not monitor_client_id:
+                self.logger.error(f"未找到充电点 {cp_id} 的Monitor连接")
+                return False
+
+            # 构建停止充电命令
+            stop_charging_message = {
+                "type": "stop_charging_command",
+                "message_id": str(uuid.uuid4()),
+                "cp_id": cp_id,
+                "session_id": session_id,
+                "driver_id": driver_id,
+                "timestamp": int(time.time()),
+            }
+
+            # 发送给Monitor
+            self._send_message_to_client(monitor_client_id, stop_charging_message)
+            self.logger.info(
+                f"停止充电命令已发送给Monitor: CP {cp_id}, 会话 {session_id}"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"发送停止充电命令失败: {e}")
             return False
 
     def _send_message_to_client(self, client_id, message):

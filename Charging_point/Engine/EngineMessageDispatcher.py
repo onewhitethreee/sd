@@ -33,6 +33,7 @@ class EngineMessageDispatcher:
             "stop_command": self._handle_stop_command,
             "resume_command": self._handle_resume_command,
             "start_charging_command": self._handle_start_charging_command,
+            "stop_charging_command": self._handle_stop_charging_command,
         }
 
     def dispatch_message(self, message):
@@ -201,5 +202,46 @@ class EngineMessageDispatcher:
             "message": "Charging started" if success else "Failed to start charging",
             "session_id": session_id if success else None,
         }
+
+    def _handle_stop_charging_command(self, message):
+        """
+        处理停止充电命令
+
+        Args:
+            message: 停止充电命令消息，包含：
+                - session_id: 充电会话ID
+                - cp_id: 充电点ID
+
+        Returns:
+            dict: 命令响应消息
+        """
+        self.logger.info("Processing stop charging command")
+
+        session_id = message.get("session_id")
+
+        # 验证会话ID匹配
+        if (
+            self.engine.current_session
+            and self.engine.current_session["session_id"] == session_id
+        ):
+            self.engine._stop_charging_session()
+            self.logger.info(f"充电会话 {session_id} 已停止")
+            return {
+                "type": "command_response",
+                "message_id": message.get("message_id"),
+                "status": "success",
+                "message": "Charging stopped",
+                "session_id": session_id,
+            }
+        else:
+            self.logger.warning(f"会话ID不匹配或无活跃会话: {session_id}")
+            return {
+                "type": "command_response",
+                "message_id": message.get("message_id"),
+                "status": "failure",
+                "message": "No active charging session or session ID mismatch",
+                "session_id": session_id,
+            }
+
 
 # TODO 修复在停止central模块的情况下Engine还会继续charge

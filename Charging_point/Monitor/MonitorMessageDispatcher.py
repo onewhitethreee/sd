@@ -8,6 +8,7 @@ Monitor消息分发器
 
 import uuid
 
+
 class MonitorMessageDispatcher:
     """
     Monitor消息分发器
@@ -30,6 +31,7 @@ class MonitorMessageDispatcher:
             "register_response": self._handle_register_response,
             "heartbeat_response": self._handle_heartbeat_response,
             "start_charging_command": self._handle_start_charging_command,
+            "stop_charging_command": self._handle_stop_charging_command,
             "charging_data_response": self._handle_charging_data_response,
             "fault_notification_response": self._handle_fault_notification_response,
             "status_update_response": self._handle_status_update_response,
@@ -102,6 +104,28 @@ class MonitorMessageDispatcher:
         """处理来自Central的启动充电命令"""
         self.logger.info("Received start charging command from Central.")
         return self.monitor._handle_start_charging_command(message)
+
+    def _handle_stop_charging_command(self, message):
+        """处理来自Central的停止充电命令"""
+        self.logger.info("Received stop charging command from Central.")
+        cp_id = message.get("cp_id")
+        session_id = message.get("session_id")
+
+        # 向Engine发送停止充电命令
+        stop_message = {
+            "type": "stop_charging_command",
+            "message_id": message.get("message_id"),
+            "cp_id": cp_id,
+            "session_id": session_id,
+        }
+
+        if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
+            self.monitor.engine_conn_mgr.send(stop_message)
+            self.logger.info(f"停止充电命令已转发给Engine: CP {cp_id}")
+            return True
+        else:
+            self.logger.error("Engine连接不可用")
+            return False
 
     def _handle_charging_data_response(self, message):
         """处理来自Central的充电数据响应"""

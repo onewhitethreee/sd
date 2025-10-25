@@ -8,7 +8,6 @@ import time
 import uuid
 import json
 import threading
-from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
@@ -16,6 +15,7 @@ from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketClient import MySocketClient
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
+from Driver.DriverMessageDispatcher import DriverMessageDispatcher
 
 
 class Driver:
@@ -54,6 +54,9 @@ class Driver:
         self.service_queue = []
         self.charging_history = []  # 记录充电历史
         self.lock = threading.Lock()  # 线程锁，保护共享数据
+        self.message_dispatcher = DriverMessageDispatcher(
+            self.logger, self
+        )  # 消息分发器
 
     def _connect_to_central(self):
         """连接到中央系统"""
@@ -73,141 +76,17 @@ class Driver:
 
     def _handle_central_message(self, message):
         """处理来自中央系统的消息"""
-        # 消息已经是字典格式（JSON）
-        message_type = message.get("type")
+        # 使用消息分发器处理消息
+        self.message_dispatcher.dispatch_message(message)
 
-        try:
-            if message_type == "charge_request_response":
-                self._handle_charge_response(message)
-            elif message_type == "charging_status_update":
-                self._handle_charging_status(message)
-            elif message_type == "charge_completion_notification":
-                self._handle_charge_completion(message)
-            elif message_type == "charge_completion":
-                # 处理来自Monitor转发的充电完成消息
-                self._handle_charge_completion(message)
-            elif message_type == "available_cps_response":
-                self._handle_available_cps(message)
-            elif message_type == "charging_data":
-                # 处理实时充电数据
-                self._handle_charging_data(message)
-            elif message_type == "CONNECTION_LOST":
-                self.logger.warning("Connection to Central lost")
-                self._handle_connection_lost()
-            elif message_type == "CONNECTION_ERROR":
-                self.logger.error(f"Connection error: {message.get('error')}")
-                self._handle_connection_error(message)
-            else:
-                self.logger.warning(
-                    f"Unknown message type from Central: {message_type}"
-                )
-        except Exception as e:
-            self.logger.error(f"Error handling message: {e}", exc_info=True)
-
-    def _handle_charge_response(self, message):
-        """处理充电请求响应"""
-        status = message.get("status")
-        info = message.get("info", "")
-
-        if status == "success":
-            self.logger.info(f"✅ Charging request approved: {info}")
-            session_id = message.get("session_id")
-            if session_id:
-                with self.lock:
-                    self.current_charging_session = {
-                        "session_id": session_id,
-                        "cp_id": message.get("cp_id"),
-                        "start_time": datetime.now(),
-                        "status": "authorized",
-                        "energy_consumed_kwh": 0.0,
-                        "total_cost": 0.0,
-                        "charging_rate": 0.0,
-                    }
-                self.logger.info(f"Charging session started: {session_id}")
-        else:
-            self.logger.error(f"❌ Charging request denied: {info}")
-
-    def _handle_charging_status(self, message):
-        """处理充电状态更新"""
-        with self.lock:
-            if self.current_charging_session:
-                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
-                total_cost = message.get("total_cost", 0)
-                charging_rate = message.get("charging_rate", 0)
-
-                # 更新会话数据
-                self.current_charging_session["energy_consumed_kwh"] = (
-                    energy_consumed_kwh
-                )
-                self.current_charging_session["total_cost"] = total_cost
-                self.current_charging_session["charging_rate"] = charging_rate
-
-                self.logger.info(
-                    f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
-                )
-
-    def _handle_charging_data(self, message):
-        """处理实时充电数据（来自Engine通过Monitor转发）"""
-        session_id = message.get("session_id")
-        with self.lock:
-            if (
-                self.current_charging_session
-                and self.current_charging_session.get("session_id") == session_id
-            ):
-                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
-                total_cost = message.get("total_cost", 0)
-                charging_rate = message.get("charging_rate", 0)
-
-                self.current_charging_session["energy_consumed_kwh"] = (
-                    energy_consumed_kwh
-                )
-                self.current_charging_session["total_cost"] = total_cost
-                self.current_charging_session["charging_rate"] = charging_rate
-
-                self.logger.info(
-                    f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
-                )
-
-    def _handle_charge_completion(self, message):
-        """处理充电完成通知"""
-        with self.lock:
-            if self.current_charging_session:
-                session_id = message.get("session_id")
-                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
-                total_cost = message.get("total_cost", 0)
-
-                self.logger.info(f"✅ Charging completed!")
-                self.logger.info(f"Session ID: {session_id}")
-                self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
-                self.logger.info(f"Total Cost: €{total_cost:.2f}")
-
-                # 保存到历史记录
-                completion_record = {
-                    "session_id": session_id,
-                    "cp_id": self.current_charging_session.get("cp_id"),
-                    "completion_time": datetime.now(),
-                    "energy_consumed_kwh": energy_consumed_kwh,
-                    "total_cost": total_cost,
-                }
-                self.charging_history.append(completion_record)
-
-                self.current_charging_session = None
-
-        # 等待4秒后处理下一个服务
-        self.logger.info("Waiting 4 seconds before next service...")
-        time.sleep(4)
-        self._process_next_service()
-
-    def _handle_available_cps(self, message):
-        """处理可用充电点列表"""
-        self.available_charging_points = message.get("charging_points", [])
-        self.logger.info(
-            f"Available charging points: {len(self.available_charging_points)}"
-        )
-        for cp in self.available_charging_points:
-            self.logger.info(
-                f"  - {cp['id']}: {cp['location']} (Status: {cp['status']})"
-            )
+    def _formatter_charging_points(self, charging_points):
+        for i, cp in enumerate(charging_points, 1):
+            print(f"【{i}】 charging point {cp['id']}")
+            print(f"    ├─ Location: {cp['location']}")
+            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
+            print(f"    ├─ Status: {cp['status']}")
+            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
+            print()
 
     def _send_charge_request(self, cp_id):
         """发送充电请求"""
@@ -225,6 +104,31 @@ class Driver:
         self.logger.info(f"🚗 Sending charging request for CP: {cp_id}")
         return self.central_client.send(request_message)
 
+    def _send_stop_charging_request(self):
+        """发送停止充电请求"""
+        with self.lock:
+            if not self.current_charging_session:
+                self.logger.warning("No active charging session to stop")
+                return False
+
+            session_id = self.current_charging_session["session_id"]
+            cp_id = self.current_charging_session["cp_id"]
+
+        if not self.central_client or not self.central_client.is_connected:
+            self.logger.error("Not connected to Central")
+            return False
+
+        request_message = {
+            "type": "stop_charging_request",
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "cp_id": cp_id,
+            "driver_id": self.args.id_client,
+        }
+
+        self.logger.info(f"🛑 Sending stop charging request for session: {session_id}")
+        return self.central_client.send(request_message)
+
     def _request_available_cps(self):
         """请求可用充电点列表"""
         if not self.central_client or not self.central_client.is_connected:
@@ -240,7 +144,7 @@ class Driver:
 
         return self.central_client.send(request_message)
 
-    def _load_services_from_file(self, filename="test_services.txt"):
+    def _load_services_from_file(self, filename="test_services.txts"):
         """从文件加载服务列表"""
         try:
             if not os.path.exists(filename):
@@ -302,6 +206,7 @@ class Driver:
         self.logger.info("Entering interactive mode. Available commands:")
         self.logger.info("  - 'list': Show available charging points")
         self.logger.info("  - 'charge <cp_id>': Request charging at specific CP")
+        self.logger.info("  - 'stop': Stop current charging session")
         self.logger.info("  - 'status': Show current charging status")
         self.logger.info("  - 'history': Show charging history")
         self.logger.info("  - 'help': Show this help message")
@@ -319,6 +224,8 @@ class Driver:
                 elif command.startswith("charge "):
                     cp_id = command.split(" ", 1)[1]
                     self._send_charge_request(cp_id)
+                elif command == "stop":
+                    self._send_stop_charging_request()
                 elif command == "status":
                     with self.lock:
                         if self.current_charging_session:
@@ -344,6 +251,7 @@ class Driver:
                     self.logger.info(
                         "  - 'charge <cp_id>': Request charging at specific CP"
                     )
+                    self.logger.info("  - 'stop': Stop current charging session")
                     self.logger.info("  - 'status': Show current charging status")
                     self.logger.info("  - 'history': Show charging history")
                     self.logger.info("  - 'help': Show this help message")

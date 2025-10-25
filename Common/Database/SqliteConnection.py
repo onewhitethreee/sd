@@ -144,7 +144,7 @@ class SqliteConnection:
         try:
             cursor = connection.cursor()
             cursor.execute(
-                "SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints WHERE status = ?",
+                "SELECT cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time FROM ChargingPoints WHERE status = ?",
                 ("ACTIVE",),
             )
             rows = cursor.fetchall()
@@ -153,8 +153,9 @@ class SqliteConnection:
                     "cp_id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
-                    "status": row[3],
-                    "last_connection_time": row[4],
+                    "max_charging_rate_kw": row[3],
+                    "status": row[4],
+                    "last_connection_time": row[5],
                 }
                 for row in rows
             ]
