@@ -165,13 +165,10 @@ class MySocketServer:
             client_socket = self.clients.get(client_id)
             if client_socket:
                 try:
-                    # 直接打包JSON消息
                     packed_message = MessageFormatter.pack_message(message)
                     client_socket.send(packed_message)
-                    self.logger.info(f"Sent message to {client_id}: {message}")
                     return True
                 except Exception as e:
-                    self.logger.error(f"Error sending message to {client_id}: {e}")
                     return False
             else:
                 self.logger.warning(f"Client {client_id} not connected")

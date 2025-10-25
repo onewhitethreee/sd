@@ -122,7 +122,7 @@ class SqliteConnection:
         try:
             cursor = connection.cursor()
             cursor.execute(
-                "SELECT cp_id, location, price_per_kwh, status, last_connection_time FROM ChargingPoints"
+                "SELECT cp_id, location, price_per_kwh, status, last_connection_time, max_charging_rate_kw FROM ChargingPoints"
             )
             rows = cursor.fetchall()
             return [
@@ -132,6 +132,7 @@ class SqliteConnection:
                     "price_per_kwh": row[2],
                     "status": row[3],
                     "last_connection_time": row[4],
+                    "max_charging_rate_kw": row[5],
                 }
                 for row in rows
             ]
@@ -292,11 +293,9 @@ class SqliteConnection:
         try:
             cursor.execute("UPDATE ChargingPoints SET status = ? WHERE 1", (status,))
             connection.commit()
-            logging.info(f"所有充电桩状态已更新为: {status}")
             return True
         except Exception as e:
             connection.rollback()
-            logging.error(f"更新所有充电桩状态失败: {e}")
             return False
 
     def create_charging_session(self, session_id, cp_id, driver_id, start_time):

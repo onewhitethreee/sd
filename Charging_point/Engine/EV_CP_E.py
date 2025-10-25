@@ -199,9 +199,7 @@ class EV_CP_E:
             "energy_consumed_kwh": 0.0,  # 初始能量
             "total_cost": 0.0,  # 初始费用
             "charging_rate_kw": charging_rate_kw,  # 充电速率（千瓦）
-            "price_per_kwh": (
-                price_per_kwh if price_per_kwh > 0 else 0.2
-            ),  # 从Central获取，默认0.2
+            "price_per_kwh": price_per_kwh,  # 每度电价格
         }
         # 启动充电线程
         # 注意：这里如果 charging_thread 已经结束，但 self.is_charging 为 True
