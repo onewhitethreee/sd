@@ -62,7 +62,11 @@ class Driver:
                 logger=self.logger,
                 message_callback=self._handle_central_message,
             )
-            return self.central_client.connect(self.args.broker[0], self.args.broker[1])
+            return self.central_client.connect(self.args.broker[0], self.args.broker[1]) # TODO 这里在换成kafka的时候需要重新吧注释删掉，目前是通过socket来连接的
+            # return self.central_client.connect(
+            #     self.config.get_ip_port_ev_cp_central()[0],
+            #     self.config.get_ip_port_ev_cp_central()[1],
+            # )
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
             return False
@@ -216,7 +220,6 @@ class Driver:
             "message_id": str(uuid.uuid4()),
             "cp_id": cp_id,
             "driver_id": self.args.id_client,
-            "timestamp": int(time.time()),
         }
 
         self.logger.info(f"🚗 Sending charging request for CP: {cp_id}")

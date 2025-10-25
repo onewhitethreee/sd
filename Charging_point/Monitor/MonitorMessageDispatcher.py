@@ -7,7 +7,6 @@ Monitor消息分发器
 """
 
 import uuid
-from Charging_point.Monitor.EC_CP_M import EV_CP_M
 
 class MonitorMessageDispatcher:
     """
@@ -24,7 +23,7 @@ class MonitorMessageDispatcher:
             monitor: EV_CP_M实例，用于访问Monitor的业务逻辑
         """
         self.logger = logger
-        self.monitor : EV_CP_M = monitor
+        self.monitor = monitor
 
         # 来自Central的消息处理器
         self.central_handlers = {

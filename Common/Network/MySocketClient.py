@@ -108,8 +108,11 @@ class MySocketClient:
         try:
             # 直接打包JSON消息
             packed = MessageFormatter.pack_message(message)
-            self.socket.send(packed)
-            return True
+            if self.socket.send(packed) == len(packed):
+                return True
+            else:
+                self.logger.error("Send failed")
+                return False
         except Exception as e:
             self.logger.error(f"Send failed: {e}")
             return False
