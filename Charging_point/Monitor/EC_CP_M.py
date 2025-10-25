@@ -75,7 +75,7 @@ class EV_CP_M:
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "location": "Location_Info",
+            "location": self.config.get_location(),
             "price_per_kwh": random.uniform(0.15, 0.25),
         }
         return self.central_conn_mgr.send(register_message)
