@@ -28,8 +28,8 @@ class DriverMessageDispatcher:
             logger: 日志记录器
             driver: Driver实例，用于访问Driver的业务逻辑
         """
-        self.logger : CustomLogger = logger
-        self.driver : Driver = driver
+        self.logger = logger
+        self.driver = driver
 
         # 来自Central的消息处理器
         self.handlers = {
@@ -41,6 +41,7 @@ class DriverMessageDispatcher:
             "charging_data": self._handle_charging_data,
             "CONNECTION_LOST": self._handle_connection_lost,
             "CONNECTION_ERROR": self._handle_connection_error,
+            "stop_charging_response": self._handle_stop_charging_response,
         }
 
     def dispatch_message(self, message):
@@ -74,22 +75,28 @@ class DriverMessageDispatcher:
         """处理充电请求响应"""
         status = message.get("status")
         info = message.get("info", "")
-
+        self.logger.debug(f"处理充电请求响应: status={status}, info={info}")
+        self.logger.debug(f"message: {message}")
         if status == "success":
             self.logger.info(f"✅ Charging request approved: {info}")
             session_id = message.get("session_id")
+            cp_id = message.get("cp_id")
+
             if session_id:
                 with self.driver.lock:
                     self.driver.current_charging_session = {
                         "session_id": session_id,
-                        "cp_id": message.get("cp_id"),
+                        "cp_id": cp_id,
                         "start_time": datetime.now(),
                         "status": "authorized",
                         "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
                         "charging_rate": 0.0,
                     }
-                self.logger.info(f"Charging session started: {session_id}")
+                self.logger.info(f"✅ Charging session created: {session_id}")
+                self.logger.debug(f"会话数据: {self.driver.current_charging_session}")
+            else:
+                self.logger.error("Session ID not provided in charge response")
         else:
             self.logger.error(f"❌ Charging request denied: {info}")
 
@@ -97,22 +104,38 @@ class DriverMessageDispatcher:
 
     def _handle_charging_status(self, message):
         """处理充电状态更新"""
-        self.logger.debug(f"收到了充电状态更新: {message}")
+
+        session_id = message.get("session_id")
+        energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
+        total_cost = message.get("total_cost", 0)
+        charging_rate = message.get("charging_rate", 0)
+
         with self.driver.lock:
             if self.driver.current_charging_session:
-                energy_consumed_kwh = message.get("energy_consumed_kwh", 0)
-                total_cost = message.get("total_cost", 0)
-                charging_rate = message.get("charging_rate", 0)
-
-                # 更新会话数据
-                self.driver.current_charging_session["energy_consumed_kwh"] = (
-                    energy_consumed_kwh
+                current_session_id = self.driver.current_charging_session.get(
+                    "session_id"
                 )
-                self.driver.current_charging_session["total_cost"] = total_cost
-                self.driver.current_charging_session["charging_rate"] = charging_rate
+                # 验证会话ID匹配
+                if current_session_id == session_id:
+                    # 更新会话数据
+                    self.driver.current_charging_session["energy_consumed_kwh"] = (
+                        energy_consumed_kwh
+                    )
+                    self.driver.current_charging_session["total_cost"] = total_cost
+                    self.driver.current_charging_session["charging_rate"] = (
+                        charging_rate
+                    )
 
-                self.logger.info(
-                    f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                    self.logger.info(
+                        f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                    )
+                else:
+                    self.logger.warning(
+                        f"会话ID不匹配: 期望 {current_session_id}, 收到 {session_id}"
+                    )
+            else:
+                self.logger.warning(
+                    f"没有活跃的充电会话，无法更新状态。收到的会话ID: {session_id}"
                 )
 
         return True
@@ -197,3 +220,8 @@ class DriverMessageDispatcher:
         self.driver._handle_connection_error(message)
         return True
 
+    def _handle_stop_charging_response(self, message):
+        """处理停止充电响应"""
+        self.logger.info("Charging stopped")
+        self.logger.debug(f"处理停止充电响应: {message}")
+        return True

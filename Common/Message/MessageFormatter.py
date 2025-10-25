@@ -106,7 +106,7 @@ class MessageFormatter:
             return buffer[stx_index + 1 :], None
 
     @staticmethod
-    def create_response_message(cp_type, message_id, status, info=""):
+    def create_response_message(cp_type, message_id, status, info="", session_id=None):
         """
         创建响应消息字典。
 
@@ -124,4 +124,5 @@ class MessageFormatter:
             "message_id": str(message_id) if message_id is not None else "",
             "status": status if status else "",
             "info": info if info else "",
+            "session_id": session_id if session_id else "",
         }
