@@ -351,9 +351,7 @@ class Driver:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.logger.info("Received interrupt signal")
-        finally:
-            if self.driver_cli:
-                self.driver_cli.stop()
+        # 不在这里停止CLI，让外层的finally统一处理清理工作
 
     def _auto_mode(self, services):
         """自动模式"""
