@@ -20,7 +20,7 @@ class MySocketServer:
         disconnect_callback=None,
     ):
         self.host = host
-        self.port = port
+        self.port = int(port)
         self.logger = logger
         self.clients = {}  # {client_id: client_socket}
         self.clients_lock = threading.Lock()  # 用于保护 self.clients 字典的锁

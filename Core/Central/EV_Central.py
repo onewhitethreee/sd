@@ -266,9 +266,9 @@ if __name__ == "__main__":
 
     try:
         ev_central.start()
-        ev_central.logger.info(
-            "EV Central main process is now idling, waiting for KeyboardInterrupt or external stop signal."
-        )
+        # ev_central.logger.info(
+        #     "EV Central main process is now idling, waiting for KeyboardInterrupt or external stop signal."
+        # )
 
         while ev_central.socket_server.running_event.is_set():
             time.sleep(0.1)

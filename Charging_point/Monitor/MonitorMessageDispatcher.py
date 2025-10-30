@@ -59,7 +59,7 @@ class MonitorMessageDispatcher:
         """
         try:
             msg_type = message.get("type")
-            self.logger.debug(f"Dispatching message from {source}: {msg_type}")
+            self.logger.debug(f"Dispatching message from {source}: {msg_type} {message}")
 
             if source == "Central":
                 handler = self.central_handlers.get(msg_type)

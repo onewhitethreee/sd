@@ -434,6 +434,38 @@ class SqliteConnection:
             logging.error(f"获取活跃充电会话失败: {e}")
             return []
 
+    def get_all_charging_sessions(self):
+        """获取所有充电会话（包括历史会话）"""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT session_id, cp_id, driver_id, start_time, end_time,
+                       energy_consumed_kwh, total_cost, status
+                FROM ChargingSessions
+                ORDER BY start_time DESC
+            """
+            )
+
+            rows = cursor.fetchall()
+            return [
+                {
+                    "session_id": row[0],
+                    "cp_id": row[1],
+                    "driver_id": row[2],
+                    "start_time": row[3],
+                    "end_time": row[4],
+                    "energy_consumed_kwh": row[5],
+                    "total_cost": row[6],
+                    "status": row[7],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            logging.error(f"获取所有充电会话失败: {e}")
+            return []
+
     def get_active_sessions_for_charging_point(self, cp_id):
         """获取充电桩的所有活跃会话"""
         connection = self.get_connection()

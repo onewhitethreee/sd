@@ -219,3 +219,28 @@ class ChargingSession:
             list: 所有会话列表
         """
         return self.db_manager.get_active_charging_sessions()
+
+    def get_all_sessions(self):
+        """
+        获取所有充电会话（包括历史会话）
+
+        Returns:
+            list: 所有会话列表
+        """
+        try:
+            return self.db_manager.get_all_charging_sessions()
+        except Exception as e:
+            self.logger.error(f"获取所有会话失败: {e}")
+            return []
+
+    def get_session(self, session_id):
+        """
+        获取指定的充电会话信息（别名方法）
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            dict: 会话信息或None
+        """
+        return self.get_charging_session(session_id)

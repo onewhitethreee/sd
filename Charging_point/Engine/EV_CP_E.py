@@ -97,6 +97,7 @@ class EV_CP_E:
 
     def _start_monitor_server(self):
         """启动服务器等待Monitor连接"""
+
         try:
             self.monitor_server = MySocketServer(
                 host=self.engine_listen_address[0],
@@ -134,8 +135,13 @@ class EV_CP_E:
 
     def _init_kafka(self):
         """初始化Kafka连接"""
-        try:
+
+        if self.debug_mode:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        else:
+            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+
+        try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
@@ -157,7 +163,7 @@ class EV_CP_E:
             self.is_charging = False
 
         if self.monitor_server:
-            self.monitor_server.stop()  # 使用现有的stop()方法
+            self.monitor_server.stop()  
 
         if self.kafka_manager:
             self.kafka_manager.stop()
@@ -384,7 +390,6 @@ class EV_CP_E:
             self.logger.error(f"Unexpected error: {e}")
             self._shutdown_system()
 
-    
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

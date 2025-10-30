@@ -23,6 +23,7 @@ class EV_CP_M:
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
+        
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_CP_M", "Módulo de monitorización del punto de recarga"
@@ -50,6 +51,7 @@ class EV_CP_M:
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
+        
         self.central_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.engine_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.running = False
@@ -569,4 +571,3 @@ if __name__ == "__main__":
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()
 
-# TODO WARNING:2025-10-17 22:43:07:[EC_CP_M.py:470 - _handle_message_from_central] Charge completion response from Central: {'type': 'charge_completion_response', 'message_id': 'c2d40682-0acd-40ce-96c0-218a1ce6e02d', 'status': 'failure', 'info': '消息中缺少必要字段: driver_id, driver_id'}

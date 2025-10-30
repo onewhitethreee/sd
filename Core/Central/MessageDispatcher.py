@@ -570,7 +570,10 @@ class MessageDispatcher:
             # 如果状态为故障，记录故障信息
             if new_status == Status.FAULTY.value:
                 self.logger.warning(f"充电点 {cp_id} 报告故障状态")
-                # TODO: 可以在这里添加通知管理员的逻辑
+                # self.charging_point_manager.update_charging_point_status(
+                #     cp_id=cp_id, status=Status.FAULTY.value
+                # )
+                # self.logger.error(f"充电点 {cp_id} 状态更新为故障")
 
             return MessageFormatter.create_response_message(
                 cp_type="status_update_response",

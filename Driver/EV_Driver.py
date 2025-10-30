@@ -16,6 +16,7 @@ from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketClient import MySocketClient
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Driver.DriverMessageDispatcher import DriverMessageDispatcher
+from Driver.DriverCLI import DriverCLI
 
 
 class Driver:
@@ -48,6 +49,7 @@ class Driver:
 
         self.central_client = None
         self.kafka_manager = None  # Kafka管理器
+        self.driver_cli = None  # Driver命令行接口
         self.running = False
         self.current_charging_session = None
         self.available_charging_points = []
@@ -79,14 +81,6 @@ class Driver:
         # 使用消息分发器处理消息
         self.message_dispatcher.dispatch_message(message)
 
-    def _formatter_charging_points(self, charging_points):
-        for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 charging point {cp['id']}")
-            print(f"    ├─ Location: {cp['location']}")
-            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
-            print(f"    ├─ Status: {cp['status']}")
-            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
-            print()
 
     def _send_charge_request(self, cp_id):
         """发送充电请求"""
@@ -202,70 +196,22 @@ class Driver:
             self._show_charging_history()
 
     def _interactive_mode(self):
-        """交互模式"""
-        self.logger.info("Entering interactive mode. Available commands:")
-        self.logger.info("  - 'list': Show available charging points")
-        self.logger.info("  - 'charge <cp_id>': Request charging at specific CP")
-        self.logger.info("  - 'stop': Stop current charging session")
-        self.logger.info("  - 'status': Show current charging status")
-        self.logger.info("  - 'history': Show charging history")
-        self.logger.info("  - 'help': Show this help message")
-        self.logger.info("  - 'quit': Exit application")
+        """交互模式 - 使用DriverCLI"""
+        self.logger.info("Entering interactive mode...")
 
-        while self.running:
-            try:
-                command = input("\nDriver> ").strip().lower()
+        # 初始化并启动DriverCLI
+        self.driver_cli = DriverCLI(self)
+        self.driver_cli.start()
 
-                if command == "quit":
-                    self.running = False
-                    break
-                elif command == "list":
-                    self._request_available_cps()
-                elif command.startswith("charge "):
-                    cp_id = command.split(" ", 1)[1]
-                    self._send_charge_request(cp_id)
-                elif command == "stop":
-                    self._send_stop_charging_request()
-                elif command == "status":
-                    with self.lock:
-                        if self.current_charging_session:
-                            session = self.current_charging_session
-                            self.logger.info(
-                                f"Current session: {session['session_id']}"
-                            )
-                            self.logger.info(f"  CP ID: {session['cp_id']}")
-                            self.logger.info(
-                                f"  Energy: {session['energy_consumed_kwh']:.3f}kWh"
-                            )
-                            self.logger.info(f"  Cost: €{session['total_cost']:.2f}")
-                            self.logger.info(
-                                f"  Rate: {session['charging_rate']:.2f}kW"
-                            )
-                        else:
-                            self.logger.info("No active charging session")
-                elif command == "history":
-                    self._show_charging_history()
-                elif command == "help":
-                    self.logger.info("Available commands:")
-                    self.logger.info("  - 'list': Show available charging points")
-                    self.logger.info(
-                        "  - 'charge <cp_id>': Request charging at specific CP"
-                    )
-                    self.logger.info("  - 'stop': Stop current charging session")
-                    self.logger.info("  - 'status': Show current charging status")
-                    self.logger.info("  - 'history': Show charging history")
-                    self.logger.info("  - 'help': Show this help message")
-                    self.logger.info("  - 'quit': Exit application")
-                else:
-                    self.logger.info(
-                        "Unknown command. Type 'help' for available commands."
-                    )
-
-            except KeyboardInterrupt:
-                self.running = False
-                break
-            except Exception as e:
-                self.logger.error(f"Error in interactive mode: {e}")
+        # 等待CLI运行
+        try:
+            while self.running and self.driver_cli.running:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            self.logger.info("Received interrupt signal")
+        finally:
+            if self.driver_cli:
+                self.driver_cli.stop()
 
     def _auto_mode(self, services):
         """自动模式"""
@@ -357,6 +303,8 @@ class Driver:
             self.logger.error(f"Unexpected error: {e}")
         finally:
             self.running = False
+            if self.driver_cli:
+                self.driver_cli.stop()
             if self.central_client:
                 self.central_client.disconnect()
             if self.kafka_manager:
@@ -369,4 +317,3 @@ if __name__ == "__main__":
     driver.start()
 
 # TODO 掉线了应该有一个重试机制
-# TODO 在driver发送stop命令后，应该停止现有的充电，而不是继续发送，目前这是一个bug
