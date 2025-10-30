@@ -115,7 +115,7 @@ class EngineMessageDispatcher:
         self.logger.info("Processing stop command")
 
         if self.engine.is_charging:
-            self.engine._stop_charging_session(ev_id=None)
+            self.engine._stop_charging_session()
 
         response = {
             "type": "command_response",

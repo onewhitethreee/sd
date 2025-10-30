@@ -139,7 +139,7 @@ class ChargingPoint:
             # 更新数据库
             self.db_manager.update_charging_point_status(cp_id=cp_id, status=status)
 
-            self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
+            # self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
             return True
 
         except Exception as e:

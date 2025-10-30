@@ -150,7 +150,13 @@ class MonitorMessageDispatcher:
     # ==================== Engine消息处理器 ====================
 
     def _handle_health_check_response(self, message):
-        """处理来自Engine的健康检查响应"""
+        """
+        处理来自Engine的健康检查响应
+
+        Según especificaciones:
+        - Monitor_OK and Engine_OK => Activado (Verde)
+        - Monitor_OK and Engine_KO => Averiado (Rojo)
+        """
         self.logger.debug(f"Health check response from Engine: {message}")
 
         # 更新最后一次收到健康检查响应的时间
@@ -158,17 +164,23 @@ class MonitorMessageDispatcher:
         self.monitor._update_last_health_response()
 
         engine_status = message.get("engine_status")
+
+        # Monitor está OK (recibiendo health check), verificar estado de Engine
         if engine_status == "FAULTY":
+            # Monitor OK + Engine KO = FAULTY
             self.logger.warning("Engine reports FAULTY status.")
             self.monitor.update_cp_status("FAULTY")
         elif engine_status == "ACTIVE":
             self.logger.debug("Engine reports ACTIVE status.")
-            # 如果当前状态是故障，尝试恢复（Central也需正常）
-            if (
-                self.monitor._current_status == "FAULTY"
-                and self.monitor.central_conn_mgr.is_connected
-            ):
-                self.monitor.update_cp_status("ACTIVE")
+            # Monitor OK + Engine OK = ACTIVE (solo si Central también conectado)
+            if self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected:
+                # Ambos Monitor y Engine OK, y Central conectado => ACTIVE
+                if self.monitor._current_status != "ACTIVE":
+                    self.monitor.update_cp_status("ACTIVE")
+            else:
+                # Monitor OK, Engine OK, pero Central desconectado
+                self.logger.warning("Engine is ACTIVE but Central is not connected")
+                self.monitor.update_cp_status("FAULTY")
 
         return True
 

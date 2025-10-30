@@ -236,13 +236,16 @@ class MessageDispatcher:
             # 向Monitor发送启动充电命令
             self._send_start_charging_to_monitor(cp_id, session_id, driver_id)
 
-            return MessageFormatter.create_response_message(
+            # 创建响应并agregar cp_id (requerido por el Driver)
+            response = MessageFormatter.create_response_message(
                 cp_type="charge_request_response",
                 message_id=message_id,
                 status="success",
                 info=f"充电请求已授权，充电点 {cp_id} 开始为司机 {driver_id} 充电，会话ID: {session_id}",
                 session_id=session_id,
             )
+            response["cp_id"] = cp_id  # Agregar cp_id a la respuesta
+            return response
         except Exception as e:
             self.logger.error(f"授权充电请求失败: {e}")
             return self._create_failure_response(
@@ -287,13 +290,16 @@ class MessageDispatcher:
 
             self.logger.info(f"停止充电命令已发送: CP {cp_id}, 会话 {session_id}")
 
-            return MessageFormatter.create_response_message(
+            # 创建响应并agregar cp_id (para consistencia)
+            response = MessageFormatter.create_response_message(
                 cp_type="stop_charging_response",
                 message_id=message_id,
                 status="success",
                 info=f"停止充电请求已处理，充电点 {cp_id} 正在停止充电",
                 session_id=session_id,
             )
+            response["cp_id"] = cp_id  # Agregar cp_id a la respuesta
+            return response
         except Exception as e:
             self.logger.error(f"处理停止充电请求失败: {e}")
             return self._create_failure_response(
@@ -718,7 +724,6 @@ class MessageDispatcher:
 
             # 构建充电状态更新消息
             status_message = {
-                "session_id": charging_data.get("session_id"),
                 "type": "charging_status_update",
                 "message_id": str(uuid.uuid4()),
                 "driver_id": driver_id,
@@ -818,7 +823,7 @@ class MessageDispatcher:
     def _send_stop_charging_to_monitor(self, cp_id, session_id, driver_id):
         """向Monitor发送停止充电命令"""
         try:
-            monitor_client_id = self.charging_point_manager.get_monitor_client_id(cp_id)
+            monitor_client_id = self.charging_point_manager.get_client_id_for_charging_point(cp_id)
             if not monitor_client_id:
                 self.logger.error(f"未找到充电点 {cp_id} 的Monitor连接")
                 return False

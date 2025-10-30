@@ -92,6 +92,12 @@ class EV_CP_M:
         """
         由 ConnectionManager 回调，处理连接状态变化。
         这就是 EV_CP_M 响应底层网络事件的核心逻辑。
+
+        Según especificaciones (Guía de Corrección, página 3):
+        Monitor_OK and Engine_OK => Activado (Verde)
+        Monitor_OK and Engine_KO => Averiado (Rojo)
+        Monitor_KO and Engine_OK => Desconectado (gestionado por Central)
+        Monitor_KO and Engine_KO => Desconectado (gestionado por Central)
         """
         self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
@@ -101,9 +107,12 @@ class EV_CP_M:
                 self._register_with_central()
                 # 启动 Central 的心跳线程
                 self._start_heartbeat_thread()
-                self.update_cp_status(
-                    Status.ACTIVE.value
-                )  # 假设连接Central成功就算活跃
+                # Solo establecer ACTIVE si Engine también está conectado y funcionando
+                # De lo contrario, esperar a que Engine confirme su estado
+                if self.engine_conn_mgr and self.engine_conn_mgr.is_connected:
+                    self.update_cp_status(Status.ACTIVE.value)
+                else:
+                    self.logger.info("Waiting for Engine connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
                 self.logger.warning(
                     "Central is disconnected. Updating CP status to FAULTY."
@@ -118,12 +127,16 @@ class EV_CP_M:
                     "Engine is now connected. Starting health check thread."
                 )
                 self._start_engine_health_check_thread()
-                # Engine连接后是否直接更新ACTIVE，这取决于业务逻辑，
-                # 如果Central也连接了，并且Engine状态良好，才算ACTIVE
+                # Si Central también está conectado, actualizar a ACTIVE
+                if self.central_conn_mgr and self.central_conn_mgr.is_connected:
+                    self.update_cp_status(Status.ACTIVE.value)
+                else:
+                    self.logger.info("Waiting for Central connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
                 self.logger.warning("Engine is disconnected. Reporting failure.")
                 self._report_failure("EV_CP_E connection lost")
-                self.update_cp_status("FAULTY")
+                # Monitor OK pero Engine KO => FAULTY
+                self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
 
     def _stop_engine_health_check_thread(self):
