@@ -130,15 +130,32 @@ class EV_Central:
         )
 
     def _handle_client_disconnect(self, client_id):
-        """处理客户端断开连接"""
-        # 使用ChargingPoint管理器处理断开连接
+        """
+        处理客户端断开连接
+
+        该方法会尝试处理两种类型的客户端断开：
+        1. 充电桩 (ChargingPoint/Monitor)
+        2. 司机应用 (Driver)
+        """
+        self.logger.info(f"客户端 {client_id} 断开连接，正在识别客户端类型...")
+
+        # 首先尝试作为Driver处理
+        driver_id = self.message_dispatcher.handle_driver_disconnect(client_id)
+        if driver_id:
+            self.logger.warning(f"Driver {driver_id} (客户端 {client_id}) 已断开连接")
+            return
+
+        # 如果不是Driver，尝试作为ChargingPoint处理
         cp_id = self.message_dispatcher.charging_point_manager.handle_client_disconnect(
             client_id
         )
-
         if cp_id:
-            self.logger.info(f"Client {client_id} (CP: {cp_id}) disconnected")
-            self.logger.info(f"Charging point {cp_id} set to DISCONNECTED.")
+            self.logger.info(f"ChargingPoint {cp_id} (客户端 {client_id}) 已断开连接")
+            self.logger.info(f"充电点 {cp_id} 状态已设置为 DISCONNECTED")
+            return
+
+        # 如果既不是Driver也不是ChargingPoint
+        self.logger.warning(f"未知客户端类型 {client_id} 断开连接")
 
     def _process_charging_point_message(self, client_id, message):
         """

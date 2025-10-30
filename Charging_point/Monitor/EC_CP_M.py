@@ -120,9 +120,10 @@ class EV_CP_M:
                     self.logger.info("Waiting for Engine connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
                 self.logger.warning(
-                    "Central is disconnected. Updating CP status to FAULTY."
+                    "Central is disconnected. Handling disconnection..."
                 )
-                self.update_cp_status(Status.FAULTY.value)
+                # 处理Central断开连接的情况
+                self._handle_central_disconnection()
                 self._stop_heartbeat_thread()  # 停止心跳
             else:
                 self.logger.warning(f"Unknown status '{status}' for Central")
@@ -143,6 +144,34 @@ class EV_CP_M:
                 # Monitor OK pero Engine KO => FAULTY
                 self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
+
+    def _handle_central_disconnection(self):
+        """
+        处理Central断开连接的情况
+
+        当Central断开时：
+        1. 如果正在充电，停止充电（因为无法向Central报告数据）
+        2. 更新充电点状态为FAULTY
+        3. ConnectionManager会自动尝试重连
+        """
+        self.logger.warning("Handling Central disconnection...")
+
+        # 检查是否正在充电
+        if self._current_status == Status.CHARGING.value:
+            self.logger.warning(
+                "Currently charging, but Central is disconnected. Stopping charging to prevent data loss."
+            )
+            # 向Engine发送停止命令
+            self._send_stop_command_to_engine()
+            self.logger.info(
+                "Charging stopped due to Central disconnection. Will resume when Central reconnects."
+            )
+
+        # 更新状态为FAULTY（失去与Central的连接）
+        self.update_cp_status(Status.FAULTY.value)
+        self.logger.info(
+            "CP status set to FAULTY due to Central disconnection. Waiting for reconnection..."
+        )
 
     def _check_and_update_to_active(self):
         """

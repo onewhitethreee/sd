@@ -39,6 +39,7 @@ class MessageDispatcher:
         # Driver连接映射
         self._driver_connections = {}  # {driver_id: client_id}
         self._client_to_driver = {}  # {client_id: driver_id}
+        self._driver_active_sessions = {}  # {driver_id: [session_ids]}
 
         self.handlers = {
             "register_request": self._handle_register_message,
@@ -265,6 +266,7 @@ class MessageDispatcher:
         if driver_id not in self._driver_connections:
             self._driver_connections[driver_id] = client_id
             self._client_to_driver[client_id] = driver_id
+            self._driver_active_sessions[driver_id] = []
             self.logger.info(f"已注册Driver连接: {driver_id} -> {client_id}")
 
         # 检查充电点是否已注册且可用
@@ -295,6 +297,14 @@ class MessageDispatcher:
             # 更新充电点状态为充电中
             self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.CHARGING.value
+            )
+
+            # 记录Driver的活跃会话
+            if driver_id not in self._driver_active_sessions:
+                self._driver_active_sessions[driver_id] = []
+            self._driver_active_sessions[driver_id].append(session_id)
+            self.logger.debug(
+                f"记录Driver {driver_id} 的活跃会话: {self._driver_active_sessions[driver_id]}"
             )
 
             # 向Monitor发送启动充电命令
@@ -478,6 +488,14 @@ class MessageDispatcher:
             self.logger.info(
                 f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed_kwh}kWh, 费用: €{total_cost} session_data: {session_data}"
             )
+
+            # 移除Driver的活跃会话记录
+            if driver_id and driver_id in self._driver_active_sessions:
+                if session_id in self._driver_active_sessions[driver_id]:
+                    self._driver_active_sessions[driver_id].remove(session_id)
+                    self.logger.debug(
+                        f"已移除Driver {driver_id} 的会话 {session_id}"
+                    )
 
             # 向Driver发送充电完成通知
             if driver_id:
@@ -764,6 +782,95 @@ class MessageDispatcher:
             driver_id=driver_id,
         )
         return self._send_command_to_monitor(cp_id, message)
+
+    def handle_driver_disconnect(self, client_id):
+        """
+        处理Driver断开连接
+
+        当Driver断开连接时：
+        1. 查找该Driver正在进行的所有充电会话
+        2. 停止所有相关的充电会话
+        3. 通知相关的充电桩
+        4. 清理连接映射
+        """
+        # 查找driver_id
+        driver_id = self._client_to_driver.get(client_id)
+        if not driver_id:
+            self.logger.debug(f"客户端 {client_id} 不是Driver，跳过Driver断开连接处理")
+            return None
+
+        self.logger.warning(f"Driver {driver_id} (客户端 {client_id}) 断开连接")
+
+        # 获取该Driver的所有活跃会话
+        active_sessions = self._driver_active_sessions.get(driver_id, [])
+
+        if active_sessions:
+            self.logger.info(
+                f"Driver {driver_id} 有 {len(active_sessions)} 个活跃会话需要停止: {active_sessions}"
+            )
+
+            # 停止所有活跃会话
+            for session_id in active_sessions.copy():  # 使用copy避免在迭代时修改列表
+                self._stop_session_due_to_driver_disconnect(session_id, driver_id)
+        else:
+            self.logger.info(f"Driver {driver_id} 没有活跃的充电会话")
+
+        # 清理连接映射
+        if driver_id in self._driver_connections:
+            del self._driver_connections[driver_id]
+        if client_id in self._client_to_driver:
+            del self._client_to_driver[client_id]
+        if driver_id in self._driver_active_sessions:
+            del self._driver_active_sessions[driver_id]
+
+        self.logger.info(f"已清理Driver {driver_id} 的所有连接信息")
+        return driver_id
+
+    def _stop_session_due_to_driver_disconnect(self, session_id, driver_id):
+        """
+        由于Driver断开连接而停止充电会话
+        """
+        try:
+            # 获取会话信息
+            session_info = self.charging_session_manager.get_charging_session(session_id)
+            if not session_info:
+                self.logger.warning(f"会话 {session_id} 不存在，可能已经结束")
+                return
+
+            cp_id = session_info.get("cp_id")
+            energy_consumed_kwh = session_info.get("energy_consumed_kwh", 0.0)
+            total_cost = session_info.get("total_cost", 0.0)
+
+            self.logger.info(
+                f"由于Driver {driver_id} 断开连接，停止会话 {session_id} (CP: {cp_id})"
+            )
+
+            # 向Monitor发送停止充电命令
+            self._send_stop_charging_to_monitor(cp_id, session_id, driver_id)
+
+            # 完成充电会话（标记为由于断开连接而终止）
+            success, _ = self.charging_session_manager.complete_charging_session(
+                session_id=session_id,
+                energy_consumed_kwh=energy_consumed_kwh,
+                total_cost=total_cost,
+            )
+
+            if success:
+                # 更新充电点状态为活跃
+                self.charging_point_manager.update_charging_point_status(
+                    cp_id=cp_id, status=Status.ACTIVE.value
+                )
+                self.logger.info(
+                    f"会话 {session_id} 已因Driver断开而终止，CP {cp_id} 状态更新为ACTIVE"
+                )
+
+            # 从活跃会话列表中移除
+            if driver_id in self._driver_active_sessions:
+                if session_id in self._driver_active_sessions[driver_id]:
+                    self._driver_active_sessions[driver_id].remove(session_id)
+
+        except Exception as e:
+            self.logger.error(f"停止会话 {session_id} 失败: {e}")
 
     def _send_message_to_client(self, client_id, message):
         """
