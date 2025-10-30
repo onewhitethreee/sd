@@ -289,14 +289,20 @@ class MessageDispatcher:
             # 向Monitor发送停止充电命令
             self._send_stop_charging_to_monitor(cp_id, session_id, driver_id)
 
-            self.logger.info(f"停止充电命令已发送: CP {cp_id}, 会话 {session_id}")
+            # # 立即更新充电点状态为活跃
+            # # 这样用户可以看到charging point立即可用，而不需要等待charge_completion消息
+            # self.charging_point_manager.update_charging_point_status(
+            #     cp_id=cp_id, status=Status.ACTIVE.value
+            # )
+
+            # self.logger.info(f"停止充电命令已发送: CP {cp_id}, 会话 {session_id}，状态已更新为ACTIVE")
 
             # 创建响应并agregar cp_id (para consistencia)
             response = MessageFormatter.create_response_message(
                 cp_type="stop_charging_response",
                 message_id=message_id,
                 status="success",
-                info=f"停止充电请求已处理，充电点 {cp_id} 正在停止充电",
+                info=f"停止充电请求已处理，充电点 {cp_id} 已更新为活跃状态",
                 session_id=session_id,
             )
             response["cp_id"] = cp_id  # Agregar cp_id a la respuesta
