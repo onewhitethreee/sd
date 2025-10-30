@@ -127,7 +127,7 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用")
             return False
-    # TODO 这下面的逻辑需要完善
+    # 下面的逻辑不再需要完善，monitor只处理转发逻辑
     def _handle_charging_data_response(self, message):
         """处理来自Central的充电数据响应"""
         self.logger.debug(f"Charging data response from Central: {message}")

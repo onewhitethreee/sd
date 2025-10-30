@@ -223,7 +223,46 @@ class DriverMessageDispatcher:
         return True
 
     def _handle_stop_charging_response(self, message):
-        """处理停止充电响应"""
-        self.logger.info("Charging stopped")
-        self.logger.debug(f"处理停止充电响应: {message}")
+        """
+        处理停止充电响应
+
+        Args:
+            message: 响应消息，包含：
+                - status: 响应状态 (success/failure)
+                - info: 响应信息
+                - session_id: 会话ID
+                - cp_id: 充电点ID
+
+        Returns:
+            bool: 处理是否成功
+        """
+        status = message.get("status")
+        info = message.get("info", "")
+        session_id = message.get("session_id")
+        cp_id = message.get("cp_id")
+
+        self.logger.debug(f"处理停止充电响应: status={status}, info={info}")
+
+        if status == "success":
+            self.logger.info(f"🛑 Stop charging request accepted for session {session_id}")
+            self.logger.info(f"   Charging point: {cp_id}")
+            self.logger.info(f"   Waiting for final charge completion notification...")
+
+            # 注意：不要在这里清理 current_charging_session
+            # charge_completion 消息会随后到达并完成会话清理和历史记录保存
+
+        else:
+            self.logger.error(f"❌ Failed to stop charging: {info}")
+            self.logger.error(f"   Session ID: {session_id}")
+
+            # 如果停止失败，可能是会话已经不存在或其他错误
+            # 建议检查本地会话状态
+            with self.driver.lock:
+                if self.driver.current_charging_session:
+                    local_session_id = self.driver.current_charging_session.get("session_id")
+                    if local_session_id != session_id:
+                        self.logger.warning(
+                            f"   Local session ID ({local_session_id}) differs from requested ({session_id})"
+                        )
+
         return True
