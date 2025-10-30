@@ -115,7 +115,7 @@ class EV_CP_M:
                 # Solo establecer ACTIVE si Engine también está conectado y funcionando
                 # De lo contrario, esperar a que Engine confirme su estado
                 if self.engine_conn_mgr and self.engine_conn_mgr.is_connected:
-                    self.update_cp_status(Status.ACTIVE.value)
+                    self._check_and_update_to_active()
                 else:
                     self.logger.info("Waiting for Engine connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
@@ -134,7 +134,7 @@ class EV_CP_M:
                 self._start_engine_health_check_thread()
                 # Si Central también está conectado, actualizar a ACTIVE
                 if self.central_conn_mgr and self.central_conn_mgr.is_connected:
-                    self.update_cp_status(Status.ACTIVE.value)
+                    self._check_and_update_to_active()
                 else:
                     self.logger.info("Waiting for Central connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
@@ -143,6 +143,30 @@ class EV_CP_M:
                 # Monitor OK pero Engine KO => FAULTY
                 self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
+
+    def _check_and_update_to_active(self):
+        """
+        检查是否满足ACTIVE状态的条件，并更新状态
+        只有当Central和Engine都连接成功时才更新为ACTIVE
+        """
+        if (
+            self.central_conn_mgr
+            and self.central_conn_mgr.is_connected
+            and self.engine_conn_mgr
+            and self.engine_conn_mgr.is_connected
+        ):
+            # 只有在当前状态不是ACTIVE时才更新
+            if self._current_status != Status.ACTIVE.value:
+                self.logger.info(
+                    "Both Central and Engine are connected, setting CP status to ACTIVE"
+                )
+                self.update_cp_status(Status.ACTIVE.value)
+            else:
+                self.logger.debug("CP status is already ACTIVE, no update needed")
+        else:
+            self.logger.debug(
+                f"Not ready for ACTIVE status: Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
+            )
 
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""

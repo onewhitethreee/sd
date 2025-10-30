@@ -175,9 +175,8 @@ class MonitorMessageDispatcher:
             self.logger.debug("Engine reports ACTIVE status.")
             # Monitor OK + Engine OK = ACTIVE (solo si Central también conectado)
             if self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected:
-                # Ambos Monitor y Engine OK, y Central conectado => ACTIVE
-                if self.monitor._current_status != "ACTIVE":
-                    self.monitor.update_cp_status("ACTIVE")
+                # 使用统一的检查方法，避免重复状态更新
+                self.monitor._check_and_update_to_active()
             else:
                 # Monitor OK, Engine OK, pero Central desconectado
                 self.logger.warning("Engine is ACTIVE but Central is not connected")
