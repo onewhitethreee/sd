@@ -17,6 +17,7 @@ from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Core.Central.MessageDispatcher import MessageDispatcher
+from Core.Central.AdminCLI import AdminCLI
 
 
 class EV_Central:
@@ -30,6 +31,8 @@ class EV_Central:
         self.db_manager = None  # 这个用来存储数据库管理对象
         self.kafka_manager = None  # Kafka管理器
         self.message_dispatcher = None  # 消息分发器
+        self.admin_cli = None  # 管理员命令行接口
+
         self.db_path = self.config.get_db_path()
         self.sql_schema = os.path.join("Core", "BD", "table.sql")
         self.running = False
@@ -77,7 +80,8 @@ class EV_Central:
                 )
                 sys.exit(1)
 
-            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
+            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value) 
+
             charging_points_count = len(self.db_manager.get_all_charging_points())
             self.logger.info(
                 f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED."
@@ -93,14 +97,23 @@ class EV_Central:
         """
 
         try:
+
+            if self.debug_mode:
+                server_host = self.config.get_ip_port_ev_cp_central()[0]
+                server_port = self.config.get_listen_port()
+            else:
+                server_host = "0.0.0.0"
+                server_port = self.args.listen_port
+
             # 将自定义消息处理函数分配给 socket 服务器
             self.socket_server = MySocketServer(
-                host=self.config.get_ip_port_ev_cp_central()[0],
-                port=self.config.get_ip_port_ev_cp_central()[1],
+                host=server_host,
+                port=server_port,
                 logger=self.logger,
                 message_callback=self._process_charging_point_message,
                 disconnect_callback=self._handle_client_disconnect,
             )
+
             # 通过MySocketServer类的start方法启动服务器
             self.socket_server.start()
             self.running = True
@@ -137,8 +150,12 @@ class EV_Central:
     def _init_kafka_producer(self):
         """初始化Kafka生产者"""
         self.logger.debug("Initializing Kafka producer")
-        try:
+        if self.debug_mode:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        else:
+            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        
+        try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
@@ -201,10 +218,26 @@ class EV_Central:
         #         "Kafka initialization failed, continuing without Kafka support"
         #     )
 
+        # 初始化管理员CLI
+        self._init_admin_cli()
+
         self.logger.info("All systems initialized successfully.")
+
+    def _init_admin_cli(self):
+        """初始化管理员命令行接口"""
+        try:
+            self.admin_cli = AdminCLI(self)
+            self.admin_cli.start()
+            self.logger.info("Admin CLI initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Admin CLI: {e}")
+            # 不要因为CLI失败而退出系统
+            self.admin_cli = None
 
     def shutdown_systems(self):
         self.logger.info("Shutting down systems...")
+        if self.admin_cli:
+            self.admin_cli.stop()
         if self.socket_server:
             self.socket_server.stop()
         if self.kafka_manager:
