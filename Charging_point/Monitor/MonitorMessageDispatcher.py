@@ -83,7 +83,7 @@ class MonitorMessageDispatcher:
 
     def _handle_register_response(self, message):
         """处理来自Central的注册响应"""
-        self.logger.info("Received registration response from Central.")
+        self.logger.info("Received registration response from Central: ", message)
         if message.get("status") == "success":
             self.logger.info("Registration successful.")
         else:
@@ -94,6 +94,7 @@ class MonitorMessageDispatcher:
 
     def _handle_heartbeat_response(self, message):
         """处理来自Central的心跳响应"""
+        self.logger.debug("Received heartbeat response from Central: ", message)
         if message.get("status") == "success":
             self.logger.debug("Monitor成功接收心跳响应")
         else:
@@ -126,7 +127,7 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用")
             return False
-
+    # TODO 这下面的逻辑需要完善
     def _handle_charging_data_response(self, message):
         """处理来自Central的充电数据响应"""
         self.logger.debug(f"Charging data response from Central: {message}")

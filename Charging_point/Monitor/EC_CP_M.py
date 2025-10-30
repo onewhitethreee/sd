@@ -23,7 +23,7 @@ class EV_CP_M:
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
-        
+
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_CP_M", "Módulo de monitorización del punto de recarga"
@@ -51,7 +51,7 @@ class EV_CP_M:
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
-        
+
         self.central_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.engine_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.running = False
@@ -79,6 +79,9 @@ class EV_CP_M:
         """
         if not self.central_conn_mgr.is_connected:
             self.logger.warning("Not connected to Central, can't register.")
+            return False
+        if not self.engine_conn_mgr.is_connected:
+            self.logger.warning("Not connected to Engine, can't register.")
             return False
         register_message = {
             "type": "register_request",
@@ -207,10 +210,10 @@ class EV_CP_M:
             self.logger.debug("Heartbeat thread for Central already running.")
             return
         self.logger.info("Starting heartbeat thread for Central.")
-        heartbeat_thread = threading.Thread(
+        self._heartbeat_thread = threading.Thread(
             target=self._send_heartbeat, daemon=True, name="CentralHeartbeatThread"
         )
-        heartbeat_thread.start()
+        self._heartbeat_thread.start()
 
     def authenticate_charging_point(self):
         """
@@ -570,4 +573,3 @@ if __name__ == "__main__":
 
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()
-

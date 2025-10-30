@@ -242,6 +242,31 @@ class SqliteConnection:
             logging.error(f"更新充电桩 {cp_id} 状态失败: {e}")
             return False
 
+    def update_last_connection_time(self, cp_id, last_connection_time):
+        """
+        仅更新充电桩的最后连接时间，不改变状态
+
+        Args:
+            cp_id: 充电桩ID
+            last_connection_time: 最后连接时间
+
+        Returns:
+            bool: 是否成功
+        """
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "UPDATE ChargingPoints SET last_connection_time = ? WHERE cp_id = ?",
+                (last_connection_time, cp_id),
+            )
+            connection.commit()
+            return True
+        except Exception as e:
+            connection.rollback()
+            logging.error(f"更新充电桩 {cp_id} 连接时间失败: {e}")
+            return False
+
     def get_charging_point(self, cp_id):
         """获取充电桩完整信息"""
         connection = self.get_connection()

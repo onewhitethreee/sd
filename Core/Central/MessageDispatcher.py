@@ -574,6 +574,7 @@ class MessageDispatcher:
                 #     cp_id=cp_id, status=Status.FAULTY.value
                 # )
                 # self.logger.error(f"充电点 {cp_id} 状态更新为故障")
+                
 
             return MessageFormatter.create_response_message(
                 cp_type="status_update_response",

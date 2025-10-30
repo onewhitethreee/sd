@@ -168,6 +168,15 @@ class Driver:
         error = message.get("error", "Unknown error")
         self.logger.error(f"Connection error occurred: {error}")
 
+    def _formatter_charging_points(self, charging_points):
+        for i, cp in enumerate(charging_points, 1):
+            print(f"【{i}】 charging point {cp['id']}")
+            print(f"    ├─ Location: {cp['location']}")
+            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
+            print(f"    ├─ Status: {cp['status']}")
+            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
+            print()
+
     def _show_charging_history(self):
         """显示充电历史"""
         if not self.charging_history:
