@@ -51,6 +51,7 @@ class MessageDispatcher:
             "status_update": self._handle_status_update_message,
             "available_cps_request": self._handle_available_cps_request,
             "recovery_notification": self._handle_recovery_message,
+            "manual_command": self._handle_manual_command,
             # "authorization_request": self._handle_authorization_message,  # TODO: implement
         }
 
@@ -862,12 +863,206 @@ class MessageDispatcher:
         except Exception as e:
             self.logger.error(f"向客户端 {client_id} 发送消息失败: {e}")
 
-    def _handle_manual_command(self, client_id, message):  # TODO: implement
+    def _handle_manual_command(self, client_id, message):
         """
         处理来自管理员的手动命令，如启动或停止充电点。
         这些命令需要通过消息队列发送到相应的充电点。
+
+        支持的命令:
+        - "stop": 停止指定的CP或所有CPs
+        - "resume": 恢复指定的CP或所有CPs
+
+        消息格式:
+        {
+            "type": "manual_command",
+            "message_id": "...",
+            "command": "stop" | "resume",
+            "cp_id": "CP_ID" | "all",  # "all" 表示所有CPs
+            "admin_id": "..."  # 可选，管理员ID
+        }
         """
-        pass
+        self.logger.info(f"正在处理来自 {client_id} 的手动命令...")
+
+        command = message.get("command")
+        cp_id = message.get("cp_id")
+        message_id = message.get("message_id")
+
+        # 检查必要字段
+        missing_info = self._check_missing_fields(
+            message, ["command", "cp_id", "message_id"]
+        )
+        if missing_info:
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id or "",
+                info=missing_info,
+            )
+
+        # 验证命令类型
+        valid_commands = ["stop", "resume"]
+        if command not in valid_commands:
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id,
+                info=f"无效的命令类型: {command}。有效命令: {', '.join(valid_commands)}",
+            )
+
+        try:
+            # 判断是针对单个CP还是所有CPs
+            if cp_id == "all":
+                return self._execute_command_for_all_cps(command, message_id)
+            else:
+                return self._execute_command_for_single_cp(command, cp_id, message_id)
+
+        except Exception as e:
+            self.logger.error(f"执行手动命令失败: {e}")
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id,
+                info=f"命令执行失败: {e}",
+            )
+
+    def _execute_command_for_single_cp(self, command, cp_id, message_id):
+        """
+        为单个CP执行命令
+        """
+        # 检查CP是否存在
+        if not self.charging_point_manager.is_charging_point_registered(cp_id):
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id,
+                info=f"充电点 {cp_id} 未注册",
+            )
+
+        # 获取CP的客户端连接
+        monitor_client_id = self.charging_point_manager.get_client_id_for_charging_point(cp_id)
+
+        if command == "stop":
+            return self._stop_charging_point(cp_id, monitor_client_id, message_id)
+        elif command == "resume":
+            return self._resume_charging_point(cp_id, monitor_client_id, message_id)
+
+    def _execute_command_for_all_cps(self, command, message_id):
+        """
+        为所有CPs执行命令
+        """
+        all_cps = self.charging_point_manager.get_all_charging_points()
+
+        if not all_cps:
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id,
+                info="没有注册的充电点",
+            )
+
+        successful_cps = []
+        failed_cps = []
+
+        for cp in all_cps:
+            cp_id = cp["cp_id"]
+            monitor_client_id = self.charging_point_manager.get_client_id_for_charging_point(cp_id)
+
+            try:
+                if command == "stop":
+                    self._stop_charging_point(cp_id, monitor_client_id, message_id)
+                elif command == "resume":
+                    self._resume_charging_point(cp_id, monitor_client_id, message_id)
+
+                successful_cps.append(cp_id)
+            except Exception as e:
+                self.logger.error(f"对CP {cp_id} 执行命令 {command} 失败: {e}")
+                failed_cps.append(cp_id)
+
+        # 构建响应信息
+        info_parts = []
+        if successful_cps:
+            info_parts.append(f"成功执行命令的CPs: {', '.join(successful_cps)}")
+        if failed_cps:
+            info_parts.append(f"执行命令失败的CPs: {', '.join(failed_cps)}")
+
+        status = "success" if not failed_cps else ("partial" if successful_cps else "failure")
+
+        return MessageFormatter.create_response_message(
+            cp_type="manual_command_response",
+            message_id=message_id,
+            status=status,
+            info="; ".join(info_parts),
+        )
+
+    def _stop_charging_point(self, cp_id, monitor_client_id, message_id):
+        """
+        停止充电点（设置为STOPPED状态）
+        """
+        # 检查当前状态，如果正在充电，需要先停止充电
+        current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+        if current_status == Status.CHARGING.value:
+            # 获取正在进行的充电会话
+            # 这里需要获取session_id，可能需要从charging_session_manager查询
+            # 简化处理：直接更新状态
+            self.logger.warning(f"充电点 {cp_id} 正在充电，将被强制停止")
+
+        # 更新充电点状态为STOPPED
+        self.charging_point_manager.update_charging_point_status(
+            cp_id=cp_id, status=Status.STOPPED.value
+        )
+
+        # 向Monitor发送停止命令
+        if monitor_client_id:
+            stop_command_message = {
+                "type": "stop_cp_command",
+                "message_id": str(uuid.uuid4()),
+                "cp_id": cp_id,
+                "timestamp": int(time.time()),
+            }
+            self._send_message_to_client(monitor_client_id, stop_command_message)
+
+        self.logger.info(f"充电点 {cp_id} 已被设置为停止状态")
+
+        return MessageFormatter.create_response_message(
+            cp_type="manual_command_response",
+            message_id=message_id,
+            status="success",
+            info=f"充电点 {cp_id} 已停止，状态设置为 '出服务'",
+        )
+
+    def _resume_charging_point(self, cp_id, monitor_client_id, message_id):
+        """
+        恢复充电点（设置为ACTIVE状态）
+        """
+        current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+        # 只有STOPPED或FAULTY状态的CP可以恢复
+        if current_status not in [Status.STOPPED.value, Status.FAULTY.value]:
+            return self._create_failure_response(
+                "manual_command",
+                message_id=message_id,
+                info=f"充电点 {cp_id} 当前状态为 {current_status}，无法恢复",
+            )
+
+        # 更新充电点状态为ACTIVE
+        self.charging_point_manager.update_charging_point_status(
+            cp_id=cp_id, status=Status.ACTIVE.value
+        )
+
+        # 向Monitor发送恢复命令
+        if monitor_client_id:
+            resume_command_message = {
+                "type": "resume_cp_command",
+                "message_id": str(uuid.uuid4()),
+                "cp_id": cp_id,
+                "timestamp": int(time.time()),
+            }
+            self._send_message_to_client(monitor_client_id, resume_command_message)
+
+        self.logger.info(f"充电点 {cp_id} 已恢复为活跃状态")
+
+        return MessageFormatter.create_response_message(
+            cp_type="manual_command_response",
+            message_id=message_id,
+            status="success",
+            info=f"充电点 {cp_id} 已恢复，状态设置为 'ACTIVE'",
+        )
 
 
 if __name__ == "__main__":

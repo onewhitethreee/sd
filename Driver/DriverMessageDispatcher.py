@@ -126,7 +126,8 @@ class DriverMessageDispatcher:
                         charging_rate
                     )
 
-                    self.logger.info(
+                    # Usar DEBUG para no interrumpir input del usuario en modo interactivo
+                    self.logger.debug(
                         f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
                     )
                 else:
@@ -158,7 +159,8 @@ class DriverMessageDispatcher:
                 self.driver.current_charging_session["total_cost"] = total_cost
                 self.driver.current_charging_session["charging_rate"] = charging_rate
 
-                self.logger.info(
+                # Usar DEBUG para no interrumpir input del usuario en modo interactivo
+                self.logger.debug(
                     f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
                 )
 
