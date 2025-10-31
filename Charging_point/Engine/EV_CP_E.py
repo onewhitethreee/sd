@@ -97,6 +97,7 @@ class EV_CP_E:
 
     def _start_monitor_server(self):
         """启动服务器等待Monitor连接"""
+
         try:
             self.monitor_server = MySocketServer(
                 host=self.engine_listen_address[0],
@@ -134,8 +135,13 @@ class EV_CP_E:
 
     def _init_kafka(self):
         """初始化Kafka连接"""
-        try:
+
+        if self.debug_mode:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        else:
+            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+
+        try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
@@ -157,7 +163,7 @@ class EV_CP_E:
             self.is_charging = False
 
         if self.monitor_server:
-            self.monitor_server.stop()  # 使用现有的stop()方法
+            self.monitor_server.stop()  
 
         if self.kafka_manager:
             self.kafka_manager.stop()
@@ -166,7 +172,7 @@ class EV_CP_E:
 
     def _start_charging_session(
         self,
-        ev_id: str,
+        driver_id: str,
         session_id: str,
         price_per_kwh: float = 0.0,
         max_charging_rate_kw: float = 11.0,
@@ -175,13 +181,13 @@ class EV_CP_E:
         启动充电会话。
 
         Args:
-            ev_id: 电动车ID
+            driver_id: 司机/电动车ID
             session_id: 充电会话ID（由Central通过Monitor提供）
             price_per_kwh: 每度电价格（从Central/ChargingPoint获取）
             max_charging_rate_kw: 最大充电速率（从Central/ChargingPoint获取）
         """
         self.logger.info(
-            f"Starting charging session '{session_id}' for EV: {ev_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW"
+            f"Starting charging session '{session_id}' for Driver: {driver_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW"
         )
         if self.is_charging:
             self.logger.warning("Already charging, cannot start new session.")
@@ -194,7 +200,7 @@ class EV_CP_E:
 
         self.current_session = {
             "session_id": session_id,
-            "ev_id": ev_id,
+            "driver_id": driver_id,
             "start_time": time.time(),
             "energy_consumed_kwh": 0.0,  # 初始能量
             "total_cost": 0.0,  # 初始费用
@@ -214,15 +220,15 @@ class EV_CP_E:
         return True
 
     def _stop_charging_session(self):
-        """停止充电会话。不再需要 ev_id 参数。 因为一个ChargingPoint只能有一个充电会话。"""
+        """停止充电会话。不再需要 driver_id 参数。 因为一个ChargingPoint只能有一个充电会话。"""
         self.logger.info(f"Stopping charging for session {self.current_session['session_id']}... ")
         if not self.is_charging:
             self.logger.warning("No active charging session to stop.")
             return False
 
         session_id = self.current_session["session_id"]
-        ev_id = self.current_session["ev_id"]
-        self.logger.info(f"Stopping charging session '{session_id}' for EV: {ev_id}")
+        driver_id = self.current_session["driver_id"]
+        self.logger.info(f"Stopping charging session '{session_id}' for Driver: {driver_id}")
         # 设置 current_session 为 None，这将导致 _charging_process 停止
         # 这是通过 is_charging property 来实现终止的简洁方式
         # --- 重点：设置 current_session 为 None 即可退出充电状态 ---
@@ -384,7 +390,6 @@ class EV_CP_E:
             self.logger.error(f"Unexpected error: {e}")
             self._shutdown_system()
 
-    
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

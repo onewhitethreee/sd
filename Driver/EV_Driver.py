@@ -16,6 +16,7 @@ from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketClient import MySocketClient
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Driver.DriverMessageDispatcher import DriverMessageDispatcher
+from Driver.DriverCLI import DriverCLI
 
 
 class Driver:
@@ -48,6 +49,7 @@ class Driver:
 
         self.central_client = None
         self.kafka_manager = None  # Kafka管理器
+        self.driver_cli = None  # Driver命令行接口
         self.running = False
         self.current_charging_session = None
         self.available_charging_points = []
@@ -58,20 +60,35 @@ class Driver:
             self.logger, self
         )  # 消息分发器
 
+        # 重连机制相关
+        self._reconnect_thread = None
+        self._is_connected = False
+        self.RECONNECT_INTERVAL = 5  # 重连间隔（秒）
+        self.MAX_RECONNECT_ATTEMPTS = 0  # 0表示无限重试
+
     def _connect_to_central(self):
         """连接到中央系统"""
         try:
-            self.central_client = MySocketClient(
-                logger=self.logger,
-                message_callback=self._handle_central_message,
-            )
+            if not self.central_client:
+                self.central_client = MySocketClient(
+                    logger=self.logger,
+                    message_callback=self._handle_central_message,
+                )
+
             # return self.central_client.connect(self.args.broker[0], self.args.broker[1]) # TODO 这里在换成kafka的时候需要重新吧注释删掉，目前是通过socket来连接的
-            return self.central_client.connect(
+            success = self.central_client.connect(
                 self.config.get_ip_port_ev_cp_central()[0],
                 self.config.get_ip_port_ev_cp_central()[1],
             )
+
+            if success:
+                self._is_connected = True
+                self.logger.info("Successfully connected to Central")
+
+            return success
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
+            self._is_connected = False
             return False
 
     def _handle_central_message(self, message):
@@ -79,14 +96,6 @@ class Driver:
         # 使用消息分发器处理消息
         self.message_dispatcher.dispatch_message(message)
 
-    def _formatter_charging_points(self, charging_points):
-        for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 charging point {cp['id']}")
-            print(f"    ├─ Location: {cp['location']}")
-            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
-            print(f"    ├─ Status: {cp['status']}")
-            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
-            print()
 
     def _send_charge_request(self, cp_id):
         """发送充电请求"""
@@ -161,18 +170,145 @@ class Driver:
             return []
 
     def _handle_connection_lost(self):
-        """处理连接丢失"""
-        self.logger.warning("Connection to Central has been lost")
+        """
+        处理与Central的连接丢失
+
+        当连接丢失时：
+        1. 通知用户连接已断开
+        2. 如果正在充电，警告用户充电状态不可知
+        3. 启动自动重连机制
+        """
+        self._is_connected = False
+
+        self.logger.warning("=" * 60)
+        self.logger.warning("⚠️  Connection to Central has been LOST!")
+        self.logger.warning("=" * 60)
+
         with self.lock:
             if self.current_charging_session:
-                self.logger.warning(
-                    f"Active charging session {self.current_charging_session.get('session_id')} may be affected"
+                session_id = self.current_charging_session.get('session_id')
+                cp_id = self.current_charging_session.get('cp_id')
+                self.logger.error(
+                    f"⚠️  WARNING: Active charging session detected!"
                 )
+                self.logger.error(f"   Session ID: {session_id}")
+                self.logger.error(f"   Charging Point: {cp_id}")
+                self.logger.error(
+                    f"   Charging status is UNKNOWN due to connection loss."
+                )
+                self.logger.error(
+                    f"   The charging point may have automatically stopped charging."
+                )
+                self.logger.error(
+                    f"   Your session data will be recovered when connection is restored."
+                )
+                print("\n" + "!" * 60)
+                print("⚠️  ATTENTION: Connection lost during active charging!")
+                print("!" * 60)
+                print(f"Session ID: {session_id}")
+                print(f"Charging Point: {cp_id}")
+                print("\nThe system will attempt to reconnect automatically.")
+                print("Please wait for reconnection or restart the application.")
+                print("!" * 60 + "\n")
+            else:
+                self.logger.info("No active charging session. Waiting for reconnection...")
+                print("\n⚠️  Connection to Central lost. The system will attempt to reconnect.\n")
+
+        # 启动自动重连线程
+        self._start_reconnect_thread()
+
+    def _start_reconnect_thread(self):
+        """启动自动重连线程"""
+        if self._reconnect_thread and self._reconnect_thread.is_alive():
+            self.logger.debug("Reconnect thread already running")
+            return
+
+        self.logger.info("Starting automatic reconnection thread...")
+        self._reconnect_thread = threading.Thread(
+            target=self._reconnect_loop,
+            daemon=True,
+            name="DriverReconnectThread"
+        )
+        self._reconnect_thread.start()
+
+    def _reconnect_loop(self):
+        """
+        自动重连循环
+
+        持续尝试重新连接到Central，直到成功或程序退出
+        """
+        attempt = 0
+        while self.running and not self._is_connected:
+            attempt += 1
+
+            if self.MAX_RECONNECT_ATTEMPTS > 0 and attempt > self.MAX_RECONNECT_ATTEMPTS:
+                self.logger.error(
+                    f"Maximum reconnection attempts ({self.MAX_RECONNECT_ATTEMPTS}) reached. Giving up."
+                )
+                print("\n❌ Failed to reconnect after maximum attempts. Please restart the application.\n")
+                break
+
+            self.logger.info(f"Attempting to reconnect to Central (attempt {attempt})...")
+            print(f"🔄 Reconnection attempt {attempt}...")
+
+            try:
+                # 尝试重新连接
+                if self._connect_to_central():
+                    self.logger.info("✅ Successfully reconnected to Central!")
+                    print("\n✅ Connection restored! You can now use the system normally.\n")
+
+                    # 重连成功后的处理
+                    self._handle_reconnection_success()
+                    break
+                else:
+                    self.logger.debug(f"Reconnection attempt {attempt} failed. Retrying in {self.RECONNECT_INTERVAL} seconds...")
+
+            except Exception as e:
+                self.logger.error(f"Error during reconnection attempt: {e}")
+
+            # 等待后再次尝试
+            time.sleep(self.RECONNECT_INTERVAL)
+
+        if not self._is_connected and self.running:
+            self.logger.error("Reconnection loop ended without success")
+
+    def _handle_reconnection_success(self):
+        """
+        处理重连成功后的操作
+
+        当重连成功后：
+        1. 清除之前的充电会话状态（因为可能已被Central取消）
+        2. 通知用户可以重新开始操作
+        """
+        self.logger.info("Handling post-reconnection setup...")
+
+        with self.lock:
+            # 清除可能已过期的充电会话
+            if self.current_charging_session:
+                self.logger.warning(
+                    f"Clearing previous charging session {self.current_charging_session.get('session_id')} "
+                    f"(may have been terminated during disconnection)"
+                )
+                self.current_charging_session = None
+
+            # 清空可用充电点列表（需要重新获取）
+            self.available_charging_points = []
+
+        self.logger.info("Reconnection setup complete. System ready for use.")
 
     def _handle_connection_error(self, message):
         """处理连接错误"""
         error = message.get("error", "Unknown error")
         self.logger.error(f"Connection error occurred: {error}")
+
+    def _formatter_charging_points(self, charging_points):
+        for i, cp in enumerate(charging_points, 1):
+            print(f"【{i}】 charging point {cp['id']}")
+            print(f"    ├─ Location: {cp['location']}")
+            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
+            print(f"    ├─ Status: {cp['status']}")
+            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
+            print()
 
     def _show_charging_history(self):
         """显示充电历史"""
@@ -202,70 +338,22 @@ class Driver:
             self._show_charging_history()
 
     def _interactive_mode(self):
-        """交互模式"""
-        self.logger.info("Entering interactive mode. Available commands:")
-        self.logger.info("  - 'list': Show available charging points")
-        self.logger.info("  - 'charge <cp_id>': Request charging at specific CP")
-        self.logger.info("  - 'stop': Stop current charging session")
-        self.logger.info("  - 'status': Show current charging status")
-        self.logger.info("  - 'history': Show charging history")
-        self.logger.info("  - 'help': Show this help message")
-        self.logger.info("  - 'quit': Exit application")
+        """交互模式 - 使用DriverCLI"""
+        self.logger.info("Entering interactive mode...")
 
-        while self.running:
-            try:
-                command = input("\nDriver> ").strip().lower()
+        # 初始化并启动DriverCLI
+        self.driver_cli = DriverCLI(self)
+        self.driver_cli.start()
 
-                if command == "quit":
-                    self.running = False
-                    break
-                elif command == "list":
-                    self._request_available_cps()
-                elif command.startswith("charge "):
-                    cp_id = command.split(" ", 1)[1]
-                    self._send_charge_request(cp_id)
-                elif command == "stop":
-                    self._send_stop_charging_request()
-                elif command == "status":
-                    with self.lock:
-                        if self.current_charging_session:
-                            session = self.current_charging_session
-                            self.logger.info(
-                                f"Current session: {session['session_id']}"
-                            )
-                            self.logger.info(f"  CP ID: {session['cp_id']}")
-                            self.logger.info(
-                                f"  Energy: {session['energy_consumed_kwh']:.3f}kWh"
-                            )
-                            self.logger.info(f"  Cost: €{session['total_cost']:.2f}")
-                            self.logger.info(
-                                f"  Rate: {session['charging_rate']:.2f}kW"
-                            )
-                        else:
-                            self.logger.info("No active charging session")
-                elif command == "history":
-                    self._show_charging_history()
-                elif command == "help":
-                    self.logger.info("Available commands:")
-                    self.logger.info("  - 'list': Show available charging points")
-                    self.logger.info(
-                        "  - 'charge <cp_id>': Request charging at specific CP"
-                    )
-                    self.logger.info("  - 'stop': Stop current charging session")
-                    self.logger.info("  - 'status': Show current charging status")
-                    self.logger.info("  - 'history': Show charging history")
-                    self.logger.info("  - 'help': Show this help message")
-                    self.logger.info("  - 'quit': Exit application")
-                else:
-                    self.logger.info(
-                        "Unknown command. Type 'help' for available commands."
-                    )
-
-            except KeyboardInterrupt:
-                self.running = False
-                break
-            except Exception as e:
-                self.logger.error(f"Error in interactive mode: {e}")
+        # 等待CLI运行
+        try:
+            while self.running and self.driver_cli.running:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            self.logger.info("Received interrupt signal")
+        finally:
+            if self.driver_cli:
+                self.driver_cli.stop()
 
     def _auto_mode(self, services):
         """自动模式"""
@@ -326,15 +414,30 @@ class Driver:
         )
         self.logger.info(f"Client ID: {self.args.id_client}")
 
+        self.running = True
+
         # 连接到中央系统
         if not self._connect_to_central():
-            self.logger.error("Failed to connect to Central")
-            return
+            self.logger.warning("Initial connection to Central failed")
+            print("\n⚠️  Could not connect to Central. Starting automatic reconnection...\n")
+            # 启动自动重连
+            self._start_reconnect_thread()
+
+            # 等待连接成功
+            max_wait = 30  # 最多等待30秒
+            wait_count = 0
+            while not self._is_connected and wait_count < max_wait:
+                time.sleep(1)
+                wait_count += 1
+
+            if not self._is_connected:
+                self.logger.error("Failed to establish connection after waiting. Please check Central is running.")
+                print("\n❌ Could not connect to Central. Please ensure Central is running and try again.\n")
+                self.running = False
+                return
 
         # 初始化Kafka
         # self._init_kafka()
-
-        self.running = True
 
         # 请求可用充电点列表
         self._request_available_cps()
@@ -357,6 +460,8 @@ class Driver:
             self.logger.error(f"Unexpected error: {e}")
         finally:
             self.running = False
+            if self.driver_cli:
+                self.driver_cli.stop()
             if self.central_client:
                 self.central_client.disconnect()
             if self.kafka_manager:
@@ -369,4 +474,3 @@ if __name__ == "__main__":
     driver.start()
 
 # TODO 掉线了应该有一个重试机制
-# TODO 在driver发送stop命令后，应该停止现有的充电，而不是继续发送，目前这是一个bug

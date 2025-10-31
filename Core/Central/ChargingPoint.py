@@ -84,7 +84,10 @@ class ChargingPoint:
 
     def update_charging_point_connection(self, cp_id, client_id):
         """
-        更新充电桩的连接信息
+        更新充电桩的连接信息（仅更新last_connection_time，不改变状态）
+
+        状态应该由Monitor通过status_update消息来管理，heartbeat只是用来
+        更新连接时间，表明Monitor与Central的通信正常。
 
         Args:
             cp_id: 充电桩ID
@@ -101,10 +104,10 @@ class ChargingPoint:
 
             current_time = datetime.now(timezone.utc).isoformat()
 
-            # 更新数据库
-            self.db_manager.update_charging_point_status(
+            # 只更新最后连接时间，不改变状态
+            # 状态由Monitor通过status_update消息管理
+            self.db_manager.update_last_connection_time(
                 cp_id=cp_id,
-                status=Status.ACTIVE.value,
                 last_connection_time=current_time,
             )
 
@@ -112,7 +115,7 @@ class ChargingPoint:
             self._cp_connections[cp_id] = client_id
             self._client_to_cp[client_id] = cp_id
 
-            self.logger.info(f"充电桩 {cp_id} 连接已更新，客户端: {client_id}")
+            self.logger.debug(f"充电桩 {cp_id} 连接时间已更新，客户端: {client_id}")
             return True
 
         except Exception as e:
@@ -139,7 +142,7 @@ class ChargingPoint:
             # 更新数据库
             self.db_manager.update_charging_point_status(cp_id=cp_id, status=status)
 
-            self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
+            # self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
             return True
 
         except Exception as e:

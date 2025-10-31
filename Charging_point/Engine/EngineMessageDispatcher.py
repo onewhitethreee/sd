@@ -115,7 +115,7 @@ class EngineMessageDispatcher:
         self.logger.info("Processing stop command")
 
         if self.engine.is_charging:
-            self.engine._stop_charging_session(ev_id=None)
+            self.engine._stop_charging_session()
 
         response = {
             "type": "command_response",
@@ -155,7 +155,7 @@ class EngineMessageDispatcher:
         Args:
             message: 开始充电命令消息，包含：
                 - session_id: 充电会话ID
-                - ev_id: 电动车ID（可选）
+                - driver_id: 司机/电动车ID
                 - price_per_kwh: 每度电价格（从Central获取）
                 - max_charging_rate_kw: 最大充电速率（从Central获取）
 
@@ -174,8 +174,7 @@ class EngineMessageDispatcher:
                 "status": "failure",
                 "message": "Missing session_id",
             }
-
-        ev_id = message.get("ev_id", "unknown_ev")
+        driver_id = message.get("driver_id", "unknown_driver")
         price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
         max_charging_rate_kw = message.get(
             "max_charging_rate_kw", 11.0
@@ -193,7 +192,7 @@ class EngineMessageDispatcher:
 
         # 启动充电会话，传递price_per_kwh和max_charging_rate_kw
         success = self.engine._start_charging_session(
-            ev_id, session_id, price_per_kwh, max_charging_rate_kw
+            driver_id, session_id, price_per_kwh, max_charging_rate_kw
         )
         return {
             "type": "command_response",

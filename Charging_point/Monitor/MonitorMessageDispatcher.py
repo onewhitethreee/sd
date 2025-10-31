@@ -59,7 +59,7 @@ class MonitorMessageDispatcher:
         """
         try:
             msg_type = message.get("type")
-            self.logger.debug(f"Dispatching message from {source}: {msg_type}")
+            self.logger.debug(f"Dispatching message from {source}: {msg_type} {message}")
 
             if source == "Central":
                 handler = self.central_handlers.get(msg_type)
@@ -83,7 +83,7 @@ class MonitorMessageDispatcher:
 
     def _handle_register_response(self, message):
         """处理来自Central的注册响应"""
-        self.logger.info("Received registration response from Central.")
+        self.logger.info("Received registration response from Central: ", message)
         if message.get("status") == "success":
             self.logger.info("Registration successful.")
         else:
@@ -94,6 +94,7 @@ class MonitorMessageDispatcher:
 
     def _handle_heartbeat_response(self, message):
         """处理来自Central的心跳响应"""
+        self.logger.debug("Received heartbeat response from Central: ", message)
         if message.get("status") == "success":
             self.logger.debug("Monitor成功接收心跳响应")
         else:
@@ -126,7 +127,7 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用")
             return False
-
+    # 下面的逻辑不再需要完善，monitor只处理转发逻辑
     def _handle_charging_data_response(self, message):
         """处理来自Central的充电数据响应"""
         self.logger.debug(f"Charging data response from Central: {message}")
@@ -150,7 +151,13 @@ class MonitorMessageDispatcher:
     # ==================== Engine消息处理器 ====================
 
     def _handle_health_check_response(self, message):
-        """处理来自Engine的健康检查响应"""
+        """
+        处理来自Engine的健康检查响应
+
+        Según especificaciones:
+        - Monitor_OK and Engine_OK => Activado (Verde)
+        - Monitor_OK and Engine_KO => Averiado (Rojo)
+        """
         self.logger.debug(f"Health check response from Engine: {message}")
 
         # 更新最后一次收到健康检查响应的时间
@@ -158,17 +165,22 @@ class MonitorMessageDispatcher:
         self.monitor._update_last_health_response()
 
         engine_status = message.get("engine_status")
+
+        # Monitor está OK (recibiendo health check), verificar estado de Engine
         if engine_status == "FAULTY":
+            # Monitor OK + Engine KO = FAULTY
             self.logger.warning("Engine reports FAULTY status.")
             self.monitor.update_cp_status("FAULTY")
         elif engine_status == "ACTIVE":
             self.logger.debug("Engine reports ACTIVE status.")
-            # 如果当前状态是故障，尝试恢复（Central也需正常）
-            if (
-                self.monitor._current_status == "FAULTY"
-                and self.monitor.central_conn_mgr.is_connected
-            ):
-                self.monitor.update_cp_status("ACTIVE")
+            # Monitor OK + Engine OK = ACTIVE (solo si Central también conectado)
+            if self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected:
+                # 使用统一的检查方法，避免重复状态更新
+                self.monitor._check_and_update_to_active()
+            else:
+                # Monitor OK, Engine OK, pero Central desconectado
+                self.logger.warning("Engine is ACTIVE but Central is not connected")
+                self.monitor.update_cp_status("FAULTY")
 
         return True
 

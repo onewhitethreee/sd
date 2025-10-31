@@ -23,6 +23,7 @@ class EV_CP_M:
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
+
         if not self.debug_mode:
             self.tools = AppArgumentParser(
                 "EV_CP_M", "Módulo de monitorización del punto de recarga"
@@ -50,6 +51,7 @@ class EV_CP_M:
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
+
         self.central_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.engine_conn_mgr: ConnectionManager = None  # ConnectionManager 实例
         self.running = False
@@ -78,6 +80,9 @@ class EV_CP_M:
         if not self.central_conn_mgr.is_connected:
             self.logger.warning("Not connected to Central, can't register.")
             return False
+        if not self.engine_conn_mgr.is_connected:
+            self.logger.warning("Not connected to Engine, can't register.")
+            return False
         register_message = {
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
@@ -92,6 +97,12 @@ class EV_CP_M:
         """
         由 ConnectionManager 回调，处理连接状态变化。
         这就是 EV_CP_M 响应底层网络事件的核心逻辑。
+
+        Según especificaciones (Guía de Corrección, página 3):
+        Monitor_OK and Engine_OK => Activado (Verde)
+        Monitor_OK and Engine_KO => Averiado (Rojo)
+        Monitor_KO and Engine_OK => Desconectado (gestionado por Central)
+        Monitor_KO and Engine_KO => Desconectado (gestionado por Central)
         """
         self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
@@ -101,14 +112,18 @@ class EV_CP_M:
                 self._register_with_central()
                 # 启动 Central 的心跳线程
                 self._start_heartbeat_thread()
-                self.update_cp_status(
-                    Status.ACTIVE.value
-                )  # 假设连接Central成功就算活跃
+                # Solo establecer ACTIVE si Engine también está conectado y funcionando
+                # De lo contrario, esperar a que Engine confirme su estado
+                if self.engine_conn_mgr and self.engine_conn_mgr.is_connected:
+                    self._check_and_update_to_active()
+                else:
+                    self.logger.info("Waiting for Engine connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
                 self.logger.warning(
-                    "Central is disconnected. Updating CP status to FAULTY."
+                    "Central is disconnected. Handling disconnection..."
                 )
-                self.update_cp_status(Status.FAULTY.value)
+                # 处理Central断开连接的情况
+                self._handle_central_disconnection()
                 self._stop_heartbeat_thread()  # 停止心跳
             else:
                 self.logger.warning(f"Unknown status '{status}' for Central")
@@ -118,13 +133,69 @@ class EV_CP_M:
                     "Engine is now connected. Starting health check thread."
                 )
                 self._start_engine_health_check_thread()
-                # Engine连接后是否直接更新ACTIVE，这取决于业务逻辑，
-                # 如果Central也连接了，并且Engine状态良好，才算ACTIVE
+                # Si Central también está conectado, actualizar a ACTIVE
+                if self.central_conn_mgr and self.central_conn_mgr.is_connected:
+                    self._check_and_update_to_active()
+                else:
+                    self.logger.info("Waiting for Central connection before setting ACTIVE status")
             elif status == "DISCONNECTED":
                 self.logger.warning("Engine is disconnected. Reporting failure.")
                 self._report_failure("EV_CP_E connection lost")
-                self.update_cp_status("FAULTY")
+                # Monitor OK pero Engine KO => FAULTY
+                self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
+
+    def _handle_central_disconnection(self):
+        """
+        处理Central断开连接的情况
+
+        当Central断开时：
+        1. 如果正在充电，停止充电（因为无法向Central报告数据）
+        2. 更新充电点状态为FAULTY
+        3. ConnectionManager会自动尝试重连
+        """
+        self.logger.warning("Handling Central disconnection...")
+
+        # 检查是否正在充电
+        if self._current_status == Status.CHARGING.value:
+            self.logger.warning(
+                "Currently charging, but Central is disconnected. Stopping charging to prevent data loss."
+            )
+            # 向Engine发送停止命令
+            self._send_stop_command_to_engine()
+            self.logger.info(
+                "Charging stopped due to Central disconnection. Will resume when Central reconnects."
+            )
+
+        # 更新状态为FAULTY（失去与Central的连接）
+        self.update_cp_status(Status.FAULTY.value)
+        self.logger.info(
+            "CP status set to FAULTY due to Central disconnection. Waiting for reconnection..."
+        )
+
+    def _check_and_update_to_active(self):
+        """
+        检查是否满足ACTIVE状态的条件，并更新状态
+        只有当Central和Engine都连接成功时才更新为ACTIVE
+        """
+        if (
+            self.central_conn_mgr
+            and self.central_conn_mgr.is_connected
+            and self.engine_conn_mgr
+            and self.engine_conn_mgr.is_connected
+        ):
+            # 只有在当前状态不是ACTIVE时才更新
+            if self._current_status != Status.ACTIVE.value:
+                self.logger.info(
+                    "Both Central and Engine are connected, setting CP status to ACTIVE"
+                )
+                self.update_cp_status(Status.ACTIVE.value)
+            else:
+                self.logger.debug("CP status is already ACTIVE, no update needed")
+        else:
+            self.logger.debug(
+                f"Not ready for ACTIVE status: Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
+            )
 
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""
@@ -192,10 +263,10 @@ class EV_CP_M:
             self.logger.debug("Heartbeat thread for Central already running.")
             return
         self.logger.info("Starting heartbeat thread for Central.")
-        heartbeat_thread = threading.Thread(
+        self._heartbeat_thread = threading.Thread(
             target=self._send_heartbeat, daemon=True, name="CentralHeartbeatThread"
         )
-        heartbeat_thread.start()
+        self._heartbeat_thread.start()
 
     def authenticate_charging_point(self):
         """
@@ -555,5 +626,3 @@ if __name__ == "__main__":
 
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()
-
-# TODO WARNING:2025-10-17 22:43:07:[EC_CP_M.py:470 - _handle_message_from_central] Charge completion response from Central: {'type': 'charge_completion_response', 'message_id': 'c2d40682-0acd-40ce-96c0-218a1ce6e02d', 'status': 'failure', 'info': '消息中缺少必要字段: driver_id, driver_id'}
