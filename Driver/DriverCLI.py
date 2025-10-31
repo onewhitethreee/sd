@@ -38,6 +38,10 @@ class DriverCLI:
 
     def stop(self):
         """停止交互式命令行界面"""
+        if not self.running:
+            # 已经停止，避免重复日志
+            return
+
         self.running = False
         if self.cli_thread:
             self.cli_thread.join(timeout=2)
