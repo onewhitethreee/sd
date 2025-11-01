@@ -29,7 +29,6 @@ class MessageDispatcher:
         socket_server,
     ):
         self.logger = logger
-        self.db_manager = db_manager
         self.socket_server: MySocketServer = socket_server
 
         # 使用新的ChargingPoint和ChargingSession管理器
@@ -40,6 +39,10 @@ class MessageDispatcher:
         self._driver_connections = {}  # {driver_id: client_id}
         self._client_to_driver = {}  # {client_id: driver_id}
         self._driver_active_sessions = {}  # {driver_id: [session_ids]}
+
+        # 幂等性处理：跟踪已处理的 message_id（用于Kafka消息去重）
+        self._processed_message_ids = set()  # {message_id}
+        self._max_processed_ids = 10000  # 最多保留10000个ID，防止内存无限增长
 
         self.handlers = {
             "register_request": self._handle_register_message,
@@ -89,6 +92,29 @@ class MessageDispatcher:
         # 添加额外字段
         response.update(extra_fields)
         return response
+
+    def _is_duplicate_message(self, message_id: str) -> bool:
+        """
+        检查消息是否已处理（用于幂等性）
+
+        返回: True 如果消息已处理过，False 如果是新消息
+        """
+        if message_id in self._processed_message_ids:
+            return True
+
+        # 记录新的 message_id
+        self._processed_message_ids.add(message_id)
+
+        # 防止内存无限增长：如果超过最大值，清除最旧的一半
+        if len(self._processed_message_ids) > self._max_processed_ids:
+            # 转为列表，保留后半部分（较新的ID）
+            ids_list = list(self._processed_message_ids)
+            self._processed_message_ids = set(ids_list[len(ids_list) // 2 :])
+            self.logger.debug(
+                f"已处理消息ID数量超过限制，清理到 {len(self._processed_message_ids)} 个"
+            )
+
+        return False
 
     def _check_missing_fields(self, message: dict, required_fields: list):
         missing = [field for field in required_fields if message.get(field) is None]
@@ -367,7 +393,7 @@ class MessageDispatcher:
             )
 
     def _handle_charging_data_message(self, client_id, message):
-        """处理充电点在充电过程中实时发送的电量消耗和费用信息"""
+        """处理充电点在充电过程中实时发送的电量消耗和费用信息（改进版：支持幂等性）"""
         self.logger.info(f"正在处理来自 {client_id} 的充电数据...")
 
         # 验证并提取字段
@@ -391,6 +417,13 @@ class MessageDispatcher:
         total_cost = data["total_cost"]
         charging_rate = data["charging_rate"]
         message_id = data["message_id"]
+
+        # 幂等性检查：如果消息已处理过，直接返回成功（避免重复处理）
+        if self._is_duplicate_message(message_id):
+            self.logger.debug(f"消息 {message_id} 已处理过，跳过（幂等性）")
+            return self._create_success_response(
+                "charging_data", message_id, "充电数据已处理（重复消息）"
+            )
 
         try:
             # 更新充电会话
@@ -432,7 +465,7 @@ class MessageDispatcher:
             )
 
     def _handle_charge_completion_message(self, client_id, message):
-        """处理充电完成的通知"""
+        """处理充电完成的通知（改进版：支持幂等性）"""
         self.logger.info(f"正在处理来自 {client_id} 的充电完成通知...")
 
         # 验证并提取字段
@@ -455,6 +488,13 @@ class MessageDispatcher:
         energy_consumed_kwh = data["energy_consumed_kwh"]
         total_cost = data["total_cost"]
         message_id = data["message_id"]
+
+        # 幂等性检查：如果消息已处理过，直接返回成功（避免重复处理）
+        if self._is_duplicate_message(message_id):
+            self.logger.debug(f"消息 {message_id} 已处理过，跳过（幂等性）")
+            return self._create_success_response(
+                "charge_completion", message_id, "充电完成通知已处理（重复消息）"
+            )
 
         try:
             # 从会话中获取driver_id
@@ -1072,3 +1112,5 @@ if __name__ == "__main__":
     }
     response = message_dispatcher.dispatch_message("client1", example_message)
     print(response)
+
+
