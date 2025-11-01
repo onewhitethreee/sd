@@ -305,57 +305,9 @@ class MySocketServer:
             return self.server_socket.getsockname()[1]
         return self.port
 
-    def _simulate_client_connect(self, client_id):
-        """
-        模拟客户端连接（用于调试）。
-        这个方法创建一个虚拟的客户端连接，用于测试消息处理。
-        """
-        try:
-            self.logger.info(f"Simulating client connection: {client_id}")
+    
 
-            # 创建一个虚拟的socket对象（不是真实的socket）
-            # 这用于模拟客户端存在
-            with self.clients_lock:
-                if client_id not in self.clients:
-                    # 创建一个占位符对象，表示客户端已连接
-                    # 在实际应用中，这会是一个真实的socket
-                    self.clients[client_id] = None  # 使用None作为占位符
-                    self.logger.info(f"Client {client_id} simulated connection added")
-                else:
-                    self.logger.warning(f"Client {client_id} already connected")
-        except Exception as e:
-            self.logger.error(f"Error simulating client connection: {e}")
-
-    def _simulate_client_disconnect(self, client_id):
-        """
-        模拟客户端断开连接（用于调试）。
-        这个方法移除虚拟的客户端连接，并触发断开连接回调。
-        """
-        try:
-            self.logger.info(f"Simulating client disconnection: {client_id}")
-
-            with self.clients_lock:
-                if client_id in self.clients:
-                    del self.clients[client_id]
-                    self.logger.info(
-                        f"Client {client_id} simulated disconnection removed"
-                    )
-                else:
-                    self.logger.warning(
-                        f"Client {client_id} not found in connected clients"
-                    )
-
-            # 触发断开连接回调
-            if self.disconnect_callback:
-                try:
-                    self.disconnect_callback(client_id)
-                    self.logger.info(f"Disconnect callback executed for {client_id}")
-                except Exception as e:
-                    self.logger.error(
-                        f"Error in disconnect callback for {client_id}: {e}"
-                    )
-        except Exception as e:
-            self.logger.error(f"Error simulating client disconnection: {e}")
+    
 
 
 if __name__ == "__main__":
