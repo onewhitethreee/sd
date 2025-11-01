@@ -35,7 +35,18 @@ class EV_CP_E:
                 help="IP y puerto del Broker/Bootstrap-server (formato IP:PORT)",
             )
             self.args = self.tools.parse_args()
-            # TODO 这里需要检查一下当用命令行来创建多个 ChargingPoint 时，id_cp 是如何处理的
+
+            # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
+            listen_port = os.getenv('ENGINE_LISTEN_PORT')
+            listen_host = os.getenv('ENGINE_LISTEN_HOST', 'localhost')
+
+            if listen_port:
+                self.engine_listen_address = (listen_host, int(listen_port))
+                self.logger.info(f"Using ENGINE_LISTEN_PORT from environment: {listen_port}")
+            else:
+                # 端口 0 表示让操作系统自动分配可用端口
+                self.engine_listen_address = (listen_host, 0)
+                self.logger.info("No ENGINE_LISTEN_PORT specified, will use automatic port assignment")
         else:
 
             class Args:
@@ -45,8 +56,8 @@ class EV_CP_E:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
-        # 从配置获取Engine监听地址
-        self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
+            # debug 模式：从配置文件读取Engine监听地址
+            self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
 
         self.running = False
         self.is_charging = False
@@ -108,9 +119,26 @@ class EV_CP_E:
             )
 
             self.monitor_server.start()
+
+            # 获取实际绑定的端口（当使用端口 0 时会自动分配）
+            actual_port = self.monitor_server.get_actual_port()
+            actual_host = self.engine_listen_address[0]
+
+            # 更新实际的监听地址
+            self.engine_listen_address = (actual_host, actual_port)
+
             self.logger.info(
-                f"Monitor server started on {self.engine_listen_address[0]}:{self.engine_listen_address[1]}"
+                f"Monitor server started on {actual_host}:{actual_port}"
             )
+
+            # 如果端口是自动分配的，用醒目的方式显示
+            if self.monitor_server.port == 0:
+                print("\n" + "="*60)
+                print(f"  ENGINE LISTENING ON: {actual_host}:{actual_port}")
+                print(f"  Use this address to start Monitor:")
+                print(f"  python EV_CP_M.py {actual_host}:{actual_port} <central_address:central port> <cp_id>")
+                print("="*60 + "\n")
+
             return True
 
         except Exception as e:

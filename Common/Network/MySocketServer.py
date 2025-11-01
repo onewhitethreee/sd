@@ -296,6 +296,15 @@ class MySocketServer:
         with self.clients_lock:
             return bool(self.clients)  # 直接返回字典是否为空的布尔值
 
+    def get_actual_port(self) -> int:
+        """
+        获取服务器实际绑定的端口号。
+        当使用端口 0 时，操作系统会自动分配一个可用端口，此方法返回实际分配的端口。
+        """
+        if self.server_socket:
+            return self.server_socket.getsockname()[1]
+        return self.port
+
     def _simulate_client_connect(self, client_id):
         """
         模拟客户端连接（用于调试）。
