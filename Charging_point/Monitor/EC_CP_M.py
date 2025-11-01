@@ -70,6 +70,9 @@ class EV_CP_M:
         # 用于追踪最后一次收到Engine健康检查响应的时间
         self._last_health_response_time = None
 
+        # 注册确认标志（修复竞态条件）
+        self._registration_confirmed = False
+
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
@@ -83,6 +86,10 @@ class EV_CP_M:
         if not self.engine_conn_mgr.is_connected:
             self.logger.warning("Not connected to Engine, can't register.")
             return False
+
+        # 重置注册确认标志，等待 Central 响应
+        self._registration_confirmed = False
+
         register_message = {
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
@@ -91,7 +98,10 @@ class EV_CP_M:
             "price_per_kwh": (random.uniform(0.15, 0.25)),
             "max_charging_rate_kw": random.uniform(7.0, 22.0),  # 模拟不同的充电桩能力
         }
-        return self.central_conn_mgr.send(register_message)
+        success = self.central_conn_mgr.send(register_message)
+        if success:
+            self.logger.info("Registration request sent to Central, waiting for confirmation...")
+        return success
 
     def _handle_connection_status_change(self, source_name: str, status: str):
         """
@@ -176,10 +186,11 @@ class EV_CP_M:
     def _check_and_update_to_active(self):
         """
         检查是否满足ACTIVE状态的条件，并更新状态
-        只有当Central和Engine都连接成功时才更新为ACTIVE
+        只有当Central和Engine都连接成功，且注册已确认时才更新为ACTIVE
         """
         if (
-            self.central_conn_mgr
+            self._registration_confirmed  # 新增：必须注册成功
+            and self.central_conn_mgr
             and self.central_conn_mgr.is_connected
             and self.engine_conn_mgr
             and self.engine_conn_mgr.is_connected
@@ -187,14 +198,16 @@ class EV_CP_M:
             # 只有在当前状态不是ACTIVE时才更新
             if self._current_status != Status.ACTIVE.value:
                 self.logger.info(
-                    "Both Central and Engine are connected, setting CP status to ACTIVE"
+                    "Central registered, both Central and Engine connected, setting CP status to ACTIVE"
                 )
                 self.update_cp_status(Status.ACTIVE.value)
             else:
                 self.logger.debug("CP status is already ACTIVE, no update needed")
         else:
             self.logger.debug(
-                f"Not ready for ACTIVE status: Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
+                f"Not ready for ACTIVE status: Registered={self._registration_confirmed}, "
+                f"Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, "
+                f"Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
             )
 
     def _stop_engine_health_check_thread(self):

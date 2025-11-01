@@ -60,7 +60,7 @@ class EV_CP_E:
             self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
 
         self.running = False
-        self.is_charging = False
+        # 删除了 self.is_charging = False，改用 property
         self.monitor_server: MySocketServer = None
         self.kafka_manager: KafkaManager = None  # Kafka管理器
 
@@ -71,11 +71,8 @@ class EV_CP_E:
 
     @property
     def is_charging(self):
+        """返回当前是否正在充电（只读属性）"""
         return self.current_session is not None
-
-    @is_charging.setter
-    def is_charging(self, value):
-        self._is_charging = value
 
     def get_current_status(self):
         """返回Engine当前状态"""
@@ -188,7 +185,7 @@ class EV_CP_E:
 
         if self.is_charging:
             self._stop_charging_session()
-            self.is_charging = False
+            # 不需要设置 self.is_charging = False，因为 _stop_charging_session() 会设置 current_session = None
 
         if self.monitor_server:
             self.monitor_server.stop()  

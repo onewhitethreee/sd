@@ -63,11 +63,12 @@ class Driver:
         # 重连机制相关
         self._reconnect_thread = None
         self._is_connected = False
+        self._reconnect_lock = threading.Lock()  # 保护重连线程创建的锁
         self.RECONNECT_INTERVAL = 5  # 重连间隔（秒）
         self.MAX_RECONNECT_ATTEMPTS = 0  # 0表示无限重试
 
     def _connect_to_central(self):
-        """连接到中央系统"""
+        """连接到中央系统（线程安全）"""
         try:
             if not self.central_client:
                 self.central_client = MySocketClient(
@@ -82,13 +83,15 @@ class Driver:
             )
 
             if success:
-                self._is_connected = True
+                with self._reconnect_lock:  # 保护 _is_connected 的修改
+                    self._is_connected = True
                 self.logger.info("Successfully connected to Central")
 
             return success
         except Exception as e:
             self.logger.error(f"Failed to connect to Central: {e}")
-            self._is_connected = False
+            with self._reconnect_lock:  # 保护 _is_connected 的修改
+                self._is_connected = False
             return False
 
     def _handle_central_message(self, message):
@@ -178,7 +181,8 @@ class Driver:
         2. 如果正在充电，警告用户充电状态不可知
         3. 启动自动重连机制
         """
-        self._is_connected = False
+        with self._reconnect_lock:  # 保护 _is_connected 的修改
+            self._is_connected = False
 
         self.logger.warning("=" * 60)
         self.logger.warning("⚠️  Connection to Central has been LOST!")
@@ -218,18 +222,19 @@ class Driver:
         self._start_reconnect_thread()
 
     def _start_reconnect_thread(self):
-        """启动自动重连线程"""
-        if self._reconnect_thread and self._reconnect_thread.is_alive():
-            self.logger.debug("Reconnect thread already running")
-            return
+        """启动自动重连线程（线程安全）"""
+        with self._reconnect_lock:  # 加锁，防止多个线程同时创建重连线程
+            if self._reconnect_thread and self._reconnect_thread.is_alive():
+                self.logger.debug("Reconnect thread already running")
+                return
 
-        self.logger.info("Starting automatic reconnection thread...")
-        self._reconnect_thread = threading.Thread(
-            target=self._reconnect_loop,
-            daemon=True,
-            name="DriverReconnectThread"
-        )
-        self._reconnect_thread.start()
+            self.logger.info("Starting automatic reconnection thread...")
+            self._reconnect_thread = threading.Thread(
+                target=self._reconnect_loop,
+                daemon=True,
+                name="DriverReconnectThread"
+            )
+            self._reconnect_thread.start()
 
     def _reconnect_loop(self):
         """

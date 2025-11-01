@@ -86,10 +86,17 @@ class MonitorMessageDispatcher:
         self.logger.info("Received registration response from Central: ", message)
         if message.get("status") == "success":
             self.logger.info("Registration successful.")
+            # 设置注册确认标志
+            self.monitor._registration_confirmed = True
+
+            # 现在才检查是否可以设为 ACTIVE
+            if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
+                self.monitor._check_and_update_to_active()
         else:
             self.logger.error(
                 f"Registration failed: {message.get('reason', 'Unknown')}"
             )
+            self.monitor._registration_confirmed = False
         return True
 
     def _handle_heartbeat_response(self, message):
