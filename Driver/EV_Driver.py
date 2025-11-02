@@ -578,3 +578,5 @@ if __name__ == "__main__":
     driver.start()
 
 # TODO 掉线了应该有一个重试机制
+# TODO 理解kafka后面的使用
+# TODO 看Code_duplication 里面的内容，将重复的删除

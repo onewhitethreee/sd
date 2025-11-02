@@ -136,11 +136,6 @@ class DriverCLI:
         """处理list命令 - 请求可用充电桩列表"""
         try:
             self.driver._request_available_cps()
-            # 给一些时间接收响应
-            import time
-
-            time.sleep(1)
-
             # 显示可用充电桩
             with self.driver.lock:
                 if self.driver.available_charging_points:

@@ -211,7 +211,7 @@ class DriverMessageDispatcher:
 
     def _handle_connection_lost(self, message):
         """处理连接丢失"""
-        self.logger.warning("Connection to Central lost")
+        self.logger.warning(f"Connection to Central lost: {message}")
         self.driver._handle_connection_lost()
         return True
 
