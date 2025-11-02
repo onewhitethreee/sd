@@ -41,7 +41,21 @@ class ChargingPoint:
         # 初始化时将所有充电桩状态设置为DISCONNECTED
         self.repository.set_all_status(Status.DISCONNECTED.value)
         charging_points = len(self.get_all_charging_points())
-        self.logger.info(f"Database initialized successfully: {charging_points} charging points set to DISCONNECTED.")
+        self.logger.info(
+            f"Database initialized successfully: {charging_points} charging points set to DISCONNECTED."
+        )
+
+    def __del__(self):
+        """
+        析构函数，确保所有充电桩状态设置为DISCONNECTED
+        """
+        try:
+            self.repository.set_all_status(Status.DISCONNECTED.value)
+            self.logger.info("All charging points set to DISCONNECTED on shutdown.")
+        except Exception as e:
+            self.logger.error(
+                f"Error setting charging points to DISCONNECTED on shutdown: {e}"
+            )
 
     def register_charging_point(
         self, cp_id, location, price_per_kwh, max_charging_rate_kw=11.0

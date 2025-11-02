@@ -159,15 +159,55 @@ class EV_Central:
     def _init_kafka_producer(self):
         """初始化Kafka生产者"""
         self.logger.debug("Initializing Kafka producer")
-        if self.debug_mode:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        else:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-
+        broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
         try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
+                # 创建Central需要的所有Kafka topics
+                self.logger.info("Creating required Kafka topics...")
+
+                # 充电会话相关topics（Engine -> Central）
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_DATA,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_COMPLETE,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+
+                # Driver请求相关topics（Driver -> Central）
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGE_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_STOP_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CPS_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+
+                # Driver状态相关topics（Central -> Driver）
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGING_STATUS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+
                 self.logger.info("Kafka producer initialized successfully")
                 return True
             else:
@@ -329,14 +369,6 @@ class EV_Central:
             self.socket_server.stop()
         if self.kafka_manager:
             self.kafka_manager.stop()
-        if self.db_manager:
-            try:
-                self.db_manager.set_all_charging_points_status(
-                    Status.DISCONNECTED.value
-                )
-                self.logger.info("All charging points set to DISCONNECTED.")
-            except Exception as e:
-                self.logger.error(f"Error setting charging points to DISCONNECTED: {e}")
         self.running = False
 
     def start(self):
