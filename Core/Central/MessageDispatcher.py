@@ -836,7 +836,7 @@ class MessageDispatcher:
             print()
 
     def _send_charging_status_to_driver(self, driver_id, charging_data):
-        """向指定司机发送充电状态更新"""
+        """向指定司机发送充电状态更新（通过Kafka）"""
         message = self._build_notification_message(
             "charging_status_update",
             driver_id=driver_id,
@@ -845,10 +845,21 @@ class MessageDispatcher:
             total_cost=charging_data.get("total_cost"),
             charging_rate=charging_data.get("charging_rate"),
         )
-        return self._send_notification_to_driver(driver_id, message)
+        # 直接通过Kafka发送，而不是Socket
+        if self.kafka_manager:
+            success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CHARGING_STATUS,
+                message
+            )
+            if success:
+                self.logger.debug(f"Charging status sent to Driver {driver_id} via Kafka")
+            return success
+        else:
+            self.logger.warning("Kafka not available, cannot send charging status to Driver")
+            return False
 
     def _send_charge_completion_to_driver(self, driver_id, completion_data):
-        """向指定司机发送充电完成通知"""
+        """向指定司机发送充电完成通知（通过Kafka）"""
         message = self._build_notification_message(
             "charge_completion",
             driver_id=driver_id,
@@ -857,7 +868,18 @@ class MessageDispatcher:
             energy_consumed_kwh=completion_data.get("energy_consumed_kwh"),
             total_cost=completion_data.get("total_cost"),
         )
-        return self._send_notification_to_driver(driver_id, message)
+        # 直接通过Kafka发送，而不是Socket
+        if self.kafka_manager:
+            success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CHARGING_COMPLETE,
+                message
+            )
+            if success:
+                self.logger.info(f"Charge completion notification sent to Driver {driver_id} via Kafka")
+            return success
+        else:
+            self.logger.warning("Kafka not available, cannot send charge completion to Driver")
+            return False
 
     def _send_start_charging_to_monitor(self, cp_id, session_id, driver_id):
         """向Monitor发送启动充电命令"""

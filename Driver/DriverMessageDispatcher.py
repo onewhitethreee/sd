@@ -126,7 +126,7 @@ class DriverMessageDispatcher:
                     self.driver.current_charging_session = {
                         "session_id": session_id,
                         "cp_id": cp_id,
-                        "start_time": datetime.now(),
+                        "start_time": time.time(),  # 使用Unix时间戳而不是datetime对象
                         "status": "authorized",
                         "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
