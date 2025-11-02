@@ -1,1 +1,2 @@
 1. 需要修复当启动所有模块时，engine停止后charging point不会被设置为faulty
+2. 添加authorization在central中，当有charging point 注册时，central需要手动授权，否则charging point不会被允许连接。另外driver也需要授权后才能进行操作
