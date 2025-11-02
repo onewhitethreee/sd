@@ -47,7 +47,6 @@ class AdminCLI:
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self._print_welcome()
         self._print_help()
 
         while self.running:
@@ -67,11 +66,7 @@ class AdminCLI:
                 self.logger.error(f"处理命令时出错: {e}")
                 print(f"错误: {e}")
 
-    def _print_welcome(self):
-        """打印欢迎信息"""
-        print("\n" + "=" * 60)
-        print(" EV Central 管理员控制台")
-        print("=" * 60)
+    
 
     def _print_help(self):
         """打印帮助信息"""

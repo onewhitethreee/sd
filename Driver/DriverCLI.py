@@ -49,7 +49,6 @@ class DriverCLI:
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self._print_welcome()
         self._print_help()
 
         while self.running and self.driver.running:
@@ -68,12 +67,6 @@ class DriverCLI:
             except Exception as e:
                 self.logger.error(f"处理命令时出错: {e}")
                 print(f"错误: {e}")
-
-    def _print_welcome(self):
-        """打印欢迎信息"""
-        print("\n" + "=" * 60)
-        print(" EV Driver 控制台")
-        print("=" * 60)
 
     def _print_help(self):
         """打印帮助信息"""
@@ -145,6 +138,7 @@ class DriverCLI:
             self.driver._request_available_cps()
             # 给一些时间接收响应
             import time
+
             time.sleep(1)
 
             # 显示可用充电桩
@@ -152,23 +146,15 @@ class DriverCLI:
                 if self.driver.available_charging_points:
                     print(f"\n可用充电桩列表:")
                     print("-" * 80)
-                    self._format_charging_points(self.driver.available_charging_points)
+                    self.driver._formatter_charging_points(
+                        self.driver.available_charging_points
+                    )
                 else:
                     print("当前没有可用的充电桩")
 
         except Exception as e:
             self.logger.error(f"获取充电桩列表失败: {e}")
             print(f"错误: 无法获取充电桩列表 - {e}")
-
-    def _format_charging_points(self, charging_points):
-        """格式化显示充电桩列表"""
-        for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 充电桩 {cp.get('id', 'N/A')}")
-            print(f"    ├─ 位置:           {cp.get('location', 'N/A')}")
-            print(f"    ├─ 价格:           {cp.get('price_per_kwh', 0.0):.4f} 元/kWh")
-            print(f"    ├─ 状态:           {cp.get('status', 'N/A')}")
-            print(f"    ├─ 最大充电功率:   {cp.get('max_charging_rate_kw', 0.0):.1f} kW")
-            print()
 
     def _handle_charge_command(self, cp_id: str):
         """处理charge命令 - 发起充电请求"""
@@ -185,11 +171,13 @@ class DriverCLI:
 
             # 检查充电桩是否在可用列表中
             with self.driver.lock:
-                available_ids = [cp.get('id') for cp in self.driver.available_charging_points]
+                available_ids = [
+                    cp.get("id") for cp in self.driver.available_charging_points
+                ]
                 if cp_id not in available_ids:
                     print(f"警告: 充电桩 {cp_id} 可能不在可用列表中")
                     confirm = input("是否继续? (y/n): ").strip().lower()
-                    if confirm != 'y':
+                    if confirm != "y":
                         print("已取消充电请求")
                         return
 
@@ -249,14 +237,17 @@ class DriverCLI:
                 print(f"  会话ID:         {session.get('session_id', 'N/A')}")
                 print(f"  充电桩ID:       {session.get('cp_id', 'N/A')}")
                 print(f"  状态:           充电中")
-                print(f"  已消耗电量:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh")
+                print(
+                    f"  已消耗电量:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh"
+                )
                 print(f"  当前费用:       {session.get('total_cost', 0.0):.2f} 元")
                 print(f"  充电速率:       {session.get('charging_rate', 0.0):.2f} kW")
 
                 # 计算充电时长（如果有开始时间）
-                if 'start_time' in session:
+                if "start_time" in session:
                     import time
-                    elapsed = time.time() - session.get('start_time', time.time())
+
+                    elapsed = time.time() - session.get("start_time", time.time())
                     minutes = int(elapsed // 60)
                     seconds = int(elapsed % 60)
                     print(f"  充电时长:       {minutes}分{seconds}秒")
@@ -284,19 +275,21 @@ class DriverCLI:
                 print(f"\n【{i}】 会话 {record.get('session_id', 'N/A')}")
                 print(f"    ├─ 充电桩ID:     {record.get('cp_id', 'N/A')}")
                 print(f"    ├─ 完成时间:     {record.get('completion_time', 'N/A')}")
-                print(f"    ├─ 消耗电量:     {record.get('energy_consumed_kwh', 0.0):.3f} kWh")
+                print(
+                    f"    ├─ 消耗电量:     {record.get('energy_consumed_kwh', 0.0):.3f} kWh"
+                )
                 print(f"    ├─ 总费用:       {record.get('total_cost', 0.0):.2f} 元")
 
                 # 如果有持续时间信息
-                if 'duration' in record:
+                if "duration" in record:
                     print(f"    └─ 充电时长:     {record.get('duration')}")
 
             print("\n" + "=" * 80)
             print(f"总计: {len(history)} 条充电记录")
 
             # 计算总计
-            total_energy = sum(r.get('energy_consumed_kwh', 0.0) for r in history)
-            total_cost = sum(r.get('total_cost', 0.0) for r in history)
+            total_energy = sum(r.get("energy_consumed_kwh", 0.0) for r in history)
+            total_cost = sum(r.get("total_cost", 0.0) for r in history)
             print(f"总消耗电量: {total_energy:.3f} kWh")
             print(f"总费用: {total_cost:.2f} 元")
             print("=" * 80)

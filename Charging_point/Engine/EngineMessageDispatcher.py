@@ -1,10 +1,5 @@
 """
 Engine消息分发器
-负责处理来自Monitor的所有消息，包括：
-- health_check_request: 健康检查请求
-- stop_command: 停止充电命令
-- resume_command: 恢复运行命令
-- start_charging_command: 开始充电命令
 """
 
 import time
@@ -242,5 +237,3 @@ class EngineMessageDispatcher:
                 "session_id": session_id,
             }
 
-
-# TODO 修复在停止central模块的情况下Engine还会继续charge
