@@ -32,10 +32,6 @@ class MonitorMessageDispatcher:
             "heartbeat_response": self._handle_heartbeat_response,
             "start_charging_command": self._handle_start_charging_command,
             "stop_charging_command": self._handle_stop_charging_command,
-            "charging_data_response": self._handle_charging_data_response,
-            "fault_notification_response": self._handle_fault_notification_response,
-            "status_update_response": self._handle_status_update_response,
-            "charge_completion_response": self._handle_charge_completion_response,
         }
 
         # 来自Engine的消息处理器
@@ -43,7 +39,6 @@ class MonitorMessageDispatcher:
             "health_check_response": self._handle_health_check_response,
             "charging_data": self._handle_charging_data_from_engine,
             "charge_completion": self._handle_charging_completion_from_engine,
-            "command_response": self._handle_command_response,
         }
 
     def dispatch_message(self, source, message):
@@ -134,26 +129,9 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用")
             return False
-    # 下面的逻辑不再需要完善，monitor只处理转发逻辑
-    def _handle_charging_data_response(self, message):
-        """处理来自Central的充电数据响应"""
-        self.logger.debug(f"Charging data response from Central: {message}")
-        return True
+   
 
-    def _handle_fault_notification_response(self, message):
-        """处理来自Central的故障通知响应"""
-        self.logger.error(f"Fault notification response from Central: {message}")
-        return True
-
-    def _handle_status_update_response(self, message):
-        """处理来自Central的状态更新响应"""
-        self.logger.debug(f"Status update response from Central: {message}")
-        return True
-
-    def _handle_charge_completion_response(self, message):
-        """处理来自Central的充电完成响应"""
-        self.logger.debug(f"Charge completion response from Central: {message}")
-        return True
+    
 
     # ==================== Engine消息处理器 ====================
 
@@ -201,7 +179,4 @@ class MonitorMessageDispatcher:
         self.logger.info("Received charging completion from Engine.")
         return self.monitor._handle_charging_completion_from_engine(message)
 
-    def _handle_command_response(self, message):
-        """处理来自Engine的命令响应"""
-        self.logger.debug(f"Command response from Engine: {message}")
-        return True
+    

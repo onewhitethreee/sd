@@ -764,7 +764,7 @@ class MessageDispatcher:
     def _send_charge_completion_to_driver(self, driver_id, completion_data):
         """向指定司机发送充电完成通知"""
         message = self._build_notification_message(
-            "charge_completion_notification",
+            "charge_completion",
             driver_id=driver_id,
             session_id=completion_data.get("session_id"),
             cp_id=completion_data.get("cp_id"),

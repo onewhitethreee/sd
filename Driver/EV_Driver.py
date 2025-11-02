@@ -504,7 +504,6 @@ class Driver:
             # - charging_status_update: 充电状态更新
             # - charging_data: 实时充电数据
             # - charge_completion: 充电完成通知
-            # - charge_completion_notification: 充电完成通知（别名）
             self.message_dispatcher.dispatch_message(message)
 
         except Exception as e:

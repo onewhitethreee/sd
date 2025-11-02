@@ -25,8 +25,6 @@ class EngineMessageDispatcher:
         # 消息处理器映射
         self.handlers = {
             "health_check_request": self._handle_health_check,
-            "stop_command": self._handle_stop_command,
-            "resume_command": self._handle_resume_command,
             "start_charging_command": self._handle_start_charging_command,
             "stop_charging_command": self._handle_stop_charging_command,
         }
@@ -97,51 +95,6 @@ class EngineMessageDispatcher:
         self.logger.debug(f"Health check response prepared: {response}")
         return response
 
-    def _handle_stop_command(self, message):
-        """
-        处理停止命令
-
-        Args:
-            message: 停止命令消息
-
-        Returns:
-            dict: 命令响应消息
-        """
-        self.logger.info("Processing stop command")
-
-        if self.engine.is_charging:
-            self.engine._stop_charging_session()
-
-        response = {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "message": "Stop command executed",
-        }
-        return response
-
-    def _handle_resume_command(self, message):
-        """
-        处理恢复命令
-
-        Args:
-            message: 恢复命令消息
-
-        Returns:
-            dict: 命令响应消息
-        """
-        self.logger.info("Processing resume command")
-
-        if not self.engine.running:
-            self.engine.running = True
-            self.logger.info("Engine resumed operation")
-
-        return {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "message": "Resume command executed",
-        }
 
     def _handle_start_charging_command(self, message):
         """

@@ -3,7 +3,7 @@ Driver消息分发器
 负责处理来自Central的所有消息，包括：
 - charge_request_response: 充电请求响应
 - charging_status_update: 充电状态更新
-- charge_completion_notification: 充电完成通知
+- charge_completion: 充电完成通知
 - available_cps_response: 可用充电点列表
 - charging_data: 实时充电数据
 - CONNECTION_LOST: 连接丢失
@@ -35,7 +35,6 @@ class DriverMessageDispatcher:
         self.handlers = {
             "charge_request_response": self._handle_charge_response,
             "charging_status_update": self._handle_charging_status,
-            "charge_completion_notification": self._handle_charge_completion,
             "charge_completion": self._handle_charge_completion,
             "available_cps_response": self._handle_available_cps,
             "charging_data": self._handle_charging_data,
