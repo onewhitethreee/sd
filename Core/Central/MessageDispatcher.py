@@ -12,14 +12,15 @@ import uuid
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Database.SqliteConnection import SqliteConnection
+from Core.Central.ChargingPoint import ChargingPoint
+from Core.Central.ChargingSession import ChargingSession
+from Core.Central.DriverManager import DriverManager
+
 from Common.Message.MessageFormatter import MessageFormatter
 from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
-from Core.Central.ChargingPoint import ChargingPoint
-from Core.Central.ChargingSession import ChargingSession
-from Core.Central.DriverManager import DriverManager
 
 
 class MessageDispatcher:
@@ -55,7 +56,6 @@ class MessageDispatcher:
             "available_cps_request": self._handle_available_cps_request,
             "recovery_notification": self._handle_recovery_message,
             "manual_command": self._handle_manual_command,
-            # "authorization_request": self._handle_authorization_message,  # TODO: implement
         }
 
     def dispatch_message(self, client_id, message):
@@ -692,13 +692,6 @@ class MessageDispatcher:
                 "timestamp": int(time.time()),
             }
 
-    def _handle_authorization_message(self, client_id, message):  # TODO: implement
-        """
-        处理来自司机应用程序或充电点本身的充电授权请求。
-        需要验证充电点是否可用，并决定是否授权。
-        成功授权后，需要向充电点和司机应用程序发送授权通知。
-        """
-        pass
 
     def _handle_recovery_message(self, client_id, message):
         """处理充电点在故障修复后发送的恢复通知"""
