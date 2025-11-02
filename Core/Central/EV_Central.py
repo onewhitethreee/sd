@@ -74,19 +74,6 @@ class EV_Central:
                 sql_schema_file=self.sql_schema,
                 create_tables_if_not_exist=True,
             )
-            if not self.db_manager.is_sqlite_available():
-                self.logger.error(
-                    "Database is not available or not properly initialized."
-                )
-                sys.exit(1)
-
-            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
-
-            charging_points_count = len(self.db_manager.get_all_charging_points())
-            self.logger.info(
-                f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED."
-            )
-
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -122,13 +109,17 @@ class EV_Central:
             self.logger.error(f"Failed to initialize socket server: {e}")
             sys.exit(1)
 
-        # 初始化消息分发器
-        self.message_dispatcher = MessageDispatcher(
-            logger=self.logger,
-            db_manager=self.db_manager,
-            socket_server=self.socket_server,
-        )
-
+    def _initialize_message_dispatcher(self):
+        try:
+            self.message_dispatcher = MessageDispatcher(
+                logger=self.logger,
+                db_manager=self.db_manager,
+                socket_server=self.socket_server,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to initialize MessageDispatcher: {e}")
+            sys.exit(1)
+    
     def _handle_client_disconnect(self, client_id):
         """
         处理客户端断开连接
@@ -257,8 +248,11 @@ class EV_Central:
 
     def initialize_systems(self):
         self.logger.info("Initializing systems...")
-        self._init_database()
         self._init_socket_server()
+
+        self._init_database()
+
+        self._initialize_message_dispatcher()
 
         # 初始化Kafka（用于接收Engine发送的充电数据）
         if self._init_kafka_producer():

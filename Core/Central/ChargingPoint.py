@@ -38,6 +38,11 @@ class ChargingPoint:
         # 反向映射：{client_id: cp_id}
         self._client_to_cp = {}
 
+        # 初始化时将所有充电桩状态设置为DISCONNECTED
+        self.repository.set_all_status(Status.DISCONNECTED.value)
+        charging_points = len(self.get_all_charging_points())
+        self.logger.info(f"Database initialized successfully: {charging_points} charging points set to DISCONNECTED.")
+
     def register_charging_point(
         self, cp_id, location, price_per_kwh, max_charging_rate_kw=11.0
     ):
