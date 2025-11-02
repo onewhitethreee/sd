@@ -357,7 +357,6 @@ class MessageDispatcher:
                 "heartbeat", message_id, "heartbeat更新最后连接时间成功"
             )
         except Exception as e:
-            # TODO 这里如果更新不成功需要设置为faulty吗 -> 不需要，只是更新last_connection_time失败而已
             return self._create_failure_response(
                 "heartbeat", message_id, f"Failed to update last connection time: {e}"
             )

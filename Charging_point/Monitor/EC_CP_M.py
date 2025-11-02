@@ -47,7 +47,8 @@ class EV_CP_M:
             class Args:
                 ip_port_ev_cp_e = self.config.get_ip_port_ev_cp_e()
                 ip_port_ev_central = self.config.get_ip_port_ev_cp_central()
-                id_cp = self.config.get_id_cp()
+                import random
+                id_cp = f"cp_{random.randint(0,99999)}"
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
