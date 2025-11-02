@@ -32,7 +32,7 @@ class EngineMessageDispatcher:
             engine: EV_CP_E实例，用于访问Engine的业务逻辑
         """
         self.logger = logger
-        self.engine = engine  # 不使用类型注解以避免循环导入
+        self.engine = engine  
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
