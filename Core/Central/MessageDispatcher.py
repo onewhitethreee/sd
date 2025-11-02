@@ -29,6 +29,7 @@ from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
+from Common.Queue.KafkaManager import KafkaTopics
 
 
 class MessageDispatcher:
@@ -37,9 +38,11 @@ class MessageDispatcher:
         logger: CustomLogger,
         db_manager: SqliteConnection,
         socket_server,
+        kafka_manager=None,
     ):
         self.logger = logger
         self.socket_server: MySocketServer = socket_server
+        self.kafka_manager = kafka_manager  # Kafka管理器用于向Driver发送响应
 
         # 使用新的ChargingPoint和ChargingSession管理器
         self.charging_point_manager = ChargingPoint(logger, db_manager)
@@ -77,7 +80,7 @@ class MessageDispatcher:
         分发消息到对应的处理器
 
         Args:
-            client_id: 客户端连接ID
+            client_id: 客户端连接ID（对于来自Kafka的Driver消息，这是driver_id）
             message: 消息字典
 
         Returns:
@@ -91,25 +94,32 @@ class MessageDispatcher:
                 f"Unknown message type: {msg_type}. "
                 f"Client: {client_id}, Message ID: {message.get(MessageFields.MESSAGE_ID)}"
             )
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 msg_type,
                 message.get(MessageFields.MESSAGE_ID, ""),
                 "未知消息类型"
             )
+            self._send_response_to_client(client_id, response, msg_type)
+            return response
 
         try:
             response = handler(client_id, message)
+            # 对于Driver请求，通过Kafka发送响应
+            if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST, MessageTypes.AVAILABLE_CPS_REQUEST]:
+                self._send_response_to_driver_via_kafka(client_id, response, msg_type)
             return response
         except Exception as e:
             self.logger.error(
                 f"Error handling message {msg_type} from {client_id}: {e}. "
                 f"Message: {message}"
             )
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 msg_type,
                 message.get(MessageFields.MESSAGE_ID, ""),
                 f"处理消息时发生错误: {str(e)}"
             )
+            self._send_response_to_client(client_id, response, msg_type)
+            return response
 
     def _create_failure_response(
         self, message_type: str, message_id, info: str
@@ -134,6 +144,39 @@ class MessageDispatcher:
         # 添加额外字段
         response.update(extra_fields)
         return response
+
+    def _send_response_to_driver_via_kafka(self, driver_id, response, msg_type):
+        """通过Kafka向Driver发送响应"""
+        if not self.kafka_manager:
+            self.logger.warning("Kafka manager not initialized, cannot send response to Driver")
+            return
+
+        try:
+            # 根据消息类型选择合适的Kafka主题
+            # 所有Driver的响应都发送到DRIVER_CHARGING_STATUS主题
+            # Driver会订阅这个主题来接收所有响应
+            success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CHARGING_STATUS,
+                response
+            )
+            if success:
+                self.logger.debug(f"Response sent to Driver {driver_id} via Kafka: {response.get('type')}")
+            else:
+                self.logger.error(f"Failed to send response to Driver {driver_id} via Kafka")
+        except Exception as e:
+            self.logger.error(f"Error sending response to Driver via Kafka: {e}")
+
+    def _send_response_to_client(self, client_id, response, msg_type):
+        """向客户端发送响应（智能选择Socket或Kafka）"""
+        # 如果是Driver消息，使用Kafka
+        if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST, MessageTypes.AVAILABLE_CPS_REQUEST]:
+            self._send_response_to_driver_via_kafka(client_id, response, msg_type)
+        # 否则使用Socket（ChargingPoint/Monitor）
+        elif self.socket_server:
+            try:
+                self.socket_server.send_to_client(client_id, response)
+            except Exception as e:
+                self.logger.error(f"Failed to send response to client {client_id}: {e}")
 
     def _is_duplicate_message(self, message_id: str) -> bool:
         """
