@@ -101,23 +101,44 @@ class Driver:
 
 
     def _send_charge_request(self, cp_id):
-        """发送充电请求"""
-        if not self.central_client or not self.central_client.is_connected:
-            self.logger.error("Not connected to Central")
-            return False
-
+        """发送充电请求（混合模式：Socket + Kafka）"""
         request_message = {
             "type": "charge_request",
             "message_id": str(uuid.uuid4()),
             "cp_id": cp_id,
             "driver_id": self.args.id_client,
+            "timestamp": int(time.time()),
         }
 
         self.logger.info(f"🚗 Sending charging request for CP: {cp_id}")
-        return self.central_client.send(request_message)
+
+        # 1. 发送到 Socket（向后兼容）
+        socket_success = False
+        if self.central_client and self.central_client.is_connected:
+            socket_success = self.central_client.send(request_message)
+            if socket_success:
+                self.logger.debug("Charge request sent via Socket")
+        else:
+            self.logger.debug("Socket not connected")
+
+        # 2. 发送到 Kafka（改进版）
+        kafka_success = False
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            kafka_success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CHARGE_REQUESTS, request_message
+            )
+            if kafka_success:
+                self.logger.debug(f"Charge request sent to Kafka: {request_message['message_id']}")
+            else:
+                self.logger.error("Failed to send charge request to Kafka")
+        else:
+            self.logger.debug("Kafka not available, charge request only sent via Socket")
+
+        # 至少一个成功就返回True
+        return socket_success or kafka_success
 
     def _send_stop_charging_request(self):
-        """发送停止充电请求"""
+        """发送停止充电请求（混合模式：Socket + Kafka）"""
         with self.lock:
             if not self.current_charging_session:
                 self.logger.warning("No active charging session to stop")
@@ -126,27 +147,43 @@ class Driver:
             session_id = self.current_charging_session["session_id"]
             cp_id = self.current_charging_session["cp_id"]
 
-        if not self.central_client or not self.central_client.is_connected:
-            self.logger.error("Not connected to Central")
-            return False
-
         request_message = {
             "type": "stop_charging_request",
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "cp_id": cp_id,
             "driver_id": self.args.id_client,
+            "timestamp": int(time.time()),
         }
 
         self.logger.info(f"🛑 Sending stop charging request for session: {session_id}")
-        return self.central_client.send(request_message)
+
+        # 1. 发送到 Socket（向后兼容）
+        socket_success = False
+        if self.central_client and self.central_client.is_connected:
+            socket_success = self.central_client.send(request_message)
+            if socket_success:
+                self.logger.debug("Stop request sent via Socket")
+        else:
+            self.logger.debug("Socket not connected")
+
+        # 2. 发送到 Kafka
+        kafka_success = False
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            kafka_success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_STOP_REQUESTS, request_message
+            )
+            if kafka_success:
+                self.logger.debug(f"Stop request sent to Kafka: {request_message['message_id']}")
+            else:
+                self.logger.error("Failed to send stop request to Kafka")
+        else:
+            self.logger.debug("Kafka not available, stop request only sent via Socket")
+
+        return socket_success or kafka_success
 
     def _request_available_cps(self):
-        """请求可用充电点列表"""
-        if not self.central_client or not self.central_client.is_connected:
-            self.logger.error("Not connected to Central")
-            return False
-
+        """请求可用充电点列表（混合模式：Socket + Kafka）"""
         request_message = {
             "type": "available_cps_request",
             "message_id": str(uuid.uuid4()),
@@ -154,7 +191,29 @@ class Driver:
             "timestamp": int(time.time()),
         }
 
-        return self.central_client.send(request_message)
+        # 1. 发送到 Socket（向后兼容）
+        socket_success = False
+        if self.central_client and self.central_client.is_connected:
+            socket_success = self.central_client.send(request_message)
+            if socket_success:
+                self.logger.debug("Available CPs request sent via Socket")
+        else:
+            self.logger.debug("Socket not connected")
+
+        # 2. 发送到 Kafka
+        kafka_success = False
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            kafka_success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CPS_REQUESTS, request_message
+            )
+            if kafka_success:
+                self.logger.debug(f"Available CPs request sent to Kafka: {request_message['message_id']}")
+            else:
+                self.logger.error("Failed to send available CPs request to Kafka")
+        else:
+            self.logger.debug("Kafka not available, available CPs request only sent via Socket")
+
+        return socket_success or kafka_success
 
     def _load_services_from_file(self, filename="test_services.txts"):
         """从文件加载服务列表"""
@@ -372,42 +431,84 @@ class Driver:
             time.sleep(1)
 
     def _init_kafka(self):
-        """初始化Kafka连接"""
+        """初始化Kafka连接（改进版）"""
+        broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+
         try:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
                 self.kafka_manager.start()
 
+                # 创建Driver相关的topics
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGE_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_STOP_REQUESTS,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CPS_REQUESTS,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGING_STATUS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+
                 # 初始化消费者订阅相关主题
+                # 订阅充电状态更新（实时数据）
                 self.kafka_manager.init_consumer(
                     KafkaTopics.DRIVER_CHARGING_STATUS,
-                    f"driver_{self.args.id_client}",
-                    self._handle_kafka_message,
-                )
-                self.kafka_manager.init_consumer(
-                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
-                    f"driver_{self.args.id_client}",
+                    f"driver_{self.args.id_client}_status",
                     self._handle_kafka_message,
                 )
 
-                self.logger.info("Kafka initialized successfully")
+                # 订阅充电完成通知
+                self.kafka_manager.init_consumer(
+                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
+                    f"driver_{self.args.id_client}_complete",
+                    self._handle_kafka_message,
+                )
+
+                self.logger.info("Kafka producer initialized successfully")
+                self.logger.info(f"Subscribed to topics: {KafkaTopics.DRIVER_CHARGING_STATUS}, {KafkaTopics.DRIVER_CHARGING_COMPLETE}")
                 return True
             else:
-                self.logger.warning("Failed to initialize Kafka producer")
+                self.logger.error("Failed to initialize Kafka producer")
                 return False
+
         except Exception as e:
-            self.logger.error(f"Error initializing Kafka: {e}")
+            self.logger.error(f"Kafka初始化失败: {e}")
             return False
 
     def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息"""
+        """处理来自Kafka的消息（改进版）"""
         try:
-            self.logger.debug(f"Received Kafka message: {message}")
-            # 这里可以添加具体的消息处理逻辑
+            msg_type = message.get("type")
+            self.logger.debug(f"Received Kafka message: type={msg_type}")
+
+            # 使用消息分发器处理Kafka消息
+            # DriverMessageDispatcher 会处理以下类型：
+            # - charging_status_update: 充电状态更新
+            # - charging_data: 实时充电数据
+            # - charge_completion: 充电完成通知
+            # - charge_completion_notification: 充电完成通知（别名）
+            self.message_dispatcher.dispatch_message(message)
+
         except Exception as e:
-            self.logger.error(f"Error handling Kafka message: {e}")
+            self.logger.error(f"Error handling Kafka message: {e}", exc_info=True)
 
     def start(self):
         """启动Driver应用"""
@@ -440,7 +541,7 @@ class Driver:
                 return
 
         # 初始化Kafka
-        # self._init_kafka()
+        self._init_kafka()
 
         # 请求可用充电点列表
         self._request_available_cps()

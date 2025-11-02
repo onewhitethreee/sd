@@ -80,7 +80,7 @@ class EV_Central:
                 )
                 sys.exit(1)
 
-            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value) 
+            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value)
 
             charging_points_count = len(self.db_manager.get_all_charging_points())
             self.logger.info(
@@ -171,7 +171,7 @@ class EV_Central:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
         else:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        
+
         try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
@@ -186,7 +186,7 @@ class EV_Central:
             return False
 
     def _init_kafka_consumer(self):
-        """初始化Kafka消费者"""
+        """初始化Kafka消费者（改进版 - 订阅Engine发送的充电数据）"""
         self.logger.debug("Initializing Kafka consumer")
         try:
             if not self.kafka_manager:
@@ -196,44 +196,77 @@ class EV_Central:
             # 启动Kafka管理器
             self.kafka_manager.start()
 
-            # 初始化消费者订阅相关主题
-            topics_to_subscribe = [
-                (KafkaTopics.CHARGING_POINT_HEARTBEAT, "central_group"),
-                (KafkaTopics.CHARGING_POINT_FAULT, "central_group"),
-                (KafkaTopics.SYSTEM_ALERTS, "central_group"),
-            ]
+            # 订阅充电数据主题（来自Engine）
+            success1 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.CHARGING_SESSION_DATA,
+                self._handle_charging_data_from_kafka,
+                group_id="central_charging_data_group",
+            )
 
-            for topic, group_id in topics_to_subscribe:
-                self.kafka_manager.init_consumer(
-                    topic, group_id, self._handle_kafka_message
+            # 订阅充电完成主题（来自Engine）
+            success2 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.CHARGING_SESSION_COMPLETE,
+                self._handle_charging_complete_from_kafka,
+                group_id="central_charging_complete_group",
+            )
+
+            if success1 and success2:
+                self.logger.info(
+                    "Kafka consumers initialized successfully (charging_session_data, charging_session_complete)"
                 )
+                return True
+            else:
+                self.logger.error("Failed to initialize some Kafka consumers")
+                return False
 
-            self.logger.info("Kafka consumers initialized successfully")
-            return True
         except Exception as e:
             self.logger.error(f"Error initializing Kafka consumer: {e}")
             return False
 
-    def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息"""
+    def _handle_charging_data_from_kafka(self, message):
+        """处理来自Kafka的充电数据（由Engine发送）"""
         try:
-            self.logger.debug(f"Received Kafka message: {message}")
-            # 这里可以添加具体的消息处理逻辑
+            self.logger.debug(f"Received charging data from Kafka: {message}")
+
+            # 委托给 MessageDispatcher 处理
+            if self.message_dispatcher:
+                self.message_dispatcher.dispatch_message("Kafka", message)
+            else:
+                self.logger.warning(
+                    "MessageDispatcher not initialized, cannot process Kafka message"
+                )
+
         except Exception as e:
-            self.logger.error(f"Error handling Kafka message: {e}")
+            self.logger.error(f"Error handling charging data from Kafka: {e}")
+
+    def _handle_charging_complete_from_kafka(self, message):
+        """处理来自Kafka的充电完成消息（由Engine发送）"""
+        try:
+            self.logger.info(f"Received charging completion from Kafka: {message}")
+
+            # 委托给 MessageDispatcher 处理
+            if self.message_dispatcher:
+                self.message_dispatcher.dispatch_message("Kafka", message)
+            else:
+                self.logger.warning(
+                    "MessageDispatcher not initialized, cannot process Kafka message"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error handling charging completion from Kafka: {e}")
 
     def initialize_systems(self):
         self.logger.info("Initializing systems...")
         self._init_database()
         self._init_socket_server()
 
-        # 初始化Kafka
-        # if self._init_kafka_producer():
-        #     self._init_kafka_consumer()
-        # else:
-        #     self.logger.warning(
-        #         "Kafka initialization failed, continuing without Kafka support"
-        #     )
+        # 初始化Kafka（用于接收Engine发送的充电数据）
+        if self._init_kafka_producer():
+            self._init_kafka_consumer()
+        else:
+            self.logger.warning(
+                "Kafka initialization failed, continuing without Kafka support"
+            )
 
         # 初始化管理员CLI
         self._init_admin_cli()

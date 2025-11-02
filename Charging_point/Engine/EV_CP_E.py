@@ -149,7 +149,7 @@ class EV_CP_E:
                 raise Exception("Failed to start monitor server")
 
             # 初始化Kafka客户端
-            # self._init_kafka()
+            self._init_kafka()  # ✅ 启用 Kafka
 
             self.running = True
             return True
@@ -159,7 +159,7 @@ class EV_CP_E:
             return False
 
     def _init_kafka(self):
-        """初始化Kafka连接"""
+        """初始化Kafka连接（改进版）"""
 
         if self.debug_mode:
             broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
@@ -171,12 +171,28 @@ class EV_CP_E:
 
             if self.kafka_manager.init_producer():
                 self.kafka_manager.start()
+
+                # ✅ 创建所需的 topics
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_DATA,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_COMPLETE,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+
                 self.logger.info("Kafka producer initialized successfully")
+                return True
             else:
                 self.logger.warning("Failed to initialize Kafka producer")
+                return False
         except Exception as e:
             self.logger.error(f"Error initializing Kafka: {e}")
             self.kafka_manager = None
+            return False
 
     def _shutdown_system(self):
         """关闭系统"""
@@ -313,13 +329,13 @@ class EV_CP_E:
         self.logger.info(f"Charging process ended for session {session_id_to_track}.")
 
     def _send_charging_data(self):
-        """发送充电数据到Monitor和Kafka"""
+        """发送充电数据到Monitor和Kafka（改进版）"""
         if not self.current_session:  # 如果没有活跃会话，直接返回
             return
 
         charging_data_message = {
             "type": "charging_data",
-            "message_id": str(uuid.uuid4()),
+            "message_id": str(uuid.uuid4()),  # 用于幂等性
             "cp_id": self.args.id_cp,
             "session_id": self.current_session["session_id"],
             "energy_consumed_kwh": round(
@@ -328,9 +344,11 @@ class EV_CP_E:
             "total_cost": round(self.current_session["total_cost"], 2),
             "charging_rate": round(
                 self.current_session["charging_rate_kw"], 1
-            ), 
+            ),
+            "timestamp": int(time.time()),  # ✅ 添加时间戳
         }
-        # 发送到 Monitor
+
+        # 发送到 Monitor（Socket，保持向后兼容）
         if self.monitor_server and self.monitor_server.has_active_clients():
             self.monitor_server.send_broadcast_message(charging_data_message)
             self.logger.debug(
@@ -338,51 +356,63 @@ class EV_CP_E:
             )
         else:
             self.logger.debug("No active monitor clients to send charging data.")
-        # 发送到 Kafka
-        if self.kafka_manager:
-            self.kafka_manager.produce_message(
+
+        # ✅ 发送到 Kafka（改进版）
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            success = self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_DATA, charging_data_message
             )
-            self.logger.debug(
-                f"Charging data sent to Kafka: {charging_data_message['session_id']}"
-            )
+            if success:
+                self.logger.debug(
+                    f"Charging data sent to Kafka: {charging_data_message['session_id']}"
+                )
+            else:
+                self.logger.error("Failed to send charging data to Kafka")
         else:
             self.logger.debug(
-                "Kafka manager not initialized, skipped sending charging data."
+                "Kafka not available, charging data only sent to Monitor"
             )
 
     def _send_charging_completion(self, final_session_data: dict):
-        """发送充电完成通知到Monitor和Kafka"""
+        """发送充电完成通知到Monitor和Kafka（改进版）"""
         if not final_session_data:  # 如果没有数据，直接返回
             return
+
         completion_message = {
             "type": "charge_completion",
-            "message_id": str(uuid.uuid4()),
+            "message_id": str(uuid.uuid4()),  # 用于幂等性
             "cp_id": self.args.id_cp,
             "session_id": final_session_data["session_id"],
             "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
+            "timestamp": int(time.time()),  # 添加时间戳
         }
+
+        # 1. 发送到 Monitor（Socket，向后兼容）
         if self.monitor_server and self.monitor_server.has_active_clients():
             self.monitor_server.send_broadcast_message(completion_message)
             self.logger.info(
                 f"Charging completion sent to Monitor: {completion_message['session_id']}"
             )
         else:
-            self.logger.warning(
+            self.logger.debug(
                 "No active monitor clients to send charging completion."
             )
-        # 发送到 Kafka
-        if self.kafka_manager:
-            self.kafka_manager.produce_message(
+
+        # 2. 发送到 Kafka（改进版）
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            success = self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_COMPLETE, completion_message
             )
-            self.logger.info(
-                f"Charging completion sent to Kafka: {completion_message['session_id']}"
-            )
+            if success:
+                self.logger.info(
+                    f"Charging completion sent to Kafka: {completion_message['session_id']}"
+                )
+            else:
+                self.logger.error("Failed to send charging completion to Kafka")
         else:
-            self.logger.warning(
-                "Kafka manager not initialized, skipped sending charging completion."
+            self.logger.debug(
+                "Kafka not available, charging completion only sent to Monitor"
             )
 
     def initialize_system(self):

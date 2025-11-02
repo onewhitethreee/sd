@@ -179,23 +179,29 @@ class AdminCLI:
     def _list_all_charging_points(self):
         """列出所有充电桩"""
         try:
-            charging_points = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            charging_points = (
+                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            )
 
             if not charging_points:
                 print("当前没有注册的充电桩")
                 return
 
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
+            print(
+                f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+            )
             print("-" * 100)
 
             for cp in charging_points:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                status = cp.get('status', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
+                cp_id = cp.get("cp_id", "N/A")
+                location = cp.get("location", "N/A")
+                status = cp.get("status", "N/A")
+                price = cp.get("price_per_kwh", 0.0)
+                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
-                print(f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f} {max_rate:<.1f}")
+                print(
+                    f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f} {max_rate:<.1f}"
+                )
 
             print(f"\n总计: {len(charging_points)} 个充电桩")
 
@@ -206,20 +212,24 @@ class AdminCLI:
     def _list_available_charging_points(self):
         """列出所有可用的充电桩"""
         try:
-            charging_points = self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
+            charging_points = (
+                self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
+            )
 
             if not charging_points:
                 print("当前没有可用的充电桩")
                 return
 
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
+            print(
+                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+            )
             print("-" * 85)
 
             for cp in charging_points:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
+                cp_id = cp.get("cp_id", "N/A")
+                location = cp.get("location", "N/A")
+                price = cp.get("price_per_kwh", 0.0)
+                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
                 print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
 
@@ -232,21 +242,25 @@ class AdminCLI:
     def _list_active_charging_points(self):
         """列出所有活跃状态的充电桩"""
         try:
-            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            active_cps = [cp for cp in all_cps if cp.get('status') == 'ACTIVE']
+            all_cps = (
+                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            )
+            active_cps = [cp for cp in all_cps if cp.get("status") == "ACTIVE"]
 
             if not active_cps:
                 print("当前没有活跃状态的充电桩")
                 return
 
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
+            print(
+                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+            )
             print("-" * 85)
 
             for cp in active_cps:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
+                cp_id = cp.get("cp_id", "N/A")
+                location = cp.get("location", "N/A")
+                price = cp.get("price_per_kwh", 0.0)
+                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
                 print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
 
@@ -259,7 +273,9 @@ class AdminCLI:
     def _list_sessions(self):
         """列出所有充电会话"""
         try:
-            sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            sessions = (
+                self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            )
 
             if not sessions:
                 print("当前没有充电会话记录")
@@ -269,10 +285,10 @@ class AdminCLI:
             print("-" * 100)
 
             for session in sessions:
-                session_id = session.get('session_id', 'N/A')
-                cp_id = session.get('cp_id', 'N/A')
-                driver_id = session.get('driver_id', 'N/A')
-                status = session.get('status', 'N/A')
+                session_id = session.get("session_id", "N/A")
+                cp_id = session.get("cp_id", "N/A")
+                driver_id = session.get("driver_id", "N/A")
+                status = session.get("status", "N/A")
 
                 print(f"{session_id:<38} {cp_id:<20} {driver_id:<20} {status:<15}")
 
@@ -292,13 +308,12 @@ class AdminCLI:
                 "command": "stop",
                 "cp_id": cp_id,
                 "admin_id": "admin_cli",
-                "timestamp": int(time.time())
+                "timestamp": int(time.time()),
             }
 
             # 使用MessageDispatcher处理命令
             response = self.central.message_dispatcher._handle_manual_command(
-                client_id="admin_cli",
-                message=message
+                client_id="admin_cli", message=message
             )
 
             # 显示结果
@@ -328,13 +343,12 @@ class AdminCLI:
                 "command": "resume",
                 "cp_id": cp_id,
                 "admin_id": "admin_cli",
-                "timestamp": int(time.time())
+                "timestamp": int(time.time()),
             }
 
             # 使用MessageDispatcher处理命令
             response = self.central.message_dispatcher._handle_manual_command(
-                client_id="admin_cli",
-                message=message
+                client_id="admin_cli", message=message
             )
 
             # 显示结果
@@ -357,7 +371,9 @@ class AdminCLI:
     def _handle_status_command(self, cp_id: str):
         """处理查看充电桩状态命令"""
         try:
-            cp_info = self.central.message_dispatcher.charging_point_manager.get_charging_point(cp_id)
+            cp_info = self.central.message_dispatcher.charging_point_manager.get_charging_point(
+                cp_id
+            )
 
             if not cp_info:
                 print(f"错误: 找不到充电桩 {cp_id}")
@@ -369,9 +385,11 @@ class AdminCLI:
             print(f"  位置:           {cp_info.get('location', 'N/A')}")
             print(f"  状态:           {cp_info.get('status', 'N/A')}")
             print(f"  价格:           {cp_info.get('price_per_kwh', 0.0):.4f} 元/kWh")
-            print(f"  最大充电功率:   {cp_info.get('max_charging_rate_kw', 0.0):.1f} kW")
+            print(
+                f"  最大充电功率:   {cp_info.get('max_charging_rate_kw', 0.0):.1f} kW"
+            )
 
-            last_connection = cp_info.get('last_connection_time')
+            last_connection = cp_info.get("last_connection_time")
             if last_connection:
                 print(f"  最后连接时间:   {last_connection}")
             else:
@@ -386,7 +404,11 @@ class AdminCLI:
     def _handle_session_command(self, session_id: str):
         """处理查看充电会话命令"""
         try:
-            session_info = self.central.message_dispatcher.charging_session_manager.get_session(session_id)
+            session_info = (
+                self.central.message_dispatcher.charging_session_manager.get_session(
+                    session_id
+                )
+            )
 
             if not session_info:
                 print(f"错误: 找不到充电会话 {session_id}")
@@ -400,12 +422,12 @@ class AdminCLI:
             print(f"  状态:           {session_info.get('status', 'N/A')}")
             print(f"  开始时间:       {session_info.get('start_time', 'N/A')}")
 
-            end_time = session_info.get('end_time')
+            end_time = session_info.get("end_time")
             if end_time:
                 print(f"  结束时间:       {end_time}")
 
-            energy = session_info.get('energy_consumed_kwh', 0.0)
-            cost = session_info.get('total_cost', 0.0)
+            energy = session_info.get("energy_consumed_kwh", 0.0)
+            cost = session_info.get("total_cost", 0.0)
             print(f"  消耗电量:       {energy:.2f} kWh")
             print(f"  总费用:         {cost:.2f} 元")
             print("-" * 60)
@@ -417,13 +439,17 @@ class AdminCLI:
     def _handle_stats_command(self):
         """处理显示统计信息命令"""
         try:
-            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            all_sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            all_cps = (
+                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            )
+            all_sessions = (
+                self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            )
 
             # 统计充电桩状态
             status_count = {}
             for cp in all_cps:
-                status = cp.get('status', 'UNKNOWN')
+                status = cp.get("status", "UNKNOWN")
                 status_count[status] = status_count.get(status, 0) + 1
 
             # 统计会话状态
@@ -431,11 +457,11 @@ class AdminCLI:
             total_energy = 0.0
             total_cost = 0.0
             for session in all_sessions:
-                status = session.get('status', 'UNKNOWN')
+                status = session.get("status", "UNKNOWN")
                 session_status_count[status] = session_status_count.get(status, 0) + 1
 
-                energy = session.get('energy_consumed_kwh', 0.0)
-                cost = session.get('total_cost', 0.0)
+                energy = session.get("energy_consumed_kwh", 0.0)
+                cost = session.get("total_cost", 0.0)
                 if energy:
                     total_energy += energy
                 if cost:

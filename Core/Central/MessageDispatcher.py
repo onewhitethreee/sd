@@ -19,6 +19,7 @@ from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
 from Core.Central.ChargingPoint import ChargingPoint
 from Core.Central.ChargingSession import ChargingSession
+from Core.Central.DriverManager import DriverManager
 
 
 class MessageDispatcher:
@@ -35,10 +36,8 @@ class MessageDispatcher:
         self.charging_point_manager = ChargingPoint(logger, db_manager)
         self.charging_session_manager = ChargingSession(logger, db_manager)
 
-        # Driver连接映射
-        self._driver_connections = {}  # {driver_id: client_id}
-        self._client_to_driver = {}  # {client_id: driver_id}
-        self._driver_active_sessions = {}  # {driver_id: [session_ids]}
+        # 使用DriverManager管理Driver连接
+        self.driver_manager = DriverManager(logger, self.charging_session_manager)
 
         # 幂等性处理：跟踪已处理的 message_id（用于Kafka消息去重）
         self._processed_message_ids = set()  # {message_id}
@@ -82,7 +81,7 @@ class MessageDispatcher:
     def _create_success_response(
         self, message_type: str, message_id, info: str, **extra_fields
     ) -> dict:
-        """创建成功响应，支持额外字段"""
+        """创建成功响应"""
         response = MessageFormatter.create_response_message(
             cp_type=f"{message_type}_response",
             message_id=message_id,
@@ -165,7 +164,7 @@ class MessageDispatcher:
         返回: 是否成功发送
         """
         try:
-            driver_client_id = self._driver_connections.get(driver_id)
+            driver_client_id = self.driver_manager.get_driver_client_id(driver_id)
             if not driver_client_id:
                 self.logger.warning(
                     f"未找到司机 {driver_id} 的连接，无法发送通知: {message.get('type')}"
@@ -268,7 +267,7 @@ class MessageDispatcher:
                 "heartbeat", message_id, "heartbeat更新最后连接时间成功"
             )
         except Exception as e:
-            # TODO 这里如果更新不成功需要设置为faulty吗
+            # TODO 这里如果更新不成功需要设置为faulty吗 -> 不需要，只是更新last_connection_time失败而已
             return self._create_failure_response(
                 "heartbeat", message_id, f"Failed to update last connection time: {e}"
             )
@@ -289,11 +288,8 @@ class MessageDispatcher:
         message_id = data["message_id"]
 
         # 注册Driver连接（如果尚未注册）
-        if driver_id not in self._driver_connections:
-            self._driver_connections[driver_id] = client_id
-            self._client_to_driver[client_id] = driver_id
-            self._driver_active_sessions[driver_id] = []
-            self.logger.info(f"已注册Driver连接: {driver_id} -> {client_id}")
+        if not self.driver_manager.is_driver_connected(driver_id):
+            self.driver_manager.register_driver_connection(driver_id, client_id)
 
         # 检查充电点是否已注册且可用
         if not self.charging_point_manager.is_charging_point_registered(cp_id):
@@ -325,12 +321,10 @@ class MessageDispatcher:
                 cp_id=cp_id, status=Status.CHARGING.value
             )
 
-            # 记录Driver的活跃会话
-            if driver_id not in self._driver_active_sessions:
-                self._driver_active_sessions[driver_id] = []
-            self._driver_active_sessions[driver_id].append(session_id)
+            # 注意：不再需要手动维护 _driver_active_sessions
+            # 活跃会话通过 ChargingSession 数据库查询
             self.logger.debug(
-                f"记录Driver {driver_id} 的活跃会话: {self._driver_active_sessions[driver_id]}"
+                f"Driver {driver_id} 开始充电会话 {session_id}"
             )
 
             # 向Monitor发送启动充电命令
@@ -529,13 +523,11 @@ class MessageDispatcher:
                 f"充电完成: CP {cp_id}, 会话 {session_id}, 消耗电量: {energy_consumed_kwh}kWh, 费用: €{total_cost} session_data: {session_data}"
             )
 
-            # 移除Driver的活跃会话记录
-            if driver_id and driver_id in self._driver_active_sessions:
-                if session_id in self._driver_active_sessions[driver_id]:
-                    self._driver_active_sessions[driver_id].remove(session_id)
-                    self.logger.debug(
-                        f"已移除Driver {driver_id} 的会话 {session_id}"
-                    )
+            # 注意：不再需要手动从 _driver_active_sessions 移除
+            # 会话状态已在数据库中标记为 "completed"
+            self.logger.debug(
+                f"Driver {driver_id} 的会话 {session_id} 已完成"
+            )
 
             # 向Driver发送充电完成通知
             if driver_id:
@@ -833,37 +825,20 @@ class MessageDispatcher:
         3. 通知相关的充电桩
         4. 清理连接映射
         """
-        # 查找driver_id
-        driver_id = self._client_to_driver.get(client_id)
+        # 委托给DriverManager处理断开连接
+        driver_id, active_session_ids = self.driver_manager.handle_driver_disconnect(
+            client_id
+        )
+
         if not driver_id:
             self.logger.debug(f"客户端 {client_id} 不是Driver，跳过Driver断开连接处理")
             return None
 
-        self.logger.warning(f"Driver {driver_id} (客户端 {client_id}) 断开连接")
-
-        # 获取该Driver的所有活跃会话
-        active_sessions = self._driver_active_sessions.get(driver_id, [])
-
-        if active_sessions:
-            self.logger.info(
-                f"Driver {driver_id} 有 {len(active_sessions)} 个活跃会话需要停止: {active_sessions}"
-            )
-
-            # 停止所有活跃会话
-            for session_id in active_sessions.copy():  # 使用copy避免在迭代时修改列表
+        # 停止所有活跃会话
+        if active_session_ids:
+            for session_id in active_session_ids:
                 self._stop_session_due_to_driver_disconnect(session_id, driver_id)
-        else:
-            self.logger.info(f"Driver {driver_id} 没有活跃的充电会话")
 
-        # 清理连接映射
-        if driver_id in self._driver_connections:
-            del self._driver_connections[driver_id]
-        if client_id in self._client_to_driver:
-            del self._client_to_driver[client_id]
-        if driver_id in self._driver_active_sessions:
-            del self._driver_active_sessions[driver_id]
-
-        self.logger.info(f"已清理Driver {driver_id} 的所有连接信息")
         return driver_id
 
     def _stop_session_due_to_driver_disconnect(self, session_id, driver_id):
@@ -904,10 +879,8 @@ class MessageDispatcher:
                     f"会话 {session_id} 已因Driver断开而终止，CP {cp_id} 状态更新为ACTIVE"
                 )
 
-            # 从活跃会话列表中移除
-            if driver_id in self._driver_active_sessions:
-                if session_id in self._driver_active_sessions[driver_id]:
-                    self._driver_active_sessions[driver_id].remove(session_id)
+            # 注意：不再需要手动从 _driver_active_sessions 移除
+            # 会话状态已在数据库中更新
 
         except Exception as e:
             self.logger.error(f"停止会话 {session_id} 失败: {e}")

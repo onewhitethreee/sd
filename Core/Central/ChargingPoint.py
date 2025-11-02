@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.Status import Status
 from Common.Database.SqliteConnection import SqliteConnection
+from Common.Database.ChargingPointRepository import ChargingPointRepository
 
 
 class ChargingPoint:
@@ -30,6 +31,8 @@ class ChargingPoint:
         """
         self.logger = logger
         self.db_manager: SqliteConnection = db_manager
+        # 使用Repository进行数据库操作
+        self.repository = ChargingPointRepository(db_manager)
         # 连接映射：{cp_id: client_id}（仅保留连接映射，数据从数据库读取）
         self._cp_connections = {}
         # 反向映射：{client_id: cp_id}
@@ -63,8 +66,8 @@ class ChargingPoint:
 
             self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
 
-            # 保存到数据库
-            self.db_manager.insert_or_update_charging_point(
+            # 保存到数据库（使用Repository）
+            success = self.repository.insert_or_update(
                 cp_id=cp_id,
                 location=location,
                 price_per_kwh=price_per_kwh,
@@ -73,10 +76,13 @@ class ChargingPoint:
                 max_charging_rate_kw=max_charging_rate_kw,
             )
 
-            self.logger.info(
-                f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW)"
-            )
-            return True, None
+            if success:
+                self.logger.info(
+                    f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW)"
+                )
+                return True, None
+            else:
+                return False, "数据库操作失败"
 
         except Exception as e:
             self.logger.error(f"注册充电桩 {cp_id} 失败: {e}")
@@ -97,16 +103,16 @@ class ChargingPoint:
             bool: 是否成功
         """
         try:
-            # 检查充电桩是否已注册
-            if not self.db_manager.is_charging_point_registered(cp_id):
+            # 检查充电桩是否已注册（使用Repository）
+            if not self.repository.exists(cp_id):
                 self.logger.warning(f"充电桩 {cp_id} 未注册")
                 return False
 
             current_time = datetime.now(timezone.utc).isoformat()
 
-            # 只更新最后连接时间，不改变状态
+            # 只更新最后连接时间，不改变状态（使用Repository）
             # 状态由Monitor通过status_update消息管理
-            self.db_manager.update_last_connection_time(
+            self.repository.update_last_connection_time(
                 cp_id=cp_id,
                 last_connection_time=current_time,
             )
@@ -134,13 +140,13 @@ class ChargingPoint:
             bool: 是否成功
         """
         try:
-            # 检查充电桩是否已注册
-            if not self.db_manager.is_charging_point_registered(cp_id):
+            # 检查充电桩是否已注册（使用Repository）
+            if not self.repository.exists(cp_id):
                 self.logger.warning(f"充电桩 {cp_id} 未注册")
                 return False
 
-            # 更新数据库
-            self.db_manager.update_charging_point_status(cp_id=cp_id, status=status)
+            # 更新数据库（使用Repository）
+            self.repository.update_status(cp_id=cp_id, status=status)
 
             # self.logger.info(f"充电桩 {cp_id} 状态已更新为: {status}")
             return True
@@ -159,7 +165,7 @@ class ChargingPoint:
         Returns:
             dict: 充电桩信息或None
         """
-        return self.db_manager.get_charging_point(cp_id)
+        return self.repository.get_by_id(cp_id)
 
     def is_charging_point_registered(self, cp_id):
         """
@@ -171,7 +177,7 @@ class ChargingPoint:
         Returns:
             bool: 是否已注册
         """
-        return self.db_manager.is_charging_point_registered(cp_id)
+        return self.repository.exists(cp_id)
 
     def get_charging_point_status(self, cp_id):
         """
@@ -183,7 +189,7 @@ class ChargingPoint:
         Returns:
             str: 充电桩状态或None
         """
-        return self.db_manager.get_charging_point_status(cp_id)
+        return self.repository.get_status(cp_id)
 
     def get_client_id_for_charging_point(self, cp_id):
         """
@@ -225,8 +231,8 @@ class ChargingPoint:
         cp_id = self._client_to_cp[client_id]
 
         try:
-            # 更新数据库状态为离线
-            self.db_manager.update_charging_point_status(
+            # 更新数据库状态为离线（使用Repository）
+            self.repository.update_status(
                 cp_id=cp_id,
                 status=Status.DISCONNECTED.value,
             )
@@ -249,7 +255,7 @@ class ChargingPoint:
         Returns:
             list: 所有充电桩信息列表
         """
-        return self.db_manager.get_all_charging_points()
+        return self.repository.get_all()
 
     def get_available_charging_points(self):
         """
@@ -258,4 +264,4 @@ class ChargingPoint:
         Returns:
             list: 可用充电桩列表
         """
-        return self.db_manager.get_available_charging_points()
+        return self.repository.get_available()

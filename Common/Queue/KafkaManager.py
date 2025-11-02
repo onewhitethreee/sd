@@ -57,7 +57,7 @@ class KafkaManager:
 
     def send_message(self, topic, message):
         """
-        发送消息到Kafka主题
+        发送消息到Kafka主题（已弃用，使用 produce_message）
 
         Args:
             topic: 主题名称
@@ -66,23 +66,43 @@ class KafkaManager:
         Returns:
             True if successful, False otherwise
         """
+        return self.produce_message(topic, message)
+
+    def produce_message(self, topic, message, retry=3):
+        """
+        发送消息到Kafka主题（改进版，支持重试）
+
+        Args:
+            topic: 主题名称
+            message: 消息内容（字典）
+            retry: 重试次数，默认3次
+
+        Returns:
+            True if successful, False otherwise
+        """
         if not self.producer:
             self.logger.error("Kafka生产者未初始化")
             return False
 
-        try:
-            future = self.producer.send(topic, value=message)
-            record_metadata = future.get(timeout=10)
-            self.logger.debug(
-                f"消息已发送到主题 {topic}, 分区 {record_metadata.partition}, 偏移量 {record_metadata.offset}"
-            )
-            return True
-        except KafkaError as e:
-            self.logger.error(f"发送消息到Kafka失败: {e}")
-            return False
-        except Exception as e:
-            self.logger.error(f"发送消息时出错: {e}")
-            return False
+        import time
+        for attempt in range(retry):
+            try:
+                future = self.producer.send(topic, value=message)
+                record_metadata = future.get(timeout=10)
+                self.logger.debug(
+                    f"消息已发送到主题 {topic}, 分区 {record_metadata.partition}, 偏移量 {record_metadata.offset}"
+                )
+                return True
+            except KafkaError as e:
+                self.logger.warning(f"发送消息失败 (尝试 {attempt + 1}/{retry}): {e}")
+                if attempt == retry - 1:
+                    self.logger.error(f"发送消息到Kafka失败，已重试 {retry} 次")
+                    return False
+                time.sleep(1 * (attempt + 1))  # 指数退避
+            except Exception as e:
+                self.logger.error(f"发送消息时出错: {e}")
+                return False
+        return False
 
     def init_consumer(self, topic, group_id, message_callback):
         """
@@ -194,6 +214,82 @@ class KafkaManager:
         """
         return self.producer is not None and self.running
 
+    def subscribe_topic(self, topic, callback, group_id=None):
+        """
+        订阅Kafka主题（便捷方法）
+
+        Args:
+            topic: 主题名称
+            callback: 消息回调函数
+            group_id: 消费者组ID，默认为 f"{topic}_group"
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if group_id is None:
+            group_id = f"{topic}_group"
+
+        return self.init_consumer(topic, group_id, callback)
+
+    def create_topic_if_not_exists(self, topic, num_partitions=3, replication_factor=1):
+        """
+        创建Kafka主题（如果不存在）
+
+        Args:
+            topic: 主题名称
+            num_partitions: 分区数量，默认3
+            replication_factor: 副本因子，默认1
+
+        Returns:
+            True if successful or already exists, False otherwise
+        """
+        try:
+            from kafka.admin import KafkaAdminClient, NewTopic
+
+            admin = KafkaAdminClient(
+                bootstrap_servers=[self.broker_address],
+                request_timeout_ms=10000
+            )
+
+            # 检查主题是否存在
+            existing_topics = admin.list_topics()
+            if topic in existing_topics:
+                self.logger.debug(f"Topic {topic} already exists")
+                admin.close()
+                return True
+
+            # 创建主题
+            new_topic = NewTopic(
+                name=topic,
+                num_partitions=num_partitions,
+                replication_factor=replication_factor
+            )
+            admin.create_topics([new_topic], validate_only=False)
+            self.logger.info(f"Topic {topic} created successfully")
+            admin.close()
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to create topic {topic}: {e}")
+            return False
+
+    def health_check(self):
+        """
+        健康检查
+
+        Returns:
+            True if Kafka is healthy, False otherwise
+        """
+        try:
+            if self.producer:
+                # 尝试获取元数据
+                metadata = self.producer.partitions_for("__health_check__")
+                return True
+        except Exception as e:
+            self.logger.debug(f"Kafka health check failed: {e}")
+            return False
+        return False
+
 
 # Kafka主题定义
 class KafkaTopics:
@@ -211,8 +307,11 @@ class KafkaTopics:
     CHARGING_SESSION_COMPLETE = "charging_session_complete"
     
     # 司机相关主题
-    DRIVER_CHARGING_STATUS = "driver_charging_status"
-    DRIVER_CHARGING_COMPLETE = "driver_charging_complete"
+    DRIVER_CHARGE_REQUESTS = "driver_charge_requests"  # Driver → Central: 充电请求
+    DRIVER_STOP_REQUESTS = "driver_stop_requests"  # Driver → Central: 停止充电请求
+    DRIVER_CPS_REQUESTS = "driver_cps_requests"  # Driver → Central: 查询可用充电桩
+    DRIVER_CHARGING_STATUS = "driver_charging_status"  # Central → Driver: 充电状态更新
+    DRIVER_CHARGING_COMPLETE = "driver_charging_complete"  # Central → Driver: 充电完成通知
 
     # 系统主题
     SYSTEM_EVENTS = "system_events"
