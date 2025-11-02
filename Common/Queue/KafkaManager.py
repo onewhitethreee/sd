@@ -309,9 +309,29 @@ class KafkaTopics:
     DRIVER_CHARGE_REQUESTS = "driver_charge_requests"  # Driver → Central: 充电请求
     DRIVER_STOP_REQUESTS = "driver_stop_requests"  # Driver → Central: 停止充电请求
     DRIVER_CPS_REQUESTS = "driver_cps_requests"  # Driver → Central: 查询可用充电桩
-    DRIVER_CHARGING_STATUS = "driver_charging_status"  # Central → Driver: 充电状态更新
-    DRIVER_CHARGING_COMPLETE = "driver_charging_complete"  # Central → Driver: 充电完成通知
+
+
 
     # 系统主题
     SYSTEM_EVENTS = "system_events"
     SYSTEM_ALERTS = "system_alerts"
+
+    @staticmethod
+    def get_driver_response_topic(driver_id: str) -> str:
+        """
+        获取特定Driver的响应主题名称
+
+        每个Driver有独立的响应主题，确保消息隔离：
+        - 充电请求响应
+        - 停止充电响应
+        - 可用充电桩列表响应
+        - 充电状态更新
+        - 充电完成通知
+
+        Args:
+            driver_id: Driver的唯一标识符
+
+        Returns:
+            str: 该Driver的专属响应主题名称，格式为 "driver_responses_{driver_id}"
+        """
+        return f"driver_responses_{driver_id}"

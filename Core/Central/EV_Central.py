@@ -196,17 +196,8 @@ class EV_Central:
                     replication_factor=1
                 )
 
-                # Driver状态相关topics（Central -> Driver）
-                self.kafka_manager.create_topic_if_not_exists(
-                    KafkaTopics.DRIVER_CHARGING_STATUS,
-                    num_partitions=3,
-                    replication_factor=1
-                )
-                self.kafka_manager.create_topic_if_not_exists(
-                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
-                    num_partitions=1,
-                    replication_factor=1
-                )
+                # Note: Driver response topics are created dynamically per driver
+                # using KafkaTopics.get_driver_response_topic(driver_id)
 
                 self.logger.info("Kafka producer initialized successfully")
                 return True

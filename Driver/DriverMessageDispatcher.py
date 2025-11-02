@@ -55,6 +55,7 @@ class DriverMessageDispatcher:
             MessageTypes.CHARGE_REQUEST_RESPONSE: self._handle_charge_response,
             MessageTypes.STOP_CHARGING_RESPONSE: self._handle_stop_charging_response,
             MessageTypes.AVAILABLE_CPS_RESPONSE: self._handle_available_cps,
+            MessageTypes.CHARGING_HISTORY_RESPONSE: self._handle_charging_history_response,
 
             # 通知消息
             MessageTypes.CHARGING_STATUS_UPDATE: self._handle_charging_status,
@@ -243,15 +244,8 @@ class DriverMessageDispatcher:
                 self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
                 self.logger.info(f"Total Cost: €{total_cost:.2f}")
 
-                # 保存到历史记录
-                completion_record = {
-                    "session_id": session_id,
-                    "cp_id": self.driver.current_charging_session.get("cp_id"),
-                    "completion_time": datetime.now(),
-                    "energy_consumed_kwh": energy_consumed_kwh,
-                    "total_cost": total_cost,
-                }
-                self.driver.charging_history.append(completion_record)
+                # ✅ 不再保存到内存：历史记录已经在 Central 的数据库中
+                # 充电完成后，数据已经持久化在 Central，Driver 可以通过查询 API 获取
 
                 self.driver.current_charging_session = None
 
@@ -270,12 +264,43 @@ class DriverMessageDispatcher:
             message: 列表消息，包含：
                 - charging_points: 充电点列表
         """
+        import time
         self.driver.available_charging_points = message.get(MessageFields.CHARGING_POINTS, [])
+        self.driver.available_cps_cache_time = time.time()  # 更新缓存时间
+
         self.logger.info(
             f"Available charging points: {len(self.driver.available_charging_points)}"
         )
 
         self.driver._formatter_charging_points(self.driver.available_charging_points)
+
+        return True
+
+    def _handle_charging_history_response(self, message):
+        """
+        处理充电历史查询响应（CQRS Query Response）
+
+        这是对 charging_history_request 的响应，包含从数据库查询的历史记录。
+
+        Args:
+            message: 历史记录响应，包含：
+                - status: 响应状态
+                - history: 历史记录列表
+                - count: 记录数量
+        """
+        status = message.get(MessageFields.STATUS)
+
+        if status == "success":
+            history = message.get("history", [])
+            count = message.get("count", 0)
+
+            self.logger.info(f"✅ Received {count} charging history records from Central")
+
+            # 调用 Driver 的显示方法（传入查询到的数据）
+            self.driver._show_charging_history(history)
+        else:
+            error = message.get("error", "Unknown error")
+            self.logger.error(f"❌ Failed to retrieve charging history: {error}")
 
         return True
 

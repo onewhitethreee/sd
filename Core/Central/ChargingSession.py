@@ -249,3 +249,31 @@ class ChargingSession:
             dict: 会话信息或None
         """
         return self.get_charging_session(session_id)
+
+    def get_driver_charging_history(self, driver_id, limit=None):
+        """
+        获取司机的充电历史记录（包括所有已完成的会话）
+
+        Args:
+            driver_id: 司机ID
+            limit: 可选，限制返回的记录数量
+
+        Returns:
+            list: 充电历史记录列表，按时间倒序排列
+        """
+        try:
+            sessions = self.repository.get_sessions_by_driver(driver_id)
+
+            # 只返回已完成的会话（status = "completed"）
+            completed_sessions = [s for s in sessions if s.get("status") == "completed"]
+
+            # 如果指定了limit，限制返回数量
+            if limit:
+                completed_sessions = completed_sessions[:limit]
+
+            self.logger.info(f"Retrieved {len(completed_sessions)} charging history records for driver {driver_id}")
+            return completed_sessions
+
+        except Exception as e:
+            self.logger.error(f"Failed to get charging history for driver {driver_id}: {e}")
+            return []

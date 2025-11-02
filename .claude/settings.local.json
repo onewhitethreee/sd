@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python -m py_compile:*)",
       "Bash(python tests/test_driver_manager_simple.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

@@ -67,12 +67,14 @@ class MessageTypes:
     CHARGE_REQUEST = "charge_request"
     STOP_CHARGING_REQUEST = "stop_charging_request"
     AVAILABLE_CPS_REQUEST = "available_cps_request"
+    CHARGING_HISTORY_REQUEST = "charging_history_request"  # 新增：查询充电历史
 
     # Driver 接收自 Central
     CHARGE_REQUEST_RESPONSE = "charge_request_response"
     CHARGING_STATUS_UPDATE = "charging_status_update"
     STOP_CHARGING_RESPONSE = "stop_charging_response"
     AVAILABLE_CPS_RESPONSE = "available_cps_response"
+    CHARGING_HISTORY_RESPONSE = "charging_history_response"  # 新增：充电历史响应
 
     # 注意：CHARGING_DATA 和 CHARGE_COMPLETION 在上面 Engine 部分已定义
     # Driver 也会接收这两种消息（通过 Central 转发）
@@ -265,10 +267,12 @@ VALID_MESSAGE_TYPES = {
     MessageTypes.CHARGE_REQUEST,
     MessageTypes.STOP_CHARGING_REQUEST,
     MessageTypes.AVAILABLE_CPS_REQUEST,
+    MessageTypes.CHARGING_HISTORY_REQUEST,
     MessageTypes.CHARGE_REQUEST_RESPONSE,
     MessageTypes.CHARGING_STATUS_UPDATE,
     MessageTypes.STOP_CHARGING_RESPONSE,
     MessageTypes.AVAILABLE_CPS_RESPONSE,
+    MessageTypes.CHARGING_HISTORY_RESPONSE,
 
     # Admin
     MessageTypes.MANUAL_COMMAND,

@@ -41,7 +41,8 @@ class Driver:
 
             class Args:
                 broker = self.config.get_broker()
-                id_client = self.config.get_client_id()
+                import random
+                id_client = f"driver_{random.randint(0,99999)}"
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
@@ -49,10 +50,21 @@ class Driver:
         self.kafka_manager = None  # Kafka管理器
         self.driver_cli = None  # Driver命令行接口
         self.running = False
-        self.current_charging_session = None
-        self.available_charging_points = []
+
+        # ========== 状态管理（遵循 CQRS 原则）==========
+        # 实时状态：从 Kafka 订阅实时更新
+        self.current_charging_session = None  # 当前充电会话的实时状态
+
+        # 缓存数据：短期缓存，用于减少查询
+        self.available_charging_points = []  # 可用充电桩列表（短期缓存）
+        self.available_cps_cache_time = None  # 缓存时间戳
+
+        # 历史数据：不在内存中存储，通过查询 API 按需获取
+        # self.charging_history = []  # ❌ 已移除：改用远程查询
+
+        # 自动模式队列（仅用于自动模式的本地调度）
         self.service_queue = []
-        self.charging_history = []  # 记录充电历史
+
         self.lock = threading.Lock()  # 线程锁，保护共享数据
         self.message_dispatcher = DriverMessageDispatcher(
             self.logger, self
@@ -144,6 +156,44 @@ class Driver:
             self.logger.error("Kafka not connected, cannot request available CPs")
             return False
 
+    def _request_charging_history(self, limit=None):
+        """
+        请求充电历史记录（查询模式 via Kafka）
+
+        这是一个查询请求，不是事件订阅。
+        Driver 发送查询请求到 Kafka，Central 从数据库查询后返回结果。
+
+        Args:
+            limit: 可选，限制返回的历史记录数量
+
+        Returns:
+            bool: 请求是否成功发送
+        """
+        request_message = {
+            "type": "charging_history_request",
+            "message_id": str(uuid.uuid4()),
+            "driver_id": self.args.id_client,
+            "timestamp": int(time.time()),
+        }
+
+        if limit:
+            request_message["limit"] = limit
+
+        # 发送查询请求到 Kafka
+        if self.kafka_manager and self.kafka_manager.is_connected():
+            kafka_success = self.kafka_manager.produce_message(
+                KafkaTopics.DRIVER_CPS_REQUESTS,  # 使用请求主题
+                request_message
+            )
+            if kafka_success:
+                self.logger.debug(f"Charging history request sent to Kafka: {request_message['message_id']}")
+            else:
+                self.logger.error("Failed to send charging history request to Kafka")
+            return kafka_success
+        else:
+            self.logger.error("Kafka not connected, cannot request charging history")
+            return False
+
     def _load_services_from_file(self, filename="test_services.txts"):
         """从文件加载服务列表"""
         try:
@@ -170,21 +220,33 @@ class Driver:
             print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
             print()
 
-    def _show_charging_history(self):
-        """显示充电历史"""
-        if not self.charging_history:
+    def _show_charging_history(self, history_data=None):
+        """
+        显示充电历史（从远程查询获取）
+
+        Args:
+            history_data: 可选，充电历史数据列表。如果不提供，将发起查询请求
+        """
+        if history_data is None:
+            self.logger.info("Requesting charging history from Central...")
+            # 发起查询请求，响应会异步到达并由 DriverMessageDispatcher 处理
+            self._request_charging_history()
+            return
+
+        if not history_data:
             self.logger.info("No charging history available")
             return
 
         self.logger.info("\n" + "=" * 60)
         self.logger.info("Charging History")
         self.logger.info("=" * 60)
-        for i, record in enumerate(self.charging_history, 1):
-            self.logger.info(f"\n【{i}】 Session: {record['session_id']}")
-            self.logger.info(f"    CP ID: {record['cp_id']}")
-            self.logger.info(f"    Completion Time: {record['completion_time']}")
-            self.logger.info(f"    Energy: {record['energy_consumed_kwh']:.3f}kWh")
-            self.logger.info(f"    Cost: €{record['total_cost']:.2f}")
+        for i, record in enumerate(history_data, 1):
+            self.logger.info(f"\n【{i}】 Session: {record.get('session_id', 'N/A')}")
+            self.logger.info(f"    CP ID: {record.get('cp_id', 'N/A')}")
+            self.logger.info(f"    Start Time: {record.get('start_time', 'N/A')}")
+            self.logger.info(f"    End Time: {record.get('end_time', 'N/A')}")
+            self.logger.info(f"    Energy: {record.get('energy_consumed_kwh', 0):.3f}kWh")
+            self.logger.info(f"    Cost: €{record.get('total_cost', 0):.2f}")
         self.logger.info("=" * 60 + "\n")
 
     def _process_next_service(self):
@@ -195,7 +257,8 @@ class Driver:
             self._send_charge_request(cp_id)
         else:
             self.logger.info("No more services to process")
-            self._show_charging_history()
+            # 查询并显示充电历史（异步，响应会通过 Kafka 返回）
+            self._request_charging_history()
 
     def _interactive_mode(self):
         """交互模式 - 使用DriverCLI"""
@@ -252,34 +315,24 @@ class Driver:
                     num_partitions=1,
                     replication_factor=1
                 )
+                # 创建该Driver的专属响应主题（每个Driver独立主题，实现消息隔离）
+                driver_response_topic = KafkaTopics.get_driver_response_topic(self.args.id_client)
                 self.kafka_manager.create_topic_if_not_exists(
-                    KafkaTopics.DRIVER_CHARGING_STATUS,
-                    num_partitions=3,
-                    replication_factor=1
-                )
-                self.kafka_manager.create_topic_if_not_exists(
-                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
-                    num_partitions=1,
+                    driver_response_topic,
+                    num_partitions=1,  # 每个Driver只需要1个分区
                     replication_factor=1
                 )
 
-                # 初始化消费者订阅相关主题
-                # 订阅充电状态更新（实时数据）
+                # 订阅该Driver的专属响应主题
+                # 重要：使用独立主题后，不再需要应用层过滤，Kafka层已经实现了消息隔离
                 self.kafka_manager.init_consumer(
-                    KafkaTopics.DRIVER_CHARGING_STATUS,
-                    f"driver_{self.args.id_client}_status",
-                    self._handle_kafka_message,
-                )
-
-                # 订阅充电完成通知
-                self.kafka_manager.init_consumer(
-                    KafkaTopics.DRIVER_CHARGING_COMPLETE,
-                    f"driver_{self.args.id_client}_complete",
+                    driver_response_topic,
+                    f"driver_{self.args.id_client}_consumer_group",  # consumer group
                     self._handle_kafka_message,
                 )
 
                 self.logger.info("Kafka producer initialized successfully")
-                self.logger.info(f"Subscribed to topics: {KafkaTopics.DRIVER_CHARGING_STATUS}, {KafkaTopics.DRIVER_CHARGING_COMPLETE}")
+                self.logger.info(f"Subscribed to personal response topic: {driver_response_topic}")
                 return True
             else:
                 self.logger.error("Failed to initialize Kafka producer")
@@ -290,13 +343,19 @@ class Driver:
             return False
 
     def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息（改进版）"""
+        """处理来自Kafka的消息"""
         try:
             msg_type = message.get("type")
-            self.logger.debug(f"Received Kafka message: type={msg_type}")
+
+            # 由于每个Driver使用独立的响应主题，所以收到的所有消息都是属于当前Driver的
+            # 不再需要应用层过滤，Kafka主题隔离已经保证了消息的正确路由
+            self.logger.debug(f"Received Kafka message from personal topic: type={msg_type}")
 
             # 使用消息分发器处理Kafka消息
             # DriverMessageDispatcher 会处理以下类型：
+            # - charge_request_response: 充电请求响应
+            # - stop_charging_response: 停止充电响应
+            # - available_cps_response: 可用充电桩列表响应
             # - charging_status_update: 充电状态更新
             # - charging_data: 实时充电数据
             # - charge_completion: 充电完成通知
@@ -311,7 +370,7 @@ class Driver:
         self.logger.info(
             f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
         )
-        self.logger.info(f"Client ID: {self.args.id_client}")
+        self.logger.info(f"Driver ID: {self.args.id_client}")
 
         self.running = True
 

@@ -70,6 +70,7 @@ class MessageDispatcher:
             MessageTypes.CHARGE_REQUEST: self._handle_charge_request_message,
             MessageTypes.STOP_CHARGING_REQUEST: self._handle_stop_charging_request,
             MessageTypes.AVAILABLE_CPS_REQUEST: self._handle_available_cps_request,
+            MessageTypes.CHARGING_HISTORY_REQUEST: self._handle_charging_history_request,
 
             # Admin 消息
             MessageTypes.MANUAL_COMMAND: self._handle_manual_command,
@@ -105,7 +106,8 @@ class MessageDispatcher:
         try:
             response = handler(client_id, message)
             # 对于Driver请求，通过Kafka发送响应
-            if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST, MessageTypes.AVAILABLE_CPS_REQUEST]:
+            if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST,
+                           MessageTypes.AVAILABLE_CPS_REQUEST, MessageTypes.CHARGING_HISTORY_REQUEST]:
                 self._send_response_to_driver_via_kafka(client_id, response, msg_type)
             return response
         except Exception as e:
@@ -146,30 +148,32 @@ class MessageDispatcher:
         return response
 
     def _send_response_to_driver_via_kafka(self, driver_id, response, msg_type):
-        """通过Kafka向Driver发送响应"""
+        """通过Kafka向Driver发送响应（使用Driver专属主题）"""
         if not self.kafka_manager:
             self.logger.warning("Kafka manager not initialized, cannot send response to Driver")
             return
 
         try:
-            # 根据消息类型选择合适的Kafka主题
-            # 所有Driver的响应都发送到DRIVER_CHARGING_STATUS主题
-            # Driver会订阅这个主题来接收所有响应
+            # 获取该Driver的专属响应主题
+            # 每个Driver有独立的主题，实现消息隔离，避免Driver之间状态共享
+            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
+
             success = self.kafka_manager.produce_message(
-                KafkaTopics.DRIVER_CHARGING_STATUS,
+                driver_topic,
                 response
             )
             if success:
-                self.logger.debug(f"Response sent to Driver {driver_id} via Kafka: {response.get('type')}")
+                self.logger.debug(f"Response sent to Driver {driver_id} on topic {driver_topic}: {response.get('type')}")
             else:
-                self.logger.error(f"Failed to send response to Driver {driver_id} via Kafka")
+                self.logger.error(f"Failed to send response to Driver {driver_id} on topic {driver_topic}")
         except Exception as e:
-            self.logger.error(f"Error sending response to Driver via Kafka: {e}")
+            self.logger.error(f"Error sending response to Driver {driver_id} via Kafka: {e}")
 
     def _send_response_to_client(self, client_id, response, msg_type):
         """向客户端发送响应（智能选择Socket或Kafka）"""
         # 如果是Driver消息，使用Kafka
-        if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST, MessageTypes.AVAILABLE_CPS_REQUEST]:
+        if msg_type in [MessageTypes.CHARGE_REQUEST, MessageTypes.STOP_CHARGING_REQUEST,
+                       MessageTypes.AVAILABLE_CPS_REQUEST, MessageTypes.CHARGING_HISTORY_REQUEST]:
             self._send_response_to_driver_via_kafka(client_id, response, msg_type)
         # 否则使用Socket（ChargingPoint/Monitor）
         elif self.socket_server:
@@ -379,17 +383,21 @@ class MessageDispatcher:
 
         # 检查充电点是否已注册且可用
         if not self.charging_point_manager.is_charging_point_registered(cp_id):
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 "charge_request", message_id, f"充电点 {cp_id} 未注册"
             )
+            response["driver_id"] = driver_id  # 确保失败响应也包含driver_id
+            return response
 
         cp_status = self.charging_point_manager.get_charging_point_status(cp_id)
         if cp_status != Status.ACTIVE.value:
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 "charge_request",
                 message_id,
                 f"充电点 {cp_id} 当前状态为 {cp_status}，无法进行充电",
             )
+            response["driver_id"] = driver_id  # 确保失败响应也包含driver_id
+            return response
 
         # 授权充电请求
         self.logger.info(f"授权充电请求: CP {cp_id}, Driver {driver_id}")
@@ -416,19 +424,22 @@ class MessageDispatcher:
             # 向Monitor发送启动充电命令
             self._send_start_charging_to_monitor(cp_id, session_id, driver_id)
 
-            # 创建响应
+            # 创建响应（包含driver_id以便Driver能正确过滤消息）
             return self._create_success_response(
                 "charge_request",
                 message_id,
                 f"充电请求已授权，充电点 {cp_id} 开始为司机 {driver_id} 充电，会话ID: {session_id}",
                 session_id=session_id,
                 cp_id=cp_id,
+                driver_id=driver_id,  # 添加driver_id字段
             )
         except Exception as e:
             self.logger.error(f"授权充电请求失败: {e}")
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 "charge_request", message_id, f"授权失败: {e}"
             )
+            response["driver_id"] = driver_id  # 确保失败响应也包含driver_id
+            return response
 
     def _handle_stop_charging_request(self, client_id, message):
         """处理停止充电请求"""
@@ -452,9 +463,11 @@ class MessageDispatcher:
                 session_id
             )
             if not session_info:
-                return self._create_failure_response(
+                response = self._create_failure_response(
                     "stop_charging", message_id, f"充电会话 {session_id} 不存在"
                 )
+                response["driver_id"] = driver_id  # 确保失败响应也包含driver_id
+                return response
 
             # 向Monitor发送停止充电命令
             self._send_stop_charging_to_monitor(cp_id, session_id, driver_id)
@@ -465,12 +478,15 @@ class MessageDispatcher:
                 f"停止充电请求已处理，充电点 {cp_id} 已更新为活跃状态",
                 session_id=session_id,
                 cp_id=cp_id,
+                driver_id=driver_id,  # 添加driver_id字段
             )
         except Exception as e:
             self.logger.error(f"处理停止充电请求失败: {e}")
-            return self._create_failure_response(
+            response = self._create_failure_response(
                 "stop_charging", message_id, f"处理失败: {e}"
             )
+            response["driver_id"] = driver_id  # 确保失败响应也包含driver_id
+            return response
 
     def _handle_charging_data_message(self, client_id, message):
         """处理充电点在充电过程中实时发送的电量消耗和费用信息（改进版：支持幂等性）"""
@@ -778,6 +794,65 @@ class MessageDispatcher:
                 "timestamp": int(time.time()),
             }
 
+    def _handle_charging_history_request(self, client_id, message):
+        """处理充电历史查询请求"""
+        self.logger.info(f"收到来自 {client_id} 的充电历史查询请求...")
+
+        # 验证并提取字段
+        success, data = self._validate_and_extract_fields(
+            message, ["message_id", "driver_id"], "charging_history"
+        )
+        if not success:
+            return data
+
+        message_id = data["message_id"]
+        driver_id = data["driver_id"]
+        limit = message.get("limit", None)  # 可选的记录数量限制
+
+        try:
+            # 从ChargingSession获取充电历史
+            history = self.charging_session_manager.get_driver_charging_history(
+                driver_id, limit=limit
+            )
+
+            # 格式化历史记录
+            history_data = [
+                {
+                    "session_id": record["session_id"],
+                    "cp_id": record["cp_id"],
+                    "start_time": record["start_time"],
+                    "end_time": record["end_time"],
+                    "energy_consumed_kwh": round(record["energy_consumed_kwh"], 3),
+                    "total_cost": round(record["total_cost"], 2),
+                    "status": record["status"],
+                }
+                for record in history
+            ]
+
+            self.logger.info(
+                f"Found {len(history_data)} charging history records for driver {driver_id}"
+            )
+
+            return {
+                "type": "charging_history_response",
+                "message_id": message_id,
+                "status": "success",
+                "driver_id": driver_id,
+                "history": history_data,
+                "count": len(history_data),
+                "timestamp": int(time.time()),
+            }
+
+        except Exception as e:
+            self.logger.error(f"处理充电历史请求失败: {e}")
+            return {
+                "type": "charging_history_response",
+                "message_id": message_id,
+                "status": "failure",
+                "driver_id": driver_id,
+                "error": str(e),
+                "timestamp": int(time.time()),
+            }
 
     def _handle_recovery_message(self, client_id, message):
         """处理充电点在故障修复后发送的恢复通知"""
@@ -836,7 +911,7 @@ class MessageDispatcher:
             print()
 
     def _send_charging_status_to_driver(self, driver_id, charging_data):
-        """向指定司机发送充电状态更新（通过Kafka）"""
+        """向指定司机发送充电状态更新（通过Driver专属Kafka主题）"""
         message = self._build_notification_message(
             "charging_status_update",
             driver_id=driver_id,
@@ -845,21 +920,22 @@ class MessageDispatcher:
             total_cost=charging_data.get("total_cost"),
             charging_rate=charging_data.get("charging_rate"),
         )
-        # 直接通过Kafka发送，而不是Socket
+        # 发送到Driver的专属主题
         if self.kafka_manager:
+            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
             success = self.kafka_manager.produce_message(
-                KafkaTopics.DRIVER_CHARGING_STATUS,
+                driver_topic,
                 message
             )
             if success:
-                self.logger.debug(f"Charging status sent to Driver {driver_id} via Kafka")
+                self.logger.debug(f"Charging status sent to Driver {driver_id} on topic {driver_topic}")
             return success
         else:
             self.logger.warning("Kafka not available, cannot send charging status to Driver")
             return False
 
     def _send_charge_completion_to_driver(self, driver_id, completion_data):
-        """向指定司机发送充电完成通知（通过Kafka）"""
+        """向指定司机发送充电完成通知（通过Driver专属Kafka主题）"""
         message = self._build_notification_message(
             "charge_completion",
             driver_id=driver_id,
@@ -868,14 +944,15 @@ class MessageDispatcher:
             energy_consumed_kwh=completion_data.get("energy_consumed_kwh"),
             total_cost=completion_data.get("total_cost"),
         )
-        # 直接通过Kafka发送，而不是Socket
+        # 发送到Driver的专属主题
         if self.kafka_manager:
+            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
             success = self.kafka_manager.produce_message(
-                KafkaTopics.DRIVER_CHARGING_COMPLETE,
+                driver_topic,
                 message
             )
             if success:
-                self.logger.info(f"Charge completion notification sent to Driver {driver_id} via Kafka")
+                self.logger.info(f"Charge completion notification sent to Driver {driver_id} on topic {driver_topic}")
             return success
         else:
             self.logger.warning("Kafka not available, cannot send charge completion to Driver")

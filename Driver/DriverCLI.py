@@ -254,41 +254,22 @@ class DriverCLI:
             print(f"错误: 无法获取充电状态 - {e}")
 
     def _handle_history_command(self):
-        """处理history命令 - 显示充电历史"""
+        """
+        处理history命令 - 查询并显示充电历史
+
+        使用 CQRS 查询模式：
+        1. 发送查询请求到 Central (via Kafka)
+        2. Central 查询数据库
+        3. 响应异步返回并由 DriverMessageDispatcher 处理和显示
+        """
         try:
-            with self.driver.lock:
-                history = self.driver.charging_history
+            print("\n正在查询充电历史记录...")
+            print("（请稍候，响应将异步到达）\n")
 
-            if not history:
-                print("\n没有充电历史记录")
-                return
+            # 发送查询请求（异步）
+            self.driver._request_charging_history()
 
-            print("\n充电历史记录:")
-            print("=" * 80)
-
-            for i, record in enumerate(history, 1):
-                print(f"\n【{i}】 会话 {record.get('session_id', 'N/A')}")
-                print(f"    ├─ 充电桩ID:     {record.get('cp_id', 'N/A')}")
-                print(f"    ├─ 完成时间:     {record.get('completion_time', 'N/A')}")
-                print(
-                    f"    ├─ 消耗电量:     {record.get('energy_consumed_kwh', 0.0):.3f} kWh"
-                )
-                print(f"    ├─ 总费用:       {record.get('total_cost', 0.0):.2f} 元")
-
-                # 如果有持续时间信息
-                if "duration" in record:
-                    print(f"    └─ 充电时长:     {record.get('duration')}")
-
-            print("\n" + "=" * 80)
-            print(f"总计: {len(history)} 条充电记录")
-
-            # 计算总计
-            total_energy = sum(r.get("energy_consumed_kwh", 0.0) for r in history)
-            total_cost = sum(r.get("total_cost", 0.0) for r in history)
-            print(f"总消耗电量: {total_energy:.3f} kWh")
-            print(f"总费用: {total_cost:.2f} 元")
-            print("=" * 80)
+            # 注意：响应会异步到达，由 DriverMessageDispatcher._handle_charging_history_response 处理
 
         except Exception as e:
-            self.logger.error(f"获取充电历史失败: {e}")
-            print(f"错误: 无法获取充电历史 - {e}")
+            print(f"\n❌ 查询历史记录失败: {e}")
