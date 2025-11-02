@@ -1,8 +1,20 @@
 """
 Engine消息分发器
+
+负责处理来自Monitor的所有消息，包括：
+- 健康检查请求
+- 启动/停止充电命令
+
+所有处理器方法返回响应字典，通过MySocketServer自动发送回Monitor。
 """
 
 import time
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
 
 
 class EngineMessageDispatcher:
@@ -22,11 +34,11 @@ class EngineMessageDispatcher:
         self.logger = logger
         self.engine = engine  # 不使用类型注解以避免循环导入
 
-        # 消息处理器映射
+        # 消息处理器映射（使用消息类型常量）
         self.handlers = {
-            "health_check_request": self._handle_health_check,
-            "start_charging_command": self._handle_start_charging_command,
-            "stop_charging_command": self._handle_stop_charging_command,
+            MessageTypes.HEALTH_CHECK_REQUEST: self._handle_health_check,
+            MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
+            MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
         }
 
     def dispatch_message(self, message):
@@ -40,7 +52,7 @@ class EngineMessageDispatcher:
             dict: 响应消息
         """
         try:
-            msg_type = message.get("type")
+            msg_type = message.get(MessageFields.TYPE)
             self.logger.debug(f"Dispatching message type: {msg_type}")
 
             handler = self.handlers.get(msg_type)
@@ -49,12 +61,16 @@ class EngineMessageDispatcher:
             else:
                 self.logger.warning(f"Unknown message type: {msg_type}")
                 return self._create_error_response(
-                    message.get("message_id"), "Unknown message type"
+                    message.get(MessageFields.MESSAGE_ID),
+                    f"Unknown message type: {msg_type}"
                 )
 
         except Exception as e:
             self.logger.error(f"Error dispatching message: {e}")
-            return self._create_error_response(message.get("message_id"), str(e))
+            return self._create_error_response(
+                message.get(MessageFields.MESSAGE_ID),
+                str(e)
+            )
 
     def _create_error_response(self, message_id, error_msg):
         """
@@ -68,9 +84,10 @@ class EngineMessageDispatcher:
             dict: 错误响应消息
         """
         return {
-            "type": "error_response",
-            "message_id": message_id,
-            "error": error_msg,
+            MessageFields.TYPE: MessageTypes.ERROR_RESPONSE,
+            MessageFields.MESSAGE_ID: message_id,
+            MessageFields.STATUS: ResponseStatus.ERROR,
+            MessageFields.ERROR: error_msg,
         }
 
     def _handle_health_check(self, message):
@@ -85,11 +102,11 @@ class EngineMessageDispatcher:
         """
 
         response = {
-            "type": "health_check_response",
-            "message_id": message.get("message_id"),
-            "status": "success",
-            "engine_status": self.engine.get_current_status(),
-            "is_charging": self.engine.is_charging,
+            MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
+            MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+            MessageFields.STATUS: ResponseStatus.SUCCESS,
+            MessageFields.ENGINE_STATUS: self.engine.get_current_status(),
+            MessageFields.IS_CHARGING: self.engine.is_charging,
         }
 
         self.logger.debug(f"Health check response prepared: {response}")
@@ -113,29 +130,28 @@ class EngineMessageDispatcher:
         self.logger.info("Processing start charging command")
 
         # 获取会话ID（由Central通过Monitor提供）
-        session_id = message.get("session_id")
+        session_id = message.get(MessageFields.SESSION_ID)
         if not session_id:
             self.logger.error("Start charging command missing session_id")
             return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "failure",
-                "message": "Missing session_id",
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.FAILURE,
+                MessageFields.MESSAGE: "Missing session_id",
             }
-        driver_id = message.get("driver_id", "unknown_driver")
-        price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
-        max_charging_rate_kw = message.get(
-            "max_charging_rate_kw", 11.0
-        )  # 从Central获取最大充电速率
+
+        driver_id = message.get(MessageFields.DRIVER_ID, "unknown_driver")
+        price_per_kwh = message.get(MessageFields.PRICE_PER_KWH, 0.0)
+        max_charging_rate_kw = message.get(MessageFields.MAX_CHARGING_RATE_KW, 11.0)
 
         # 检查是否已在充电
         if self.engine.is_charging:
             return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "failure",
-                "message": "Already charging",
-                "session_id": self.engine.current_session["session_id"],
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.FAILURE,
+                MessageFields.MESSAGE: "Already charging",
+                MessageFields.SESSION_ID: self.engine.current_session["session_id"],
             }
 
         # 启动充电会话，传递price_per_kwh和max_charging_rate_kw
@@ -143,11 +159,11 @@ class EngineMessageDispatcher:
             driver_id, session_id, price_per_kwh, max_charging_rate_kw
         )
         return {
-            "type": "command_response",
-            "message_id": message.get("message_id"),
-            "status": "success" if success else "failure",
-            "message": "Charging started" if success else "Failed to start charging",
-            "session_id": session_id if success else None,
+            MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+            MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
+            MessageFields.MESSAGE: "Charging started" if success else "Failed to start charging",
+            MessageFields.SESSION_ID: session_id if success else None,
         }
 
     def _handle_stop_charging_command(self, message):
@@ -164,7 +180,7 @@ class EngineMessageDispatcher:
         """
         self.logger.info("Processing stop charging command")
 
-        session_id = message.get("session_id")
+        session_id = message.get(MessageFields.SESSION_ID)
 
         # 验证会话ID匹配
         if (
@@ -174,19 +190,19 @@ class EngineMessageDispatcher:
             self.engine._stop_charging_session()
             self.logger.info(f"充电会话 {session_id} 已停止")
             return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "success",
-                "message": "Charging stopped",
-                "session_id": session_id,
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.SUCCESS,
+                MessageFields.MESSAGE: "Charging stopped",
+                MessageFields.SESSION_ID: session_id,
             }
         else:
             self.logger.warning(f"会话ID不匹配或无活跃会话: {session_id}")
             return {
-                "type": "command_response",
-                "message_id": message.get("message_id"),
-                "status": "failure",
-                "message": "No active charging session or session ID mismatch",
-                "session_id": session_id,
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.FAILURE,
+                MessageFields.MESSAGE: "No active charging session or session ID mismatch",
+                MessageFields.SESSION_ID: session_id,
             }
 

@@ -1,7 +1,14 @@
 """
-你的 _process_charging_point_message 逻辑非常好，这是这个类中少有的亮点。把它提取出来，作为一个独立的 MessageDispatcher 类。
-EV_Central 的 _process_charging_point_message 只需要把消息转发给这个 MessageDispatcher。
-MessageDispatcher 内部维护 handlers 字典。
+Central 消息分发器
+
+负责处理来自 Monitor、Driver 和 Admin 的所有消息。
+这是整个系统的核心消息处理中心，协调充电点、司机和充电会话。
+
+主要职责：
+1. 处理充电点注册和状态管理
+2. 处理司机充电请求和会话管理
+3. 转发充电数据和状态更新
+4. 处理管理员命令
 """
 
 import os
@@ -17,6 +24,7 @@ from Core.Central.ChargingSession import ChargingSession
 from Core.Central.DriverManager import DriverManager
 
 from Common.Message.MessageFormatter import MessageFormatter
+from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
 from Common.Config.CustomLogger import CustomLogger
 from Common.Config.ConfigManager import ConfigManager
 from Common.Network.MySocketServer import MySocketServer
@@ -44,29 +52,64 @@ class MessageDispatcher:
         self._processed_message_ids = set()  # {message_id}
         self._max_processed_ids = 10000  # 最多保留10000个ID，防止内存无限增长
 
+        # 消息处理器映射（使用消息类型常量）
         self.handlers = {
-            "register_request": self._handle_register_message,
-            "heartbeat_request": self._handle_heartbeat_message,
-            "charge_request": self._handle_charge_request_message,
-            "stop_charging_request": self._handle_stop_charging_request,
-            "charging_data": self._handle_charging_data_message,
-            "charge_completion": self._handle_charge_completion_message,
-            "fault_notification": self._handle_fault_notification_message,
-            "status_update": self._handle_status_update_message,
-            "available_cps_request": self._handle_available_cps_request,
-            "recovery_notification": self._handle_recovery_message,
-            "manual_command": self._handle_manual_command,
+            # Monitor 消息
+            MessageTypes.REGISTER_REQUEST: self._handle_register_message,
+            MessageTypes.HEARTBEAT_REQUEST: self._handle_heartbeat_message,
+            MessageTypes.FAULT_NOTIFICATION: self._handle_fault_notification_message,
+            MessageTypes.STATUS_UPDATE: self._handle_status_update_message,
+            MessageTypes.RECOVERY_NOTIFICATION: self._handle_recovery_message,
+            MessageTypes.CHARGING_DATA: self._handle_charging_data_message,
+            MessageTypes.CHARGE_COMPLETION: self._handle_charge_completion_message,
+
+            # Driver 消息
+            MessageTypes.CHARGE_REQUEST: self._handle_charge_request_message,
+            MessageTypes.STOP_CHARGING_REQUEST: self._handle_stop_charging_request,
+            MessageTypes.AVAILABLE_CPS_REQUEST: self._handle_available_cps_request,
+
+            # Admin 消息
+            MessageTypes.MANUAL_COMMAND: self._handle_manual_command,
         }
 
     def dispatch_message(self, client_id, message):
-        handler = self.handlers.get(message.get("type"))
+        """
+        分发消息到对应的处理器
+
+        Args:
+            client_id: 客户端连接ID
+            message: 消息字典
+
+        Returns:
+            dict: 响应消息（如果需要）
+        """
+        msg_type = message.get(MessageFields.TYPE)
+        handler = self.handlers.get(msg_type)
+
         if not handler:
+            self.logger.warning(
+                f"Unknown message type: {msg_type}. "
+                f"Client: {client_id}, Message ID: {message.get(MessageFields.MESSAGE_ID)}"
+            )
             return self._create_failure_response(
-                message.get("type"), message.get("message_id", ""), "未知消息类型"
+                msg_type,
+                message.get(MessageFields.MESSAGE_ID, ""),
+                "未知消息类型"
             )
 
-        response = handler(client_id, message)
-        return response
+        try:
+            response = handler(client_id, message)
+            return response
+        except Exception as e:
+            self.logger.error(
+                f"Error handling message {msg_type} from {client_id}: {e}. "
+                f"Message: {message}"
+            )
+            return self._create_failure_response(
+                msg_type,
+                message.get(MessageFields.MESSAGE_ID, ""),
+                f"处理消息时发生错误: {str(e)}"
+            )
 
     def _create_failure_response(
         self, message_type: str, message_id, info: str
@@ -146,13 +189,13 @@ class MessageDispatcher:
         构建通用的通知消息
 
         参数:
-            message_type: 消息类型
+            message_type: 消息类型（使用 MessageTypes 常量）
             **fields: 消息字段（自动添加 message_id 和 timestamp）
         """
         message = {
-            "type": message_type,
-            "message_id": str(uuid.uuid4()),
-            "timestamp": int(time.time()),
+            MessageFields.TYPE: message_type,
+            MessageFields.MESSAGE_ID: str(uuid.uuid4()),
+            MessageFields.TIMESTAMP: int(time.time()),
         }
         message.update(fields)
         return message
