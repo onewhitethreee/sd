@@ -174,8 +174,7 @@ class KafkaManager:
 
         except Exception as e:
             self.logger.error(f"消费消息时出错: {e}")
-        finally:
-            self.logger.info(f"停止消费主题 {topic} 的消息")
+        
 
     def start(self):
         """
