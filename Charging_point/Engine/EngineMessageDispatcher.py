@@ -36,6 +36,7 @@ class EngineMessageDispatcher:
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
+            MessageTypes.INIT_CP_ID: self._handle_init_cp_id,  # ✅ 新增：处理CP_ID初始化
             MessageTypes.HEALTH_CHECK_REQUEST: self._handle_health_check,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
@@ -88,6 +89,39 @@ class EngineMessageDispatcher:
             MessageFields.MESSAGE_ID: message_id,
             MessageFields.STATUS: ResponseStatus.ERROR,
             MessageFields.ERROR: error_msg,
+        }
+
+    def _handle_init_cp_id(self, message):
+        """
+        处理CP_ID初始化请求（来自Monitor）
+
+        Args:
+            message: 初始化消息，包含：
+                - cp_id: 充电桩ID
+
+        Returns:
+            dict: 初始化响应消息
+        """
+        cp_id = message.get(MessageFields.CP_ID)
+
+        if not cp_id:
+            self.logger.error("INIT_CP_ID message missing cp_id field")
+            return {
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.FAILURE,
+                MessageFields.MESSAGE: "Missing cp_id",
+            }
+
+        # 设置CP_ID
+        success = self.engine.set_cp_id(cp_id)
+
+        return {
+            MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+            MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
+            MessageFields.MESSAGE: f"CP_ID set to {cp_id}" if success else "CP_ID already initialized",
+            MessageFields.CP_ID: cp_id,
         }
 
     def _handle_health_check(self, message):

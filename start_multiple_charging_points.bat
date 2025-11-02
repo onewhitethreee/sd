@@ -68,12 +68,12 @@ set CP_ID=CP_%CP_NUM%
 
 echo [%CP_NUM%/%NUM_CHARGING_POINTS%] 启动充电桩: %CP_ID% (Engine端口: %ENGINE_PORT%)
 
-REM 1. 启动 Engine (EV_CP_E)
+REM 1. 启动 Engine (EV_CP_E) - 不需要传递CP_ID，由Monitor提供
 echo   └─ 启动 Engine...
 start "Engine - %CP_ID%" cmd /k "set ENGINE_LISTEN_PORT=%ENGINE_PORT% && set ENGINE_LISTEN_HOST=localhost && python Charging_point\Engine\EV_CP_E.py %BROKER_ADDRESS%"
-timeout /t 1 /nobreak >nul
+timeout /t 2 /nobreak >nul
 
-REM 2. 启动 Monitor (EC_CP_M)
+REM 2. 启动 Monitor (EC_CP_M) - Monitor负责管理和传递CP_ID
 echo   └─ 启动 Monitor...
 start "Monitor - %CP_ID%" cmd /k "python Charging_point\Monitor\EC_CP_M.py localhost:%ENGINE_PORT% %CENTRAL_ADDRESS% %CP_ID%"
 

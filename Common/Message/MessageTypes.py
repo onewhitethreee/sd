@@ -34,6 +34,7 @@ class MessageTypes:
     # ==================== Engine 相关消息 ====================
 
     # Engine 接收的消息（来自 Monitor）
+    INIT_CP_ID = "init_cp_id"  # ✅ 新增：Monitor初始化Engine的CP_ID
     HEALTH_CHECK_REQUEST = "health_check_request"
     START_CHARGING_COMMAND = "start_charging_command"
     STOP_CHARGING_COMMAND = "stop_charging_command"
@@ -242,6 +243,7 @@ def validate_message_structure(message: dict) -> tuple[bool, str]:
 # 所有有效的消息类型集合
 VALID_MESSAGE_TYPES = {
     # Engine
+    MessageTypes.INIT_CP_ID,
     MessageTypes.HEALTH_CHECK_REQUEST,
     MessageTypes.START_CHARGING_COMMAND,
     MessageTypes.STOP_CHARGING_COMMAND,

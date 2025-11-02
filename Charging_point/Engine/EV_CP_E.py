@@ -51,7 +51,6 @@ class EV_CP_E:
 
             class Args:
                 broker = self.config.get_broker()
-                id_cp = self.config.get_id_cp()
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
@@ -66,6 +65,10 @@ class EV_CP_E:
 
         self.current_session = None
 
+        # ✅ CP_ID由Monitor提供，初始为None
+        self.cp_id = None
+        self._id_initialized = False  # 标记ID是否已初始化
+
         # 初始化消息分发器
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
 
@@ -73,6 +76,25 @@ class EV_CP_E:
     def is_charging(self):
         """返回当前是否正在充电（只读属性）"""
         return self.current_session is not None
+
+    def set_cp_id(self, cp_id: str):
+        """
+        设置充电桩ID（由Monitor提供）
+
+        Args:
+            cp_id: 充电桩ID
+
+        Returns:
+            bool: 设置是否成功
+        """
+        if self._id_initialized:
+            self.logger.warning(f"CP_ID already initialized as {self.cp_id}, ignoring new ID: {cp_id}")
+            return False
+
+        self.cp_id = cp_id
+        self._id_initialized = True
+        self.logger.info(f"✅ CP_ID initialized: {self.cp_id}")
+        return True
 
     def get_current_status(self):
         """返回Engine当前状态"""
@@ -336,7 +358,7 @@ class EV_CP_E:
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),  # 用于幂等性
-            "cp_id": self.args.id_cp,
+            "cp_id": self.cp_id,  # ✅ 使用从Monitor接收的cp_id
             "session_id": self.current_session["session_id"],
             "energy_consumed_kwh": round(
                 self.current_session["energy_consumed_kwh"], 3
@@ -381,7 +403,7 @@ class EV_CP_E:
         completion_message = {
             "type": "charge_completion",
             "message_id": str(uuid.uuid4()),  # 用于幂等性
-            "cp_id": self.args.id_cp,
+            "cp_id": self.cp_id,  # ✅ 使用从Monitor接收的cp_id
             "session_id": final_session_data["session_id"],
             "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),

@@ -12,10 +12,12 @@ start "EV Central" cmd /k "python Core\Central\EV_Central.py"
 timeout /t 3 /nobreak >nul
 
 echo [2/4] 启动充电桩引擎 (Charging Point Engine)...
+echo          注意：Engine的CP_ID由Monitor提供
 start "CP Engine" cmd /k "python Charging_point\Engine\EV_CP_E.py"
 timeout /t 2 /nobreak >nul
 
 echo [3/4] 启动充电桩监控 (Charging Point Monitor)...
+echo          Monitor负责管理充电桩ID
 start "CP Monitor" cmd /k "python Charging_point\Monitor\EC_CP_M.py"
 timeout /t 2 /nobreak >nul
 

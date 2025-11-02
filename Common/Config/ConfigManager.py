@@ -72,8 +72,7 @@ class ConfigManager:
     def get_ip_port_ev_m(self):
         ip_port = self.get("IP_PORT_EV_M", "localhost:6000").split(":")
         return (ip_port[0], int(ip_port[1]))
-    def get_location(self):
-        return self.get("LOCATION", "location_001")
+    
 if __name__ == "__main__":
 
     config = ConfigManager()

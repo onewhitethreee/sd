@@ -95,7 +95,7 @@ class EV_CP_M:
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "location": self.config.get_location(),
+            "location": f"Location_{random.randint(1,99999)}",
             "price_per_kwh": (random.uniform(0.15, 0.25)),
             "max_charging_rate_kw": random.uniform(7.0, 22.0),  # 模拟不同的充电桩能力
         }
@@ -141,8 +141,12 @@ class EV_CP_M:
         elif source_name == "Engine":
             if status == "CONNECTED":
                 self.logger.info(
-                    "Engine is now connected. Starting health check thread."
+                    "Engine is now connected. Initializing CP_ID..."
                 )
+                # ✅ 首先发送CP_ID初始化消息给Engine
+                self._send_cp_id_to_engine()
+
+                # 然后启动健康检查线程
                 self._start_engine_health_check_thread()
                 # Si Central también está conectado, actualizar a ACTIVE
                 if self.central_conn_mgr and self.central_conn_mgr.is_connected:
@@ -404,6 +408,30 @@ class EV_CP_M:
         else:
             self.logger.error(
                 "Failed to send status update to Central (might be disconnected internally)."
+            )
+            return False
+
+    def _send_cp_id_to_engine(self):
+        """
+        向Engine发送CP_ID初始化消息。
+        这是Monitor连接Engine后的第一个消息，用于告知Engine其充电桩ID。
+        """
+        if not self.engine_conn_mgr.is_connected:
+            self.logger.warning("Not connected to Engine, cannot send CP_ID.")
+            return False
+
+        init_message = {
+            "type": "init_cp_id",
+            "message_id": str(uuid.uuid4()),
+            "cp_id": self.args.id_cp,
+        }
+
+        if self.engine_conn_mgr.send(init_message):
+            self.logger.info(f"✅ CP_ID '{self.args.id_cp}' sent to Engine for initialization.")
+            return True
+        else:
+            self.logger.error(
+                "Failed to send CP_ID to Engine (might be disconnected internally)."
             )
             return False
 
