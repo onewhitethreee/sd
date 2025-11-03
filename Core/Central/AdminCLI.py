@@ -193,9 +193,9 @@ class AdminCLI:
                 return
 
             print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+                f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} "
             )
-            print("-" * 100)
+            print("-" * 85)
 
             for cp in charging_points:
                 cp_id = cp.get("cp_id", "N/A")
@@ -225,9 +225,9 @@ class AdminCLI:
                 return
 
             print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} "
             )
-            print("-" * 85)
+            print("-" * 70)
 
             for cp in charging_points:
                 cp_id = cp.get("cp_id", "N/A")
@@ -255,9 +255,9 @@ class AdminCLI:
                 return
 
             print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}"
+                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} "
             )
-            print("-" * 85)
+            print("-" * 70)
 
             for cp in active_cps:
                 cp_id = cp.get("cp_id", "N/A")

@@ -338,9 +338,14 @@ class MessageDispatcher:
         self.logger.info(f"使用 AdminCLI 的 'authorize <cp_id>' 命令来批准")
 
         # 返回pending状态响应（不是成功，而是等待批准）
-        return self._create_success_response(
-            "auth_request", message_id, "认证请求已收到，等待管理员批准"
-        )
+        # 注意：对于auth_request，我们返回pending状态，不是成功
+        return {
+            MessageFields.TYPE: MessageTypes.AUTH_RESPONSE,  # 使用AUTH_RESPONSE类型
+            MessageFields.MESSAGE_ID: message_id,
+            MessageFields.STATUS: "pending",  # pending状态，等待管理员批准
+            MessageFields.MESSAGE: "认证请求已收到，等待管理员批准",
+            MessageFields.CP_ID: cp_id,
+        }
 
     def authorize_charging_point(self, cp_id: str) -> bool:
         """
@@ -361,12 +366,14 @@ class MessageDispatcher:
         self.logger.info(f"充电点 {cp_id} 已获得授权")
 
         # 向Monitor发送授权响应
-        auth_response = self._create_success_response(
-            "auth_response",
-            auth_info["message_id"],
-            f"充电点 {cp_id} 已获得授权，现在可以进行注册"
-        )
-        auth_response[MessageFields.CP_ID] = cp_id
+        # 注意：直接使用消息类型常量，不添加_response后缀
+        auth_response = {
+            MessageFields.TYPE: MessageTypes.AUTH_RESPONSE,
+            MessageFields.MESSAGE_ID: auth_info["message_id"],
+            MessageFields.STATUS: ResponseStatus.SUCCESS,
+            MessageFields.MESSAGE: f"充电点 {cp_id} 已获得授权，现在可以进行注册",
+            MessageFields.CP_ID: cp_id,
+        }
 
         self._send_message_to_client(auth_info["client_id"], auth_response)
         self.logger.info(f"授权响应已发送给充电点 {cp_id}")
@@ -443,12 +450,22 @@ class MessageDispatcher:
         message_id = data["message_id"]
 
         # 检查充电桩是否已注册
+        # 如果未注册，但正在待授权列表中，允许心跳通过（用于保持连接）
         if not self.charging_point_manager.is_charging_point_registered(cp_id):
-            return self._create_failure_response(
-                "heartbeat",
-                message_id,
-                f"Charging point {cp_id} is not registered with heartbeat message.",
-            )
+            if cp_id in self._pending_authorizations:
+                # 充电点在待授权列表中，允许心跳通过但不更新连接信息
+                self.logger.debug(
+                    f"收到来自待授权充电点 {cp_id} 的心跳，等待管理员批准"
+                )
+                return self._create_success_response(
+                    "heartbeat", message_id, "心跳已收到，等待授权后注册"
+                )
+            else:
+                return self._create_failure_response(
+                    "heartbeat",
+                    message_id,
+                    f"Charging point {cp_id} is not registered with heartbeat message.",
+                )
 
         try:
             # 更新连接信息

@@ -55,6 +55,9 @@ class MonitorMessageDispatcher:
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
             MessageTypes.RESUME_CP_COMMAND: self._handle_resume_cp_command,
+            MessageTypes.STATUS_UPDATE_RESPONSE: self._handle_status_update_response,
+            MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
+            MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
         }
 
         # 来自Engine的消息处理器（使用消息类型常量）
@@ -169,17 +172,23 @@ class MonitorMessageDispatcher:
 
         Args:
             message: 心跳响应消息，包含：
-                - status: "success" 或 "failure"
+                - status: "success" 或 "failure" 或 "pending"
         """
         self.logger.debug(f"Received heartbeat response from Central: {message}")
 
         status = message.get(MessageFields.STATUS)
+        info = message.get(MessageFields.MESSAGE, "")
+        
         if status == ResponseStatus.SUCCESS:
             self.logger.debug("Monitor成功接收心跳响应")
+        elif status == "pending":
+            # 充电点正在等待授权，这是正常的
+            self.logger.debug(f"心跳已收到，等待授权: {info}")
         else:
+            # 只有在status为failure时才警告
             self.logger.warning(
                 f"Heartbeat not acknowledged by Central. "
-                f"Status field: '{status}' (expected: '{ResponseStatus.SUCCESS}'). "
+                f"Status field: '{status}' (expected: '{ResponseStatus.SUCCESS}' or 'pending'). "
                 f"Full message: {message}"
             )
 
@@ -257,6 +266,45 @@ class MonitorMessageDispatcher:
             self.logger.error("Engine连接不可用，无法转发恢复命令")
             return False
 
+    def _handle_status_update_response(self, message):
+        """
+        处理来自Central的状态更新响应
+        
+        Args:
+            message: 状态更新响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+                - reason: 失败原因（如果失败）
+        """
+        self.logger.info(f"Received status update response from Central: {message}")
+        return True
+    def _handle_charging_data_response(self, message):
+        """
+        处理来自Central的充电数据响应
+        
+        Args:
+            message: 充电数据响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+                - reason: 失败原因（如果失败）
+                - charging_data: 充电数据
+        """
+        self.logger.info(f"Received charging data response from Central: {message}")
+        return True
+    def _handle_charge_completion_response(self, message):
+        """
+        处理来自Central的充电完成响应
+        
+        Args:
+            message: 充电完成响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+                - reason: 失败原因（如果失败）
+                - charge_completion: 充电完成数据
+        """
+        self.logger.info(f"Received charge completion response from Central: {message}")
+        return True
+
     # ==================== Engine消息处理器 ====================
 
     def _handle_health_check_response(self, message):
@@ -286,6 +334,16 @@ class MonitorMessageDispatcher:
             # Monitor OK + Engine KO = FAULTY
             self.logger.warning("Engine reports FAULTY status.")
             self.monitor.update_cp_status("FAULTY")
+        elif engine_status == "CHARGING":
+            # Engine está cargando - esto es normal y significa que está funcionando bien
+            self.logger.debug("Engine reports CHARGING status.")
+            # Si está cargando, el CP debe estar en estado CHARGING
+            if self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected:
+                self.monitor.update_cp_status("CHARGING")
+            else:
+                # Si Central desconectado mientras carga, poner en FAULTY
+                self.logger.warning("Engine is CHARGING but Central is not connected")
+                self.monitor.update_cp_status("FAULTY")
         elif engine_status == "ACTIVE":
             self.logger.debug("Engine reports ACTIVE status.")
             # Monitor OK + Engine OK = ACTIVE (solo si Central también conectado)
