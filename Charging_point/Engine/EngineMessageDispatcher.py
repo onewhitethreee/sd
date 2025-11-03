@@ -201,9 +201,13 @@ class EngineMessageDispatcher:
         """
         处理停止充电命令
 
+        支持两种停止模式：
+        1. 正常停止：提供具体的session_id，验证后停止
+        2. 紧急停止：session_id为None，强制停止当前任何活跃会话
+
         Args:
             message: 停止充电命令消息，包含：
-                - session_id: 充电会话ID
+                - session_id: 充电会话ID（可以为None表示紧急停止）
                 - cp_id: 充电点ID
 
         Returns:
@@ -213,7 +217,30 @@ class EngineMessageDispatcher:
 
         session_id = message.get(MessageFields.SESSION_ID)
 
-        # 验证会话ID匹配
+        # 情况1: session_id为None - 紧急停止（例如FAULTY状态或Monitor断开）
+        if session_id is None:
+            if self.engine.current_session:
+                stopped_session_id = self.engine.current_session["session_id"]
+                self.engine._stop_charging_session()
+                self.logger.info(f"紧急停止充电会话: {stopped_session_id} (session_id=None)")
+                return {
+                    MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                    MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                    MessageFields.STATUS: ResponseStatus.SUCCESS,
+                    MessageFields.MESSAGE: f"Emergency stop: charging session {stopped_session_id} stopped",
+                    MessageFields.SESSION_ID: stopped_session_id,
+                }
+            else:
+                self.logger.debug("紧急停止命令收到，但没有活跃会话")
+                return {
+                    MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                    MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                    MessageFields.STATUS: ResponseStatus.SUCCESS,
+                    MessageFields.MESSAGE: "No active session to stop",
+                    MessageFields.SESSION_ID: None,
+                }
+
+        # 情况2: 提供了具体的session_id - 验证后停止
         if (
             self.engine.current_session
             and self.engine.current_session["session_id"] == session_id

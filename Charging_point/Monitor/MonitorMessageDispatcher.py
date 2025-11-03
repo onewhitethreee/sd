@@ -152,7 +152,11 @@ class MonitorMessageDispatcher:
         if status == ResponseStatus.SUCCESS:
             self.logger.debug("Monitor成功接收心跳响应")
         else:
-            self.logger.warning("Heartbeat not acknowledged by Central")
+            self.logger.warning(
+                f"Heartbeat not acknowledged by Central. "
+                f"Status field: '{status}' (expected: '{ResponseStatus.SUCCESS}'). "
+                f"Full message: {message}"
+            )
 
         return True
 
