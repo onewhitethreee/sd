@@ -313,8 +313,13 @@ class EV_CP_E:
         return True
 
     def _charging_process(self, session_id_to_track: str):
-        """充电过程模拟"""
+        """充电过程模拟（30秒后自动停止）"""
         self.logger.info(f"Charging process started for session {session_id_to_track}.")
+
+        # 记录充电开始时间用于30秒自动停止
+        charging_start_time = time.time()
+        MAX_CHARGING_DURATION = 30  # 30秒后自动停止
+
         # 确保线程仅针对其启动的会话运行
         while (
             self.is_charging
@@ -327,6 +332,15 @@ class EV_CP_E:
                 if not self.is_charging or not self.current_session:
                     break
 
+                # 检查是否已经充电30秒
+                elapsed_time = time.time() - charging_start_time
+                if elapsed_time >= MAX_CHARGING_DURATION:
+                    self.logger.info(
+                        f"Session {session_id_to_track} reached {MAX_CHARGING_DURATION} seconds - auto-stopping (charging complete)"
+                    )
+                    self._stop_charging_session()
+                    break
+
                 self.current_session["energy_consumed_kwh"] += 0.01
                 self.current_session["total_cost"] = (
                     self.current_session["energy_consumed_kwh"]
@@ -334,7 +348,7 @@ class EV_CP_E:
                 )
                 self._send_charging_data()  # 发送充电数据到Monitor和Kafka
                 self.logger.debug(
-                    f"Session {session_id_to_track} progress: {self.current_session['energy_consumed_kwh']:.3f} kWh, €{self.current_session['total_cost']:.2f}"
+                    f"Session {session_id_to_track} progress: {self.current_session['energy_consumed_kwh']:.3f} kWh, €{self.current_session['total_cost']:.2f}, elapsed: {elapsed_time:.1f}s/{MAX_CHARGING_DURATION}s"
                 )
             except Exception as e:
                 self.logger.error(
