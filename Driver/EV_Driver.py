@@ -6,7 +6,6 @@ import sys
 import os
 import time
 import uuid
-import json
 import threading
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
@@ -194,7 +193,7 @@ class Driver:
             self.logger.error("Kafka not connected, cannot request charging history")
             return False
 
-    def _load_services_from_file(self, filename="test_services.txts"):
+    def _load_services_from_file(self, filename="test_services.txt"):
         """从文件加载服务列表"""
         try:
             if not os.path.exists(filename):

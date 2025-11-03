@@ -76,18 +76,28 @@ class EV_CP_M:
         # 注册确认标志（修复竞态条件）
         self._registration_confirmed = False
 
+        # 认证标志：是否已通过认证
+        self._authorized = False
+
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
     def _register_with_central(self):
         """
         和central注册一个charging point (现在由 ConnectionManager 发送)。
+        
+        注意：必须先通过认证才能注册。
         """
         if not self.central_conn_mgr.is_connected:
             self.logger.warning("Not connected to Central, can't register.")
             return False
         if not self.engine_conn_mgr.is_connected:
             self.logger.warning("Not connected to Engine, can't register.")
+            return False
+
+        # 检查是否已通过认证
+        if not self._authorized:
+            self.logger.warning("Not authorized yet, cannot register. Please authenticate first.")
             return False
 
         # 重置注册确认标志，等待 Central 响应
@@ -119,9 +129,13 @@ class EV_CP_M:
         self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
             if status == "CONNECTED":
-                self.logger.info("Central is now connected. Attempting to register...")
-                # 确保注册在 Central 连接后进行
-                self._register_with_central()
+                self.logger.info("Central is now connected. Attempting to authenticate...")
+                # 先发送认证请求，只有认证成功后才能注册
+                if not self._authorized:
+                    self.authenticate_charging_point()
+                else:
+                    # 如果已经授权，直接尝试注册
+                    self._register_with_central()
                 # 启动 Central 的心跳线程
                 self._start_heartbeat_thread()
                 # Solo establecer ACTIVE si Engine también está conectado y funcionando
@@ -287,10 +301,21 @@ class EV_CP_M:
         )
         self._heartbeat_thread.start()
 
-    # TODO 这里没有调用
     def authenticate_charging_point(self):
         """
-        认证充电点，现在通过 ConnectionManager.send() 发送。
+        认证充电点（TODO: 需要实现）
+        
+        根据用户需求：
+        1. 在注册时，应该发送认证请求给Central
+        2. Central需要手动同意后才能授权使用
+        3. 只有经过认证的充电点才能正常使用
+        
+        当前状态：方法已定义，但尚未在注册流程中调用
+        实现计划：
+        - 在 _register_with_central() 方法中，先调用此方法发送认证请求
+        - 等待Central的认证响应（auth_response）
+        - 只有认证成功后，才发送注册请求
+        - 如果认证失败，Monitor应该等待或重试
         """
         self.logger.info(f"Authenticating charging point {self.args.id_cp}")
         if not self.central_conn_mgr.is_connected:

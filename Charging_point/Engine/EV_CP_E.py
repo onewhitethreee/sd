@@ -7,7 +7,6 @@ import os
 import time
 import threading
 import uuid
-import random
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type

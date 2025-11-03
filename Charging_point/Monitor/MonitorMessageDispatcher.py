@@ -49,14 +49,12 @@ class MonitorMessageDispatcher:
 
         # 来自Central的消息处理器（使用消息类型常量）
         self.central_handlers = {
+            MessageTypes.AUTH_RESPONSE: self._handle_auth_response,
             MessageTypes.REGISTER_RESPONSE: self._handle_register_response,
             MessageTypes.HEARTBEAT_RESPONSE: self._handle_heartbeat_response,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
             MessageTypes.RESUME_CP_COMMAND: self._handle_resume_cp_command,
-            MessageTypes.STATUS_UPDATE_RESPONSE: self._handle_status_update_response,
-            MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
-            MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
         }
 
         # 来自Engine的消息处理器（使用消息类型常量）
@@ -109,6 +107,33 @@ class MonitorMessageDispatcher:
             return False
 
     # ==================== Central消息处理器 ====================
+
+    def _handle_auth_response(self, message):
+        """
+        处理来自Central的认证响应
+
+        Args:
+            message: 认证响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+                - cp_id: 充电点ID
+        """
+        self.logger.info(f"Received authentication response from Central: {message}")
+
+        status = message.get(MessageFields.STATUS)
+        if status == ResponseStatus.SUCCESS:
+            self.logger.info("✅ Authentication successful. Now can register.")
+            # 设置授权标志
+            self.monitor._authorized = True
+            # 认证成功后，自动尝试注册
+            self.monitor._register_with_central()
+        else:
+            reason = message.get(MessageFields.REASON, message.get(MessageFields.MESSAGE, "Unknown"))
+            self.logger.error(f"❌ Authentication failed: {reason}")
+            self.logger.info("Waiting for administrator to authorize this charging point...")
+            self.monitor._authorized = False
+
+        return True
 
     def _handle_register_response(self, message):
         """
@@ -231,45 +256,6 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用，无法转发恢复命令")
             return False
-
-
-    def _handle_status_update_response(self, message):
-        """
-        处理来自Central的状态更新响应
-
-        Args:
-            message: 状态更新响应消息，包含：
-                - status: "success" 或 "failure"
-                - message: 响应描述
-        """
-        self.logger.debug(f"Received status update response from Central: {message}")
-
-        status = message.get(MessageFields.STATUS)
-        if status == ResponseStatus.SUCCESS:
-            self.logger.debug("Status update acknowledged by Central.")
-        else:
-            self.logger.warning("Status update not acknowledged by Central.")
-
-        return True
-
-    def _handle_charging_data_response(self, message):
-        """
-        处理来自Central的充电数据响应
-
-        Args:
-            message: 充电数据响应消息，包含：
-                - status: "success" 或 "failure"
-                - message: 响应描述
-        """
-        self.logger.debug(f"Received charging data response from Central: {message}")
-
-        status = message.get(MessageFields.STATUS)
-        if status == ResponseStatus.SUCCESS:
-            self.logger.debug("Charging data acknowledged by Central.")
-        else:
-            self.logger.warning("Charging data not acknowledged by Central.")
-
-        return True
 
     # ==================== Engine消息处理器 ====================
 

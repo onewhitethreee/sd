@@ -5,8 +5,6 @@ Módulo que representa la central de control de toda la solución. Implementa la
 import sys
 import os
 import time
-import uuid
-from datetime import datetime, timezone
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type

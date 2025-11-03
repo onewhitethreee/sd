@@ -57,6 +57,7 @@ class MessageTypes:
     RECOVERY_NOTIFICATION = "recovery_notification"
 
     # Monitor 接收自 Central
+    AUTH_RESPONSE = "auth_response"
     REGISTER_RESPONSE = "register_response"
     HEARTBEAT_RESPONSE = "heartbeat_response"
     STOP_CP_COMMAND = "stop_cp_command"
@@ -258,6 +259,7 @@ VALID_MESSAGE_TYPES = {
     MessageTypes.FAULT_NOTIFICATION,
     MessageTypes.STATUS_UPDATE,
     MessageTypes.RECOVERY_NOTIFICATION,
+    MessageTypes.AUTH_RESPONSE,
     MessageTypes.REGISTER_RESPONSE,
     MessageTypes.HEARTBEAT_RESPONSE,
     MessageTypes.STOP_CP_COMMAND,

@@ -13,7 +13,6 @@ Central 消息分发器
 
 import os
 import sys
-from datetime import datetime, timezone
 import time
 import uuid
 
@@ -55,9 +54,13 @@ class MessageDispatcher:
         self._processed_message_ids = set()  # {message_id}
         self._max_processed_ids = 10000  # 最多保留10000个ID，防止内存无限增长
 
+        # 待授权的充电点列表：{cp_id: {client_id, timestamp, message_id}}
+        self._pending_authorizations = {}
+
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
             # Monitor 消息
+            MessageTypes.AUTH_REQUEST: self._handle_auth_request,
             MessageTypes.REGISTER_REQUEST: self._handle_register_message,
             MessageTypes.HEARTBEAT_REQUEST: self._handle_heartbeat_message,
             MessageTypes.FAULT_NOTIFICATION: self._handle_fault_notification_message,
@@ -296,6 +299,97 @@ class MessageDispatcher:
             self.logger.error(f"发送命令到Monitor失败: {e}")
             return False
 
+    def _handle_auth_request(self, client_id, message):
+        """
+        处理充电点的认证请求
+        
+        认证请求会被添加到待授权列表，等待管理员手动批准。
+        只有经过授权的充电点才能进行注册。
+        """
+        self.logger.info(f"收到来自 {client_id} 的认证请求...")
+
+        # 验证并提取字段
+        success, data = self._validate_and_extract_fields(
+            message, ["id", "message_id"], "auth_request"
+        )
+        if not success:
+            return data  # 返回错误响应
+
+        cp_id = data["id"]
+        message_id = data["message_id"]
+
+        # 检查是否已经授权
+        if cp_id in self._pending_authorizations:
+            self.logger.warning(f"充电点 {cp_id} 已存在待授权请求，等待管理员批准")
+            return self._create_failure_response(
+                "auth_request", message_id, "认证请求已存在，等待管理员批准"
+            )
+
+        # 添加到待授权列表
+        self._pending_authorizations[cp_id] = {
+            "client_id": client_id,
+            "timestamp": time.time(),
+            "message_id": message_id,
+        }
+
+        self.logger.info(
+            f"充电点 {cp_id} 的认证请求已添加到待授权列表，等待管理员批准"
+        )
+        self.logger.info(f"使用 AdminCLI 的 'authorize <cp_id>' 命令来批准")
+
+        # 返回pending状态响应（不是成功，而是等待批准）
+        return self._create_success_response(
+            "auth_request", message_id, "认证请求已收到，等待管理员批准"
+        )
+
+    def authorize_charging_point(self, cp_id: str) -> bool:
+        """
+        授权充电点（由AdminCLI调用）
+        
+        Args:
+            cp_id: 充电点ID
+            
+        Returns:
+            bool: 是否成功授权
+        """
+        if cp_id not in self._pending_authorizations:
+            self.logger.warning(f"充电点 {cp_id} 不在待授权列表中")
+            return False
+
+        # 从待授权列表中移除
+        auth_info = self._pending_authorizations.pop(cp_id)
+        self.logger.info(f"充电点 {cp_id} 已获得授权")
+
+        # 向Monitor发送授权响应
+        auth_response = self._create_success_response(
+            "auth_response",
+            auth_info["message_id"],
+            f"充电点 {cp_id} 已获得授权，现在可以进行注册"
+        )
+        auth_response[MessageFields.CP_ID] = cp_id
+
+        self._send_message_to_client(auth_info["client_id"], auth_response)
+        self.logger.info(f"授权响应已发送给充电点 {cp_id}")
+
+        return True
+
+    def get_pending_authorizations(self) -> list:
+        """
+        获取待授权的充电点列表（供AdminCLI显示）
+        
+        Returns:
+            list: 待授权充电点列表 [{cp_id, client_id, timestamp}]
+        """
+        return [
+            {
+                "cp_id": cp_id,
+                "client_id": info["client_id"],
+                "timestamp": info["timestamp"],
+                "pending_time": time.time() - info["timestamp"],
+            }
+            for cp_id, info in self._pending_authorizations.items()
+        ]
+
     def _handle_register_message(self, client_id, message):
         """专门处理充电桩的注册请求"""
         self.logger.info(f"正在处理来自 {client_id} 的注册请求...")
@@ -311,6 +405,12 @@ class MessageDispatcher:
         location = data["location"]
         price_per_kwh = data["price_per_kwh"]
         message_id = data["message_id"]
+
+        # 检查是否已经授权
+        if cp_id in self._pending_authorizations:
+            return self._create_failure_response(
+                "register", message_id, f"充电点 {cp_id} 尚未获得授权，请先通过认证"
+            )
 
         # 注册充电桩
         success, error_msg = self.charging_point_manager.register_charging_point(

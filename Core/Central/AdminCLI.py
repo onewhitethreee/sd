@@ -76,6 +76,10 @@ class AdminCLI:
   list available          - 列出所有可用的充电桩
   list active             - 列出所有活跃的充电桩
   list sessions           - 列出所有充电会话
+  list pending            - 列出待授权的充电点
+
+  authorize <cp_id>       - 授权指定的充电点（允许注册）
+  authorize all           - 授权所有待授权的充电点
 
   stop <cp_id>           - 停止指定的充电桩
   stop all               - 停止所有充电桩
@@ -116,6 +120,10 @@ class AdminCLI:
             elif cmd == "list":
                 subcommand = parts[1] if len(parts) > 1 else None
                 self._handle_list_command(subcommand)
+
+            elif cmd == "authorize":
+                cp_id = parts[1] if len(parts) > 1 else None
+                self._handle_authorize_command(cp_id)
 
             elif cmd == "stop":
                 if len(parts) < 2:
@@ -168,6 +176,8 @@ class AdminCLI:
             self._list_available_charging_points()
         elif subcommand == "active":
             self._list_active_charging_points()
+        elif subcommand == "pending":
+            self._list_pending_authorizations()
         else:
             self._list_all_charging_points()
 
@@ -425,6 +435,65 @@ class AdminCLI:
         except Exception as e:
             self.logger.error(f"获取充电会话信息失败: {e}")
             print(f"错误: 无法获取充电会话信息 - {e}")
+
+    def _handle_authorize_command(self, cp_id: str):
+        """处理授权命令"""
+        if not cp_id:
+            print("错误: 请指定充电点ID或使用 'all'")
+            print("用法: authorize <cp_id> 或 authorize all")
+            return
+
+        try:
+            if cp_id.lower() == "all":
+                # 授权所有待授权的充电点
+                pending = self.central.message_dispatcher.get_pending_authorizations()
+                if not pending:
+                    print("没有待授权的充电点")
+                    return
+
+                authorized_count = 0
+                for auth_info in pending:
+                    cp_id_to_auth = auth_info["cp_id"]
+                    if self.central.message_dispatcher.authorize_charging_point(cp_id_to_auth):
+                        authorized_count += 1
+                        print(f"✅ 已授权充电点: {cp_id_to_auth}")
+
+                print(f"\n成功授权 {authorized_count} 个充电点")
+            else:
+                # 授权指定的充电点
+                if self.central.message_dispatcher.authorize_charging_point(cp_id):
+                    print(f"✅ 充电点 {cp_id} 已获得授权")
+                else:
+                    print(f"❌ 无法授权充电点 {cp_id}（可能不在待授权列表中）")
+
+        except Exception as e:
+            self.logger.error(f"授权充电点失败: {e}")
+            print(f"错误: 无法授权充电点 - {e}")
+
+    def _list_pending_authorizations(self):
+        """列出待授权的充电点"""
+        try:
+            pending = self.central.message_dispatcher.get_pending_authorizations()
+
+            if not pending:
+                print("当前没有待授权的充电点")
+                return
+
+            print("\n待授权的充电点:")
+            print("=" * 60)
+            for auth_info in pending:
+                cp_id = auth_info["cp_id"]
+                client_id = auth_info["client_id"]
+                pending_time = auth_info["pending_time"]
+                print(f"  充电点ID:       {cp_id}")
+                print(f"  客户端ID:      {client_id}")
+                print(f"  等待时间:      {pending_time:.1f} 秒")
+                print(f"  操作:          使用 'authorize {cp_id}' 命令授权")
+                print("-" * 60)
+
+        except Exception as e:
+            self.logger.error(f"获取待授权列表失败: {e}")
+            print(f"错误: 无法获取待授权列表 - {e}")
 
     def _handle_stats_command(self):
         """处理显示统计信息命令"""
