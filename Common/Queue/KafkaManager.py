@@ -139,7 +139,7 @@ class KafkaManager:
             consumer_thread.start()
             self.consumer_threads[topic] = consumer_thread
 
-            self.logger.info(f"Kafka消费者初始化成功: 主题={topic}, 组ID={group_id}")
+            self.logger.debug(f"Kafka消费者初始化成功: 主题={topic}, 组ID={group_id}")
             return True
 
         except Exception as e:

@@ -59,13 +59,23 @@ class EngineCLI:
             print(f"  Cost: €{self.engine.current_session['total_cost']:.2f}")
 
         print("-" * 60)
-        print("  [1] Simulate vehicle connection (Start charging)")
-        print("  [2] Simulate vehicle disconnection (Stop charging)")
+        print("  MANUAL CHARGING (from CP, sends request to Central):")
+        print("  [1] Request charging (manual charge_request to Central)")
+        print("  [2] Stop charging (simulate vehicle unplug)")
+        print()
+        print("  ENGINE HARDWARE SIMULATION:")
         print("  [3] Simulate Engine failure (Send KO to Monitor)")
         print("  [4] Simulate Engine recovery (Send OK to Monitor)")
+        print()
+        print("  STATUS:")
         print("  [5] Show current status")
+        print()
         print("  [0] Exit menu (Engine continues running)")
         print("=" * 60)
+        print()
+        print("  NOTE: Option [1] simulates manual charging from the CP itself")
+        print("        (as specified in PDF page 6). Central will handle the")
+        print("        session creation and use the CP's configured price.")
 
     def _run_cli(self):
         """Ejecuta el loop principal del CLI"""
@@ -83,9 +93,9 @@ class EngineCLI:
 
                 # Procesar comandos
                 if user_input == "1":
-                    self._handle_connect_vehicle()
+                    self._handle_vehicle_connected()
                 elif user_input == "2":
-                    self._handle_disconnect_vehicle()
+                    self._handle_vehicle_disconnected()
                 elif user_input == "3":
                     self._handle_simulate_failure()
                 elif user_input == "4":
@@ -106,12 +116,22 @@ class EngineCLI:
                 self.logger.error(f"Error in CLI: {e}", exc_info=True)
                 time.sleep(0.5)
 
-    def _handle_connect_vehicle(self):
-        """Maneja la simulación de conexión del vehículo (enchufar)"""
+    def _handle_vehicle_connected(self):
+        """
+        Simula que un vehículo se conecta físicamente al CP y solicita carga MANUALMENTE.
+
+        Según PDF página 6:
+        "Suministrar: proporcionar un servicio de recarga de dos formas:
+         - Manualmente mediante una opción en el propio punto.
+         - A través de una petición proviniente de la aplicación del conductor"
+
+        Este método implementa la opción MANUAL: envía un charge_request a Central
+        como lo haría un Driver, pero iniciado desde el propio CP.
+        """
         print("\n" + "-" * 60)
 
         if not self.engine.cp_id:
-            print("❌ Cannot connect vehicle: CP_ID not initialized yet")
+            print("❌ Cannot start charging: CP_ID not initialized yet")
             print("   Wait for Monitor to provide CP_ID")
             print("-" * 60)
             return
@@ -123,14 +143,63 @@ class EngineCLI:
             print("-" * 60)
             return
 
-        # En un sistema real, esto se activaría cuando Central envíe start_charging_command
-        # Aquí solo mostramos que el usuario "enchufó" el vehículo
-        print("🔌 SIMULATING: Driver plugs vehicle into CP")
-        print("   Waiting for Central authorization to start charging...")
-        print("   (Charging will start automatically when Central sends command)")
+        # Solicitar Driver ID para la sesión manual
+        print("🔌 MANUAL CHARGING REQUEST")
+        print("   (Sends charge_request to Central, like a Driver would)")
+        print()
+
+        driver_id = input("   Enter Driver ID (or press ENTER for 'manual_driver'): ").strip()
+        if not driver_id:
+            driver_id = "manual_driver"
+
+        print()
+        print(f"   Driver ID: {driver_id}")
+        print(f"   CP ID: {self.engine.cp_id}")
+        print()
+        print("   Sending charge_request to Central via Kafka...")
+
+        # Enviar charge_request a Central (como lo haría un Driver)
+        if not self.engine.kafka_manager or not self.engine.kafka_manager.is_connected():
+            print("❌ Kafka not connected - cannot send request to Central")
+            print("-" * 60)
+            return
+
+        import uuid
+        import sys
+        import os
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+        from Common.Queue.KafkaManager import KafkaTopics
+
+        charge_request = {
+            "type": "charge_request",
+            "message_id": str(uuid.uuid4()),
+            "cp_id": self.engine.cp_id,
+            "driver_id": driver_id,
+            "timestamp": int(time.time()),
+        }
+
+        success = self.engine.kafka_manager.produce_message(
+            KafkaTopics.DRIVER_CHARGE_REQUESTS,
+            charge_request
+        )
+
+        if success:
+            print("✓ Charge request sent to Central successfully")
+            print()
+            print("   Central will:")
+            print("   1. Validate this CP is available")
+            print("   2. Create charging session in database")
+            print("   3. Get price from CP configuration")
+            print("   4. Send start_charging_command to this Engine")
+            print("   5. Engine will start charging automatically")
+            print()
+            print("   Wait for Central's response...")
+        else:
+            print("❌ Failed to send charge request to Kafka")
+
         print("-" * 60)
 
-    def _handle_disconnect_vehicle(self):
+    def _handle_vehicle_disconnected(self):
         """Maneja la simulación de desconexión del vehículo (desenchufar)"""
         print("\n" + "-" * 60)
 
@@ -147,7 +216,7 @@ class EngineCLI:
 
         if success:
             print("✓ Charging stopped successfully")
-            print("   Final charging data sent to Central")
+            print("   Final charging data sent to Central (via Kafka)")
         else:
             print("❌ Failed to stop charging")
 
@@ -168,7 +237,7 @@ class EngineCLI:
                 "reason": "Simulated hardware failure (manual trigger)"
             }
             self.engine.monitor_server.send_broadcast_message(failure_message)
-            print("   KO signal sent to Monitor")
+            print("   KO signal sent to Monitor (via Socket)")
 
             # Si estamos cargando, detener la carga
             if self.engine.is_charging:
@@ -194,7 +263,7 @@ class EngineCLI:
                 "reason": "Recovered from failure (manual trigger)"
             }
             self.engine.monitor_server.send_broadcast_message(recovery_message)
-            print("   OK signal sent to Monitor")
+            print("   OK signal sent to Monitor (via Socket)")
         else:
             print("⚠ No Monitor connected, cannot send OK signal")
 

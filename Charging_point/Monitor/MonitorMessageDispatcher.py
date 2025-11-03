@@ -268,7 +268,9 @@ class MonitorMessageDispatcher:
                 # Monitor OK, Engine OK, pero Central desconectado
                 self.logger.warning("Engine is ACTIVE but Central is not connected")
                 self.monitor.update_cp_status("FAULTY")
-
+        else:
+            self.logger.error(f"Unknown engine status received: {engine_status}")
+            self.monitor.update_cp_status("FAULTY")
         return True
 
     def _handle_charging_data_from_engine(self, message):
