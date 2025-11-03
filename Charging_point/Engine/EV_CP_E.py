@@ -59,17 +59,14 @@ class EV_CP_E:
             self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
 
         self.running = False
-        # 删除了 self.is_charging = False，改用 property
         self.monitor_server: MySocketServer = None
         self.kafka_manager: KafkaManager = None  # Kafka管理器
 
         self.current_session = None
 
-        # ✅ CP_ID由Monitor提供，初始为None
         self.cp_id = None
-        self._id_initialized = False  # 标记ID是否已初始化
+        self._id_initialized = False  
 
-        # 初始化消息分发器
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
 
     @property
