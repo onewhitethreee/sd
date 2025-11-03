@@ -97,7 +97,6 @@ class EV_CP_M:
             "id": self.args.id_cp,
             "location": f"Location_{random.randint(1,99999)}",
             "price_per_kwh": (random.uniform(0.15, 0.25)),
-            "max_charging_rate_kw": random.uniform(7.0, 22.0),  # 模拟不同的充电桩能力
         }
         success = self.central_conn_mgr.send(register_message)
         if success:
@@ -466,7 +465,6 @@ class EV_CP_M:
         session_id = message.get("session_id")
         driver_id = message.get("driver_id")
         price_per_kwh = message.get("price_per_kwh", 0.0)  # 从Central获取价格
-        max_charging_rate_kw = message.get("max_charging_rate_kw")
 
         if not cp_id or not session_id:
             self.logger.error("Start charging command missing required fields.")
@@ -477,7 +475,7 @@ class EV_CP_M:
             )
             return False
 
-        # 转发启动充电命令到Engine，包含price_per_kwh和max_charging_rate_kw
+        # 转发启动充电命令到Engine
         start_charging_message = {
             "type": "start_charging_command",
             "message_id": str(uuid.uuid4()),
@@ -485,11 +483,10 @@ class EV_CP_M:
             "session_id": session_id,
             "driver_id": driver_id,
             "price_per_kwh": price_per_kwh,  # 转发价格信息
-            "max_charging_rate_kw": max_charging_rate_kw,  # 转发最大充电速率
         }
         if self.engine_conn_mgr.send(start_charging_message):
             self.logger.info(
-                f"Start charging command sent to Engine for session {session_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW."
+                f"Start charging command sent to Engine for session {session_id}, price: €{price_per_kwh}/kWh."
             )
             return True
         else:
@@ -512,7 +509,6 @@ class EV_CP_M:
             "session_id",
             "energy_consumed_kwh",
             "total_cost",
-            "charging_rate",
         ]
         missing_fields = [
             field for field in required_fields if message.get(field) is None
@@ -530,7 +526,6 @@ class EV_CP_M:
             "session_id": message.get("session_id"),
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
-            "charging_rate": message.get("charging_rate"),
         }
         if self.central_conn_mgr.send(charging_data_message):
             self.logger.debug("Charging data forwarded to Central.")

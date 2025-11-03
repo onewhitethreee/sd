@@ -22,7 +22,6 @@ class ChargingPointRepository(BaseRepository):
         price_per_kwh,
         status,
         last_connection_time,
-        max_charging_rate_kw=11.0,
     ):
         """
         插入或更新充电桩信息
@@ -33,7 +32,6 @@ class ChargingPointRepository(BaseRepository):
             price_per_kwh: 每度电价格
             status: 状态
             last_connection_time: 最后连接时间
-            max_charging_rate_kw: 最大充电速率（千瓦）
 
         Returns:
             bool: 是否成功
@@ -41,8 +39,8 @@ class ChargingPointRepository(BaseRepository):
         try:
             query = """
                 INSERT OR REPLACE INTO ChargingPoints
-                (cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (cp_id, location, price_per_kwh, status, last_connection_time)
+                VALUES (?, ?, ?, ?, ?)
             """
             self.execute_update(
                 query,
@@ -50,7 +48,6 @@ class ChargingPointRepository(BaseRepository):
                     cp_id,
                     location,
                     price_per_kwh,
-                    max_charging_rate_kw,
                     status,
                     last_connection_time,
                 ),
@@ -58,7 +55,7 @@ class ChargingPointRepository(BaseRepository):
 
             self.logger.info(
                 f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, "
-                f"最大充电速率: {max_charging_rate_kw}kW, 状态: {status}"
+                f"状态: {status}"
             )
             return True
 
@@ -122,7 +119,7 @@ class ChargingPointRepository(BaseRepository):
         """
         try:
             query = """
-                SELECT cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time
+                SELECT cp_id, location, price_per_kwh, status, last_connection_time
                 FROM ChargingPoints
                 WHERE cp_id = ?
             """
@@ -134,9 +131,8 @@ class ChargingPointRepository(BaseRepository):
                     "cp_id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
-                    "max_charging_rate_kw": row[3],
-                    "status": row[4],
-                    "last_connection_time": row[5],
+                    "status": row[3],
+                    "last_connection_time": row[4],
                 }
             return None
         except Exception as e:
@@ -188,7 +184,7 @@ class ChargingPointRepository(BaseRepository):
         """
         try:
             query = """
-                SELECT cp_id, location, price_per_kwh, status, last_connection_time, max_charging_rate_kw
+                SELECT cp_id, location, price_per_kwh, status, last_connection_time 
                 FROM ChargingPoints
             """
             rows = self.execute_query(query)
@@ -200,7 +196,6 @@ class ChargingPointRepository(BaseRepository):
                     "price_per_kwh": row[2],
                     "status": row[3],
                     "last_connection_time": row[4],
-                    "max_charging_rate_kw": row[5],
                 }
                 for row in rows
             ]
@@ -217,7 +212,7 @@ class ChargingPointRepository(BaseRepository):
         """
         try:
             query = """
-                SELECT cp_id, location, price_per_kwh, max_charging_rate_kw, status, last_connection_time
+                SELECT cp_id, location, price_per_kwh, status, last_connection_time
                 FROM ChargingPoints
                 WHERE status = ?
             """
@@ -228,9 +223,8 @@ class ChargingPointRepository(BaseRepository):
                     "cp_id": row[0],
                     "location": row[1],
                     "price_per_kwh": row[2],
-                    "max_charging_rate_kw": row[3],
-                    "status": row[4],
-                    "last_connection_time": row[5],
+                    "status": row[3],
+                    "last_connection_time": row[4],
                 }
                 for row in rows
             ]

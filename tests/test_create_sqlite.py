@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS ChargingPoints (
     cp_id text PRIMARY KEY,
     location varchar(255),
     price_per_kwh decimal(10, 4),
-    max_charging_rate_kw decimal(5, 1) DEFAULT 11.0,
     status TEXT NOT NULL DEFAULT 'unknown',
     last_connection_time DATETIME
 );

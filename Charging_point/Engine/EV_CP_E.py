@@ -238,7 +238,6 @@ class EV_CP_E:
         driver_id: str,
         session_id: str,
         price_per_kwh: float = 0.0,
-        max_charging_rate_kw: float = 11.0,
     ):
         """
         启动充电会话。
@@ -247,19 +246,13 @@ class EV_CP_E:
             driver_id: 司机/电动车ID
             session_id: 充电会话ID（由Central通过Monitor提供）
             price_per_kwh: 每度电价格（从Central/ChargingPoint获取）
-            max_charging_rate_kw: 最大充电速率（从Central/ChargingPoint获取）
         """
         self.logger.info(
-            f"Starting charging session '{session_id}' for Driver: {driver_id}, price: €{price_per_kwh}/kWh, max rate: {max_charging_rate_kw}kW"
+            f"Starting charging session '{session_id}' for Driver: {driver_id}, price: €{price_per_kwh}/kWh"
         )
         if self.is_charging:
             self.logger.warning("Already charging, cannot start new session.")
             return False
-
-        # 充电速率：在最大充电速率范围内随机生成（模拟不同的充电功率）
-        # 实际充电速率不会超过充电桩的最大能力
-        min_rate = min(5.0, max_charging_rate_kw * 0.5)  # 最小速率为最大速率的50%或5kW
-        charging_rate_kw = random.uniform(min_rate, max_charging_rate_kw)
 
         self.current_session = {
             "session_id": session_id,
@@ -267,7 +260,6 @@ class EV_CP_E:
             "start_time": time.time(),
             "energy_consumed_kwh": 0.0,  # 初始能量
             "total_cost": 0.0,  # 初始费用
-            "charging_rate_kw": charging_rate_kw,  # 充电速率（千瓦）
             "price_per_kwh": price_per_kwh,  # 每度电价格
         }
         # 启动充电线程
@@ -278,7 +270,7 @@ class EV_CP_E:
         )
         charging_thread.start()
         self.logger.info(
-            f"Charging session {self.current_session['session_id']} started with rate {self.current_session['charging_rate_kw']:.1f} kW."
+            f"Charging session {self.current_session['session_id']} "
         )
         return True
 
@@ -324,17 +316,11 @@ class EV_CP_E:
             and self.current_session["session_id"] == session_id_to_track
         ):
             try:
-                time.sleep(1)  # 每秒更新
-                # 如果过程中停止充电，current_session 会变为 None，循环就会退出
+                time.sleep(1)
                 if not self.is_charging or not self.current_session:
                     break
-                # --- 重点：单位计算修正 ---
-                # charging_rate_kw 是千瓦 (kW)，每秒消耗的能量是 kW / 3600 (kWh)
-                energy_this_second_kwh = (
-                    self.current_session["charging_rate_kw"] / 3600.0
-                )  # kWh/秒
 
-                self.current_session["energy_consumed_kwh"] += energy_this_second_kwh
+                self.current_session["energy_consumed_kwh"] += 0.01
                 self.current_session["total_cost"] = (
                     self.current_session["energy_consumed_kwh"]
                     * self.current_session["price_per_kwh"]
@@ -364,10 +350,7 @@ class EV_CP_E:
                 self.current_session["energy_consumed_kwh"], 3
             ),
             "total_cost": round(self.current_session["total_cost"], 2),
-            "charging_rate": round(
-                self.current_session["charging_rate_kw"], 1
-            ),
-            "timestamp": int(time.time()),  # ✅ 添加时间戳
+            "timestamp": int(time.time()),
         }
 
         # 发送到 Monitor（Socket，保持向后兼容）

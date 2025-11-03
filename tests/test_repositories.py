@@ -43,7 +43,6 @@ def test_charging_point_repository():
         price_per_kwh=0.5,
         status="ACTIVE",
         last_connection_time=None,
-        max_charging_rate_kw=11.0,
     )
     print(f"   插入结果: {'成功' if success else '失败'}")
 
@@ -237,7 +236,6 @@ def test_integration():
         price_per_kwh=0.55,
         status="ACTIVE",
         last_connection_time=None,
-        max_charging_rate_kw=11.0,
     )
 
     # 2. 注册司机

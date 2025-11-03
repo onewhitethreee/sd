@@ -192,10 +192,9 @@ class AdminCLI:
                 location = cp.get("location", "N/A")
                 status = cp.get("status", "N/A")
                 price = cp.get("price_per_kwh", 0.0)
-                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
                 print(
-                    f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f} {max_rate:<.1f}"
+                    f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f}"
                 )
 
             print(f"\n总计: {len(charging_points)} 个充电桩")
@@ -224,9 +223,8 @@ class AdminCLI:
                 cp_id = cp.get("cp_id", "N/A")
                 location = cp.get("location", "N/A")
                 price = cp.get("price_per_kwh", 0.0)
-                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
+                print(f"{cp_id:<20} {location:<30} {price:<15.4f}")
 
             print(f"\n总计: {len(charging_points)} 个可用充电桩")
 
@@ -255,9 +253,8 @@ class AdminCLI:
                 cp_id = cp.get("cp_id", "N/A")
                 location = cp.get("location", "N/A")
                 price = cp.get("price_per_kwh", 0.0)
-                max_rate = cp.get("max_charging_rate_kw", 0.0)
 
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
+                print(f"{cp_id:<20} {location:<30} {price:<15.4f} ")
 
             print(f"\n总计: {len(active_cps)} 个活跃充电桩")
 
@@ -380,9 +377,7 @@ class AdminCLI:
             print(f"  位置:           {cp_info.get('location', 'N/A')}")
             print(f"  状态:           {cp_info.get('status', 'N/A')}")
             print(f"  价格:           {cp_info.get('price_per_kwh', 0.0):.4f} 元/kWh")
-            print(
-                f"  最大充电功率:   {cp_info.get('max_charging_rate_kw', 0.0):.1f} kW"
-            )
+           
 
             last_connection = cp_info.get("last_connection_time")
             if last_connection:

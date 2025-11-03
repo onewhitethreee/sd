@@ -156,7 +156,6 @@ class EngineMessageDispatcher:
                 - session_id: 充电会话ID
                 - driver_id: 司机/电动车ID
                 - price_per_kwh: 每度电价格（从Central获取）
-                - max_charging_rate_kw: 最大充电速率（从Central获取）
 
         Returns:
             dict: 命令响应消息
@@ -176,7 +175,6 @@ class EngineMessageDispatcher:
 
         driver_id = message.get(MessageFields.DRIVER_ID, "unknown_driver")
         price_per_kwh = message.get(MessageFields.PRICE_PER_KWH, 0.0)
-        max_charging_rate_kw = message.get(MessageFields.MAX_CHARGING_RATE_KW, 11.0)
 
         # 检查是否已在充电
         if self.engine.is_charging:
@@ -188,9 +186,9 @@ class EngineMessageDispatcher:
                 MessageFields.SESSION_ID: self.engine.current_session["session_id"],
             }
 
-        # 启动充电会话，传递price_per_kwh和max_charging_rate_kw
+        # 启动充电会话
         success = self.engine._start_charging_session(
-            driver_id, session_id, price_per_kwh, max_charging_rate_kw
+            driver_id, session_id, price_per_kwh
         )
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,

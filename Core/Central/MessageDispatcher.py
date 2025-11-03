@@ -305,12 +305,11 @@ class MessageDispatcher:
         cp_id = data["id"]
         location = data["location"]
         price_per_kwh = data["price_per_kwh"]
-        max_charging_rate_kw = message.get("max_charging_rate_kw", 11.0)
         message_id = data["message_id"]
 
         # 注册充电桩
         success, error_msg = self.charging_point_manager.register_charging_point(
-            cp_id, location, price_per_kwh, max_charging_rate_kw
+            cp_id, location, price_per_kwh
         )
 
         if not success:
@@ -499,7 +498,6 @@ class MessageDispatcher:
                 "session_id",
                 "energy_consumed_kwh",
                 "total_cost",
-                "charging_rate",
                 "message_id",
             ],
             "charging_data",
@@ -510,7 +508,6 @@ class MessageDispatcher:
         session_id = data["session_id"]
         energy_consumed_kwh = data["energy_consumed_kwh"]
         total_cost = data["total_cost"]
-        charging_rate = data["charging_rate"]
         message_id = data["message_id"]
 
         # 幂等性检查：如果消息已处理过，直接返回成功（避免重复处理）
@@ -541,7 +538,6 @@ class MessageDispatcher:
                         "session_id": session_id,
                         "energy_consumed_kwh": energy_consumed_kwh,
                         "total_cost": total_cost,
-                        "charging_rate": charging_rate,
                         "timestamp": int(time.time()),
                     },
                 )
@@ -764,7 +760,6 @@ class MessageDispatcher:
                     "location": cp["location"],
                     "price_per_kwh": round(cp["price_per_kwh"], 3),
                     "status": cp["status"],
-                    "max_charging_rate_kw": round(cp["max_charging_rate_kw"], 3),
                 }
                 for cp in available_cps
             ]
@@ -905,7 +900,6 @@ class MessageDispatcher:
             print(f"    ├─ Location: {cp['location']}")
             print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
             print(f"    ├─ Status: {cp['status']}")
-            print(f"    ├─ Max Charging Rate: {cp['max_charging_rate_kw']}kW")
             print(f"    └─ Last Connection: {cp['last_connection_time']}")
             print()
 
@@ -917,7 +911,6 @@ class MessageDispatcher:
             session_id=charging_data.get("session_id"),
             energy_consumed_kwh=charging_data.get("energy_consumed_kwh"),
             total_cost=charging_data.get("total_cost"),
-            charging_rate=charging_data.get("charging_rate"),
         )
         # 发送到Driver的专属主题
         if self.kafka_manager:
@@ -962,9 +955,7 @@ class MessageDispatcher:
         # 从数据库获取充电点信息
         cp_info = self.charging_point_manager.get_charging_point(cp_id)
         price_per_kwh = cp_info.get("price_per_kwh", 0.0) if cp_info else 0.0
-        max_charging_rate_kw = (
-            cp_info.get("max_charging_rate_kw", 11.0) if cp_info else 11.0
-        )
+       
 
         message = self._build_notification_message(
             "start_charging_command",
@@ -972,13 +963,12 @@ class MessageDispatcher:
             session_id=session_id,
             driver_id=driver_id,
             price_per_kwh=price_per_kwh,
-            max_charging_rate_kw=max_charging_rate_kw,
         )
 
         success = self._send_command_to_monitor(cp_id, message)
         if success:
             self.logger.info(
-                f"启动充电命令详情: CP {cp_id}, 会话 {session_id}, 价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW"
+                f"启动充电命令详情: CP {cp_id}, 会话 {session_id}, 价格: €{price_per_kwh}/kWh"
             )
         return success
 

@@ -58,7 +58,7 @@ class ChargingPoint:
             )
 
     def register_charging_point(
-        self, cp_id, location, price_per_kwh, max_charging_rate_kw=11.0
+        self, cp_id, location, price_per_kwh
     ):
         """
         注册一个新的充电桩
@@ -67,7 +67,6 @@ class ChargingPoint:
             cp_id: 充电桩ID
             location: 位置
             price_per_kwh: 每度电价格
-            max_charging_rate_kw: 最大充电速率（千瓦），默认11.0
 
         Returns:
             tuple: (success: bool, error_message: str or None)
@@ -78,10 +77,7 @@ class ChargingPoint:
             if price_per_kwh < 0:
                 return False, "price_per_kwh must be non-negative"
 
-            # 验证充电速率
-            max_charging_rate_kw = float(max_charging_rate_kw)
-            if max_charging_rate_kw <= 0:
-                return False, "max_charging_rate_kw must be positive"
+            
 
             self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
 
@@ -92,12 +88,11 @@ class ChargingPoint:
                 price_per_kwh=price_per_kwh,
                 status=Status.DISCONNECTED.value,
                 last_connection_time=None,
-                max_charging_rate_kw=max_charging_rate_kw,
             )
 
             if success:
                 self.logger.info(
-                    f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh, 最大速率: {max_charging_rate_kw}kW)"
+                    f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh)"
                 )
                 return True, None
             else:

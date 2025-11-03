@@ -155,9 +155,7 @@ class MessageFields:
     # 充电相关
     ENERGY_CONSUMED_KWH = "energy_consumed_kwh"
     TOTAL_COST = "total_cost"
-    CHARGING_RATE = "charging_rate"
     PRICE_PER_KWH = "price_per_kwh"
-    MAX_CHARGING_RATE_KW = "max_charging_rate_kw"
 
     # 其他
     CHARGING_POINTS = "charging_points"

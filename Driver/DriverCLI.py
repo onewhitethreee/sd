@@ -236,7 +236,6 @@ class DriverCLI:
                     f"  已消耗电量:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh"
                 )
                 print(f"  当前费用:       {session.get('total_cost', 0.0):.2f} 元")
-                print(f"  充电速率:       {session.get('charging_rate', 0.0):.2f} kW")
 
                 # 计算充电时长（如果有开始时间）
                 if "start_time" in session:

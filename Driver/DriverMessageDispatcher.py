@@ -131,7 +131,6 @@ class DriverMessageDispatcher:
                         "status": "authorized",
                         "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
-                        "charging_rate": 0.0,
                     }
                 self.logger.info(f"✅ Charging session created: {session_id}")
                 self.logger.debug(f"会话数据: {self.driver.current_charging_session}")
@@ -151,12 +150,10 @@ class DriverMessageDispatcher:
                 - session_id: 会话ID
                 - energy_consumed_kwh: 已消耗电量
                 - total_cost: 总费用
-                - charging_rate: 充电速率
         """
         session_id = message.get(MessageFields.SESSION_ID)
         energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
         total_cost = message.get(MessageFields.TOTAL_COST, 0)
-        charging_rate = message.get(MessageFields.CHARGING_RATE, 0)
 
         with self.driver.lock:
             if self.driver.current_charging_session:
@@ -170,13 +167,10 @@ class DriverMessageDispatcher:
                         energy_consumed_kwh
                     )
                     self.driver.current_charging_session["total_cost"] = total_cost
-                    self.driver.current_charging_session["charging_rate"] = (
-                        charging_rate
-                    )
 
                     # Usar DEBUG para no interrumpir input del usuario en modo interactivo
                     self.logger.debug(
-                        f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                        f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}kW"
                     )
                 else:
                     self.logger.warning(
@@ -198,7 +192,6 @@ class DriverMessageDispatcher:
                 - session_id: 会话ID
                 - energy_consumed_kwh: 已消耗电量
                 - total_cost: 总费用
-                - charging_rate: 充电速率
         """
         session_id = message.get(MessageFields.SESSION_ID)
         with self.driver.lock:
@@ -208,17 +201,15 @@ class DriverMessageDispatcher:
             ):
                 energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
                 total_cost = message.get(MessageFields.TOTAL_COST, 0)
-                charging_rate = message.get(MessageFields.CHARGING_RATE, 0)
 
                 self.driver.current_charging_session["energy_consumed_kwh"] = (
                     energy_consumed_kwh
                 )
                 self.driver.current_charging_session["total_cost"] = total_cost
-                self.driver.current_charging_session["charging_rate"] = charging_rate
 
                 # Usar DEBUG para no interrumpir input del usuario en modo interactivo
                 self.logger.debug(
-                    f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}, Rate: {charging_rate:.2f}kW"
+                    f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}"
                 )
 
         return True
