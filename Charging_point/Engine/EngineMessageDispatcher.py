@@ -8,11 +8,9 @@ Engine消息分发器
 所有处理器方法返回响应字典，通过MySocketServer自动发送回Monitor。
 """
 
-import time
 import sys
 import os
 
-# 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
 
@@ -36,7 +34,7 @@ class EngineMessageDispatcher:
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
-            MessageTypes.INIT_CP_ID: self._handle_init_cp_id,  # ✅ 新增：处理CP_ID初始化
+            MessageTypes.INIT_CP_ID: self._handle_init_cp_id, 
             MessageTypes.HEALTH_CHECK_REQUEST: self._handle_health_check,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,

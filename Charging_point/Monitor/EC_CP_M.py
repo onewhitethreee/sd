@@ -213,7 +213,7 @@ class EV_CP_M:
                 f"Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, "
                 f"Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
             )
-
+    # TODO 这里也没有停止啊？
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""
         if self._engine_health_thread and self._engine_health_thread.is_alive():
@@ -285,6 +285,7 @@ class EV_CP_M:
         )
         self._heartbeat_thread.start()
 
+    # TODO 这里没有调用
     def authenticate_charging_point(self):
         """
         认证充电点，现在通过 ConnectionManager.send() 发送。
@@ -518,7 +519,7 @@ class EV_CP_M:
                 f"Charging data from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
-
+        # TODO 这里用常量
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -555,7 +556,7 @@ class EV_CP_M:
                 f"Charging completion from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
-
+        # TODO 这里用response常量
         completion_message = {
             "type": "charge_completion",
             "message_id": message.get("message_id"),

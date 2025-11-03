@@ -17,6 +17,7 @@ from Common.Network.MySocketServer import MySocketServer
 from Common.Config.Status import Status
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Charging_point.Engine.EngineMessageDispatcher import EngineMessageDispatcher
+from Charging_point.Engine.EngineCLI import EngineCLI
 
 
 class EV_CP_E:
@@ -65,9 +66,10 @@ class EV_CP_E:
         self.current_session = None
 
         self.cp_id = None
-        self._id_initialized = False  
+        self._id_initialized = False
 
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
+        self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
 
     @property
     def is_charging(self):
@@ -168,7 +170,7 @@ class EV_CP_E:
                 raise Exception("Failed to start monitor server")
 
             # 初始化Kafka客户端
-            self._init_kafka()  # ✅ 启用 Kafka
+            self._init_kafka()  
 
             self.running = True
             return True
@@ -178,12 +180,11 @@ class EV_CP_E:
             return False
 
     def _init_kafka(self):
-        """初始化Kafka连接（改进版）"""
+        """初始化Kafka连接"""
 
-        if self.debug_mode:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        else:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        
+        broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
+        
 
         try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
@@ -191,7 +192,7 @@ class EV_CP_E:
             if self.kafka_manager.init_producer():
                 self.kafka_manager.start()
 
-                # ✅ 创建所需的 topics
+                # 创建所需的 topics
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.CHARGING_SESSION_DATA,
                     num_partitions=3,
@@ -222,8 +223,11 @@ class EV_CP_E:
             self._stop_charging_session()
             # 不需要设置 self.is_charging = False，因为 _stop_charging_session() 会设置 current_session = None
 
+        if self.engine_cli:
+            self.engine_cli.stop()
+
         if self.monitor_server:
-            self.monitor_server.stop()  
+            self.monitor_server.stop()
 
         if self.kafka_manager:
             self.kafka_manager.stop()
@@ -272,7 +276,7 @@ class EV_CP_E:
         return True
 
     def _stop_charging_session(self):
-        """停止充电会话。不再需要 driver_id 参数。 因为一个ChargingPoint只能有一个充电会话。"""
+        """停止充电会话。 因为一个ChargingPoint只能有一个充电会话。"""
         self.logger.info(f"Stopping charging for session {self.current_session['session_id']}... ")
         if not self.is_charging:
             self.logger.warning("No active charging session to stop.")
@@ -417,6 +421,17 @@ class EV_CP_E:
                 "Kafka not available, charging completion only sent to Monitor"
             )
 
+    def _init_cli(self):
+        """初始化Engine CLI（según PDF página 7 y 11）"""
+        try:
+            self.engine_cli = EngineCLI(self, self.logger)
+            self.engine_cli.start()
+            self.logger.info("Engine CLI initialized successfully")
+            self.logger.info("Press ENTER to show interactive menu for manual operations")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Engine CLI: {e}")
+            self.engine_cli = None
+
     def initialize_system(self):
         """初始化系统"""
         self.logger.info("Initializing EV_CP_E module")
@@ -434,11 +449,14 @@ class EV_CP_E:
             self.logger.error("Failed to initialize system")
             sys.exit(1)
 
+        # Iniciar CLI para simular acciones del usuario (según PDF página 7 y 11)
+        self._init_cli()
+
         try:
 
             self.running = True
             while self.running:
-                time.sleep(1)  # 保持运行
+                time.sleep(0.1)  # 保持运行
 
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV_CP_E")
@@ -449,6 +467,7 @@ class EV_CP_E:
 
 
 if __name__ == "__main__":
-    logger = CustomLogger.get_logger()
+    import logging
+    logger = CustomLogger.get_logger(level=logging.DEBUG)
     ev_cp_e = EV_CP_E(logger=logger)
     ev_cp_e.start()
