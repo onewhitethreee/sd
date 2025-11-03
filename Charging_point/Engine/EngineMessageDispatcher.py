@@ -34,10 +34,11 @@ class EngineMessageDispatcher:
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
-            MessageTypes.INIT_CP_ID: self._handle_init_cp_id, 
+            MessageTypes.INIT_CP_ID: self._handle_init_cp_id,
             MessageTypes.HEALTH_CHECK_REQUEST: self._handle_health_check,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
+            MessageTypes.RESUME_CP_COMMAND: self._handle_resume_cp_command,
         }
 
     def dispatch_message(self, message):
@@ -235,4 +236,47 @@ class EngineMessageDispatcher:
                 MessageFields.MESSAGE: "No active charging session or session ID mismatch",
                 MessageFields.SESSION_ID: session_id,
             }
+
+    def _handle_resume_cp_command(self, message):
+        """
+        处理来自Central的恢复充电点命令
+
+        这个命令由Central管理员发出，具有最高优先级。
+        它会强制清除Engine的手动FAULTY模式，即使是通过CLI设置的。
+
+        Args:
+            message: 恢复命令消息，包含：
+                - cp_id: 充电点ID
+
+        Returns:
+            dict: 命令响应消息
+        """
+        self.logger.info("Processing resume CP command from Central (via Monitor)")
+
+        cp_id = message.get(MessageFields.CP_ID)
+
+        # 验证CP_ID匹配
+        if self.engine.cp_id != cp_id:
+            self.logger.warning(f"CP_ID不匹配: 期望 {self.engine.cp_id}, 收到 {cp_id}")
+            return {
+                MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+                MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+                MessageFields.STATUS: ResponseStatus.FAILURE,
+                MessageFields.MESSAGE: f"CP_ID mismatch: expected {self.engine.cp_id}, got {cp_id}",
+            }
+
+        # 强制清除手动FAULTY模式 - Central的命令优先级最高
+        was_faulty = self.engine._manual_faulty_mode
+        self.engine._manual_faulty_mode = False
+
+        if was_faulty:
+            self.logger.info("✅ Central resume command: Cleared manual FAULTY mode")
+
+        return {
+            MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
+            MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+            MessageFields.STATUS: ResponseStatus.SUCCESS,
+            MessageFields.MESSAGE: f"CP {cp_id} resumed, manual FAULTY mode cleared" if was_faulty else f"CP {cp_id} resumed",
+            MessageFields.CP_ID: cp_id,
+        }
 

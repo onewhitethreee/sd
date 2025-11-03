@@ -53,6 +53,7 @@ class MonitorMessageDispatcher:
             MessageTypes.HEARTBEAT_RESPONSE: self._handle_heartbeat_response,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
+            MessageTypes.RESUME_CP_COMMAND: self._handle_resume_cp_command,
             MessageTypes.STATUS_UPDATE_RESPONSE: self._handle_status_update_response,
             MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
             MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
@@ -189,7 +190,44 @@ class MonitorMessageDispatcher:
         else:
             self.logger.error("Engine连接不可用，无法转发停止充电命令")
             return False
-   
+
+    def _handle_resume_cp_command(self, message):
+        """
+        处理来自Central的恢复充电点命令
+
+        当Central管理员使用resume命令时，这个命令会强制Engine退出手动FAULTY模式，
+        覆盖Engine CLI的手动设置。Central的命令优先级更高。
+
+        Args:
+            message: 恢复命令，包含：
+                - cp_id: 充电点ID
+        """
+        self.logger.info("Received resume CP command from Central.")
+
+        cp_id = message.get(MessageFields.CP_ID)
+
+        # 向Engine发送恢复命令（使用特殊的消息类型）
+        # Engine需要识别这是来自Central的强制恢复命令
+        resume_message = {
+            MessageFields.TYPE: MessageTypes.RESUME_CP_COMMAND,
+            MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
+            MessageFields.CP_ID: cp_id,
+        }
+
+        if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
+            self.monitor.engine_conn_mgr.send(resume_message)
+            self.logger.info(f"恢复命令已转发给Engine: CP {cp_id}")
+
+            # Monitor立即更新状态为ACTIVE（如果Engine和Central都连接正常）
+            if self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected:
+                self.monitor.update_cp_status("ACTIVE")
+                self.logger.info(f"Monitor状态已更新为ACTIVE (Central resume command)")
+
+            return True
+        else:
+            self.logger.error("Engine连接不可用，无法转发恢复命令")
+            return False
+
 
     def _handle_status_update_response(self, message):
         """

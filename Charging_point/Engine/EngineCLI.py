@@ -5,7 +5,14 @@ Permite simular las acciones físicas del usuario en el CP (enchufar/desenchufar
 
 import threading
 import sys
+import os
 import time
+import uuid
+
+# Añadir el directorio raíz al path para imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
+from Common.Queue.KafkaManager import KafkaTopics
 
 
 class EngineCLI:
@@ -49,7 +56,13 @@ class EngineCLI:
         print("  EV_CP_E - ENGINE CONTROL MENU")
         print("=" * 60)
         print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-        print(f"  Status: {self.engine.get_current_status()}")
+
+        status = self.engine.get_current_status()
+        status_indicator = f"  Status: {status}"
+        if self.engine._manual_faulty_mode:
+            status_indicator += " ⚠️  [MANUAL FAULTY MODE ACTIVE]"
+        print(status_indicator)
+
         print(f"  Charging: {'YES' if self.engine.is_charging else 'NO'}")
 
         if self.engine.is_charging and self.engine.current_session:
@@ -135,7 +148,11 @@ class EngineCLI:
             print("   Wait for Monitor to provide CP_ID")
             print("-" * 60)
             return
-
+        if self.engine._manual_faulty_mode:
+            print("❌ Cannot start charging: Engine in MANUAL FAULTY mode")
+            print("   Simulate recovery first (option [4])")
+            print("-" * 60)
+            return
         if self.engine.is_charging:
             print("⚠ Vehicle already connected and charging!")
             print(f"   Session ID: {self.engine.current_session['session_id']}")
@@ -163,12 +180,6 @@ class EngineCLI:
             print("❌ Kafka not connected - cannot send request to Central")
             print("-" * 60)
             return
-
-        import uuid
-        import sys
-        import os
-        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-        from Common.Queue.KafkaManager import KafkaTopics
 
         charge_request = {
             "type": "charge_request",
@@ -228,24 +239,31 @@ class EngineCLI:
         print("💥 SIMULATING: Engine hardware/software failure")
         print("   This will trigger Monitor to report FAULTY status to Central")
 
+        # Activar modo de fallo manual - esto persiste hasta que se llame a recovery
+        self.engine._manual_faulty_mode = True
+        print("   ✓ Engine set to MANUAL FAULTY mode (persists until manual recovery)")
+
         # Enviar mensaje de fallo al Monitor
         if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
             failure_message = {
-                "type": "health_check_response",
-                "status": "KO",
-                "cp_id": self.engine.cp_id,
-                "reason": "Simulated hardware failure (manual trigger)"
+                MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
+                MessageFields.STATUS: ResponseStatus.SUCCESS,
+                MessageFields.ENGINE_STATUS: "FAULTY",
+                MessageFields.IS_CHARGING: self.engine.is_charging,
             }
             self.engine.monitor_server.send_broadcast_message(failure_message)
-            print("   KO signal sent to Monitor (via Socket)")
+            print("   ✓ FAULTY signal sent to Monitor (via Socket)")
 
             # Si estamos cargando, detener la carga
             if self.engine.is_charging:
-                print("   Charging interrupted due to failure")
+                print("   ✓ Charging interrupted due to failure")
                 self.engine._stop_charging_session()
         else:
-            print("⚠ No Monitor connected, cannot send KO signal")
+            print("⚠ No Monitor connected, cannot send FAULTY signal")
 
+        print()
+        print("   NOTE: Engine will remain in FAULTY mode until you use option [4]")
+        print("         to simulate recovery. Health checks will continue to report FAULTY.")
         print("-" * 60)
 
     def _handle_simulate_recovery(self):
@@ -254,18 +272,24 @@ class EngineCLI:
         print("✓ SIMULATING: Engine recovery from failure")
         print("   This will trigger Monitor to report ACTIVE status to Central")
 
+        # Desactivar modo de fallo manual
+        self.engine._manual_faulty_mode = False
+        print("   ✓ Engine MANUAL FAULTY mode deactivated")
+
         # Enviar mensaje de recuperación al Monitor
         if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
             recovery_message = {
-                "type": "health_check_response",
-                "status": "OK",
-                "cp_id": self.engine.cp_id,
-                "reason": "Recovered from failure (manual trigger)"
+                MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
+                MessageFields.STATUS: ResponseStatus.SUCCESS,
+                MessageFields.ENGINE_STATUS: "ACTIVE",
+                MessageFields.IS_CHARGING: self.engine.is_charging,
             }
             self.engine.monitor_server.send_broadcast_message(recovery_message)
-            print("   OK signal sent to Monitor (via Socket)")
+            print("   ✓ ACTIVE signal sent to Monitor (via Socket)")
+            print()
+            print("   Engine recovered! Health checks will now report ACTIVE status.")
         else:
-            print("⚠ No Monitor connected, cannot send OK signal")
+            print("⚠ No Monitor connected, cannot send ACTIVE signal")
 
         print("-" * 60)
 
@@ -275,7 +299,12 @@ class EngineCLI:
         print("  CURRENT ENGINE STATUS")
         print("=" * 60)
         print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-        print(f"  Engine Status: {self.engine.get_current_status()}")
+
+        status = self.engine.get_current_status()
+        print(f"  Engine Status: {status}")
+        if self.engine._manual_faulty_mode:
+            print("  ⚠️  MANUAL FAULTY MODE: ACTIVE (use option [4] to recover)")
+
         print(f"  Running: {self.engine.running}")
         print(f"  Charging: {self.engine.is_charging}")
 

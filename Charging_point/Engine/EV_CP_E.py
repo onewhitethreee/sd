@@ -68,6 +68,10 @@ class EV_CP_E:
         self.cp_id = None
         self._id_initialized = False
 
+        # Flag para simular fallo manual (usado por CLI)
+        # Cuando está en True, get_current_status() siempre retorna FAULTY
+        self._manual_faulty_mode = False
+
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
         self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
 
@@ -97,7 +101,10 @@ class EV_CP_E:
 
     def get_current_status(self):
         """返回Engine当前状态"""
-        if self.is_charging:
+        # Si está en modo de fallo manual, siempre retorna FAULTY
+        if self._manual_faulty_mode:
+            return Status.FAULTY.value
+        elif self.is_charging:
             return Status.CHARGING.value
         elif not self.running:
             return Status.FAULTY.value

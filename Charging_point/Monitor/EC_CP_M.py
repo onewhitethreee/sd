@@ -9,6 +9,7 @@ import time
 import threading
 import random
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
 from Common.Config.CustomLogger import CustomLogger
@@ -16,6 +17,7 @@ from Common.Config.ConfigManager import ConfigManager
 from Charging_point.Monitor.ConnectionManager import ConnectionManager
 from Common.Config.Status import Status
 from Charging_point.Monitor.MonitorMessageDispatcher import MonitorMessageDispatcher
+from Common.Message.MessageTypes import MessageFields, MessageTypes
 
 
 class EV_CP_M:
@@ -443,13 +445,14 @@ class EV_CP_M:
             self.logger.warning("Not connected to Engine, cannot send stop command.")
             return False
         stop_message = {
-            "type": "stop_command",
-            "message_id": str(uuid.uuid4()),
-            "id": self.args.id_cp,
+            MessageFields.TYPE: MessageTypes.STOP_CHARGING_COMMAND,
+            MessageFields.MESSAGE_ID: str(uuid.uuid4()),
+            MessageFields.CP_ID: self.args.id_cp,
+            MessageFields.SESSION_ID: None,  # 这是一个紧急停止，没有特定的session_id
             "timestamp": int(time.time()),
         }
         if self.engine_conn_mgr.send(stop_message):
-            self.logger.info("Stop command sent to Engine.")
+            self.logger.info("Stop charging command sent to Engine.")
             return True
         else:
             self.logger.error(
