@@ -193,6 +193,49 @@ class Driver:
             self.logger.error("Kafka not connected, cannot request charging history")
             return False
 
+    def _validate_charging_points_availability(self, cp_ids):
+        """
+        验证充电桩是否在系统中可用
+
+        Args:
+            cp_ids: 充电桩ID列表
+
+        Returns:
+            tuple: (available_cps, unavailable_cps)
+                - available_cps: 可用的充电桩ID列表
+                - unavailable_cps: 不可用的充电桩及原因列表 [(cp_id, reason), ...]
+        """
+        available_cps = []
+        unavailable_cps = []
+
+        with self.lock:
+            # 获取当前可用充电桩列表
+            available_cp_ids = {cp.get('id'): cp for cp in self.available_charging_points}
+
+        for cp_id in cp_ids:
+            if cp_id not in available_cp_ids:
+                # 充电桩不在可用列表中
+                unavailable_cps.append((cp_id, "Not registered or not connected to Central"))
+            else:
+                cp_info = available_cp_ids[cp_id]
+                status = cp_info.get('status', 'UNKNOWN')
+
+                # 检查状态
+                if status == 'FAULTY':
+                    unavailable_cps.append((cp_id, f"Status: FAULTY"))
+                elif status == 'CHARGING':
+                    unavailable_cps.append((cp_id, f"Status: CHARGING (already in use)"))
+                elif status == 'STOPPED':
+                    unavailable_cps.append((cp_id, f"Status: STOPPED (not available)"))
+                elif status == 'ACTIVE':
+                    # 状态正常，可以使用
+                    available_cps.append(cp_id)
+                else:
+                    # 未知状态
+                    unavailable_cps.append((cp_id, f"Status: {status} (unknown/unavailable)"))
+
+        return available_cps, unavailable_cps
+
     def _load_services_from_file(self, filename="test_services.txt"):
         """从文件加载服务列表"""
         try:
@@ -258,25 +301,20 @@ class Driver:
             # 查询并显示充电历史（异步，响应会通过 Kafka 返回）
             self._request_charging_history()
 
-    def _interactive_mode(self):
-        """交互模式 - 使用DriverCLI"""
-        self.logger.info("Entering interactive mode...")
-
-        # 初始化并启动DriverCLI
-        self.driver_cli = DriverCLI(self)
-        self.driver_cli.start()
-
-        # 等待CLI运行
-        try:
-            while self.running and self.driver_cli.running:
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            self.logger.info("Received interrupt signal")
-        # 不在这里停止CLI，让外层的finally统一处理清理工作
-
     def _auto_mode(self, services):
-        """自动模式"""
+        """
+        自动模式 - 自动处理充电服务队列
+
+        在自动模式下，CLI仍然可用，用户可以：
+        - 查看当前状态
+        - 查看充电历史
+        - 手动停止当前充电
+        - 切换到交互模式
+        """
         self.logger.info(f"Entering auto mode with {len(services)} services")
+        print(f"🤖 Auto mode: Processing {len(services)} charging point(s) automatically")
+        print(f"    Type 'help' to see available commands during auto mode\n")
+
         self.service_queue = services.copy()
 
         # 处理第一个服务
@@ -284,6 +322,7 @@ class Driver:
             self._process_next_service()
 
         # 等待所有服务完成
+        # CLI在后台运行，用户可以随时输入命令
         while self.running and (self.service_queue or self.current_charging_session):
             time.sleep(1)
 
@@ -395,16 +434,25 @@ class Driver:
         self._request_available_cps()
         time.sleep(2)
 
+        # 🔧 关键改动：提前启动CLI，使其在任何模式下都可用
+        self._init_cli()
+
         # 检查是否有服务文件
         services = self._load_services_from_file()
 
         try:
             if services:
-                # 自动模式
+                # 自动模式（CLI已在后台运行）
                 self._auto_mode(services)
             else:
-                # 交互模式
-                self._interactive_mode()
+                # 交互模式（CLI已在后台运行）
+                # 只需要等待CLI运行即可
+                self.logger.info("Entering interactive mode...")
+                print("💬 Interactive mode: Enter commands to control charging")
+                print("    Type 'help' to see available commands\n")
+
+                while self.running and self.driver_cli and self.driver_cli.running:
+                    time.sleep(0.1)
 
         except KeyboardInterrupt:
             self.logger.info("Shutting down Driver")
@@ -416,6 +464,20 @@ class Driver:
                 self.driver_cli.stop()
             if self.kafka_manager:
                 self.kafka_manager.stop()
+
+    def _init_cli(self):
+        """
+        初始化Driver CLI
+
+        CLI会在后台运行，无论是自动模式还是交互模式都可以使用
+        """
+        try:
+            self.driver_cli = DriverCLI(self)
+            self.driver_cli.start()
+            self.logger.info("Driver CLI initialized and started")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Driver CLI: {e}")
+            self.driver_cli = None
 
 
 if __name__ == "__main__":
