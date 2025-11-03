@@ -901,7 +901,7 @@ class MessageDispatcher:
         print("╚" + "═" * 60 + "╝\n")
 
         for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 charging point {cp['cp_id']}")
+            print(f"[{i}] charging point {cp['cp_id']}")
             print(f"    ├─ Location: {cp['location']}")
             print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
             print(f"    ├─ Status: {cp['status']}")

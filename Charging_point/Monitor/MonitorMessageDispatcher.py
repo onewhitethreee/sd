@@ -53,6 +53,9 @@ class MonitorMessageDispatcher:
             MessageTypes.HEARTBEAT_RESPONSE: self._handle_heartbeat_response,
             MessageTypes.START_CHARGING_COMMAND: self._handle_start_charging_command,
             MessageTypes.STOP_CHARGING_COMMAND: self._handle_stop_charging_command,
+            MessageTypes.STATUS_UPDATE_RESPONSE: self._handle_status_update_response,
+            MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
+            MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
         }
 
         # 来自Engine的消息处理器（使用消息类型常量）
@@ -61,6 +64,8 @@ class MonitorMessageDispatcher:
             MessageTypes.CHARGING_DATA: self._handle_charging_data_from_engine,
             MessageTypes.CHARGE_COMPLETION: self._handle_charging_completion_from_engine,
             MessageTypes.COMMAND_RESPONSE: self._handle_command_response,
+            MessageTypes.ERROR_RESPONSE: self._handle_error_response,
+            MessageTypes.CONNECTION_ERROR: self._handle_error_response,
         }
 
     def dispatch_message(self, source, message):
@@ -186,7 +191,43 @@ class MonitorMessageDispatcher:
             return False
    
 
-    
+    def _handle_status_update_response(self, message):
+        """
+        处理来自Central的状态更新响应
+
+        Args:
+            message: 状态更新响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+        """
+        self.logger.debug(f"Received status update response from Central: {message}")
+
+        status = message.get(MessageFields.STATUS)
+        if status == ResponseStatus.SUCCESS:
+            self.logger.debug("Status update acknowledged by Central.")
+        else:
+            self.logger.warning("Status update not acknowledged by Central.")
+
+        return True
+
+    def _handle_charging_data_response(self, message):
+        """
+        处理来自Central的充电数据响应
+
+        Args:
+            message: 充电数据响应消息，包含：
+                - status: "success" 或 "failure"
+                - message: 响应描述
+        """
+        self.logger.debug(f"Received charging data response from Central: {message}")
+
+        status = message.get(MessageFields.STATUS)
+        if status == ResponseStatus.SUCCESS:
+            self.logger.debug("Charging data acknowledged by Central.")
+        else:
+            self.logger.warning("Charging data not acknowledged by Central.")
+
+        return True
 
     # ==================== Engine消息处理器 ====================
 
@@ -282,4 +323,27 @@ class MonitorMessageDispatcher:
 
         return True
 
+    def _handle_error_response(self, message):
+        """
+        处理来自Engine的错误响应
+
+        Args:
+            message: 错误响应消息，包含：
+                - type: "error_response"
+                - message_id: 对应的请求message_id
+                - error_code: 错误代码
+                - message: 错误描述
+
+        Returns:
+            bool: 总是返回True表示消息已处理
+        """
+        error_code = message.get("error_code", "Unknown")
+        error_msg = message.get(MessageFields.MESSAGE, "")
+
+        self.logger.error(
+            f"Received error response from Engine: "
+            f"Error Code: {error_code}, Message: {error_msg}"
+        )
+
+        return True
 

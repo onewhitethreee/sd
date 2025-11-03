@@ -213,7 +213,7 @@ class Driver:
 
     def _formatter_charging_points(self, charging_points):
         for i, cp in enumerate(charging_points, 1):
-            print(f"【{i}】 charging point {cp['id']}")
+            print(f"[{i}] charging point {cp['id']}")
             print(f"    ├─ Location: {cp['location']}")
             print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
             print(f"    ├─ Status: {cp['status']}")
@@ -240,7 +240,7 @@ class Driver:
         self.logger.info("Charging History")
         self.logger.info("=" * 60)
         for i, record in enumerate(history_data, 1):
-            self.logger.info(f"\n【{i}】 Session: {record.get('session_id', 'N/A')}")
+            self.logger.info(f"\n[{i}] Session: {record.get('session_id', 'N/A')}")
             self.logger.info(f"    CP ID: {record.get('cp_id', 'N/A')}")
             self.logger.info(f"    Start Time: {record.get('start_time', 'N/A')}")
             self.logger.info(f"    End Time: {record.get('end_time', 'N/A')}")
