@@ -196,8 +196,13 @@ class EV_Central:
                     replication_factor=1
                 )
 
-                # Note: Driver response topics are created dynamically per driver
-                # using KafkaTopics.get_driver_response_topic(driver_id)
+                # 创建统一的Driver响应主题（所有Driver共享）
+                # 通过消息中的driver_id字段区分不同Driver
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_RESPONSES,
+                    num_partitions=3,  # 多分区支持更好的并发性能
+                    replication_factor=1
+                )
 
                 self.logger.info("Kafka producer initialized successfully")
                 return True

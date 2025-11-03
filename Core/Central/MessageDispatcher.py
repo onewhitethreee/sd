@@ -148,24 +148,29 @@ class MessageDispatcher:
         return response
 
     def _send_response_to_driver_via_kafka(self, driver_id, response, msg_type):
-        """通过Kafka向Driver发送响应（使用Driver专属主题）"""
+        """通过Kafka向Driver发送响应（使用统一的响应主题）"""
         if not self.kafka_manager:
             self.logger.warning("Kafka manager not initialized, cannot send response to Driver")
             return
 
         try:
-            # 获取该Driver的专属响应主题
-            # 每个Driver有独立的主题，实现消息隔离，避免Driver之间状态共享
-            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
+            # 获取统一的Driver响应主题
+            # 所有Driver共享同一个主题，通过消息中的driver_id字段区分不同Driver
+            driver_topic = KafkaTopics.get_driver_response_topic()
+
+            # 确保响应消息包含driver_id字段（关键！）
+            if "driver_id" not in response:
+                response["driver_id"] = driver_id
+                self.logger.debug(f"Added driver_id to response: {driver_id}")
 
             success = self.kafka_manager.produce_message(
                 driver_topic,
                 response
             )
             if success:
-                self.logger.debug(f"Response sent to Driver {driver_id} on topic {driver_topic}: {response.get('type')}")
+                self.logger.debug(f"Response sent to unified topic {driver_topic} for Driver {driver_id}: {response.get('type')}")
             else:
-                self.logger.error(f"Failed to send response to Driver {driver_id} on topic {driver_topic}")
+                self.logger.error(f"Failed to send response to Driver {driver_id} on unified topic {driver_topic}")
         except Exception as e:
             self.logger.error(f"Error sending response to Driver {driver_id} via Kafka: {e}")
 
@@ -904,47 +909,47 @@ class MessageDispatcher:
             print()
 
     def _send_charging_status_to_driver(self, driver_id, charging_data):
-        """向指定司机发送充电状态更新（通过Driver专属Kafka主题）"""
+        """向指定司机发送充电状态更新（通过统一的响应主题）"""
         message = self._build_notification_message(
             "charging_status_update",
-            driver_id=driver_id,
+            driver_id=driver_id,  # 关键：消息必须包含driver_id字段
             session_id=charging_data.get("session_id"),
             energy_consumed_kwh=charging_data.get("energy_consumed_kwh"),
             total_cost=charging_data.get("total_cost"),
         )
-        # 发送到Driver的专属主题
+        # 发送到统一的Driver响应主题
         if self.kafka_manager:
-            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
+            driver_topic = KafkaTopics.get_driver_response_topic()
             success = self.kafka_manager.produce_message(
                 driver_topic,
                 message
             )
             if success:
-                self.logger.debug(f"Charging status sent to Driver {driver_id} on topic {driver_topic}")
+                self.logger.debug(f"Charging status sent to unified topic {driver_topic} for Driver {driver_id}")
             return success
         else:
             self.logger.warning("Kafka not available, cannot send charging status to Driver")
             return False
 
     def _send_charge_completion_to_driver(self, driver_id, completion_data):
-        """向指定司机发送充电完成通知（通过Driver专属Kafka主题）"""
+        """向指定司机发送充电完成通知（通过统一的响应主题）"""
         message = self._build_notification_message(
             "charge_completion",
-            driver_id=driver_id,
+            driver_id=driver_id,  # 关键：消息必须包含driver_id字段
             session_id=completion_data.get("session_id"),
             cp_id=completion_data.get("cp_id"),
             energy_consumed_kwh=completion_data.get("energy_consumed_kwh"),
             total_cost=completion_data.get("total_cost"),
         )
-        # 发送到Driver的专属主题
+        # 发送到统一的Driver响应主题
         if self.kafka_manager:
-            driver_topic = KafkaTopics.get_driver_response_topic(driver_id)
+            driver_topic = KafkaTopics.get_driver_response_topic()
             success = self.kafka_manager.produce_message(
                 driver_topic,
                 message
             )
             if success:
-                self.logger.info(f"Charge completion notification sent to Driver {driver_id} on topic {driver_topic}")
+                self.logger.info(f"Charge completion notification sent to unified topic {driver_topic} for Driver {driver_id}")
             return success
         else:
             self.logger.warning("Kafka not available, cannot send charge completion to Driver")

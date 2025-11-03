@@ -310,28 +310,34 @@ class KafkaTopics:
     DRIVER_STOP_REQUESTS = "driver_stop_requests"  # Driver → Central: 停止充电请求
     DRIVER_CPS_REQUESTS = "driver_cps_requests"  # Driver → Central: 查询可用充电桩
 
-
+    # Driver响应主题（统一topic，通过driver_id区分不同driver）
+    DRIVER_RESPONSES = "driver_responses"  # Central → Driver: 所有响应消息（包含driver_id字段）
 
     # 系统主题
     SYSTEM_EVENTS = "system_events"
     SYSTEM_ALERTS = "system_alerts"
 
     @staticmethod
-    def get_driver_response_topic(driver_id: str) -> str:
+    def get_driver_response_topic(driver_id: str = None) -> str:
         """
-        获取特定Driver的响应主题名称
+        获取Driver响应主题名称（统一主题）
 
-        每个Driver有独立的响应主题，确保消息隔离：
-        - 充电请求响应
-        - 停止充电响应
-        - 可用充电桩列表响应
-        - 充电状态更新
-        - 充电完成通知
+        新架构使用单一的响应主题 "driver_responses"，通过消息中的 driver_id 字段区分不同Driver。
+        所有Driver的响应消息都发送到同一个主题，每个Driver的Consumer通过driver_id过滤属于自己的消息。
+
+        优点：
+        - 只需要一个topic，避免topic数量随driver数量增长
+        - 易于管理和监控
+        - 支持大规模driver部署
+
+        消息格式要求：
+        - 所有发送到此主题的消息必须包含 "driver_id" 字段
+        - Consumer端需要根据 driver_id 过滤消息
 
         Args:
-            driver_id: Driver的唯一标识符
+            driver_id: Driver的唯一标识符（可选，保留参数用于向后兼容）
 
         Returns:
-            str: 该Driver的专属响应主题名称，格式为 "driver_responses_{driver_id}"
+            str: 统一的Driver响应主题名称 "driver_responses"
         """
-        return f"driver_responses_{driver_id}"
+        return KafkaTopics.DRIVER_RESPONSES

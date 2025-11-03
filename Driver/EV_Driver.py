@@ -314,24 +314,25 @@ class Driver:
                     num_partitions=1,
                     replication_factor=1
                 )
-                # 创建该Driver的专属响应主题（每个Driver独立主题，实现消息隔离）
-                driver_response_topic = KafkaTopics.get_driver_response_topic(self.args.id_client)
+                # 创建统一的Driver响应主题（所有Driver共享一个主题）
+                driver_response_topic = KafkaTopics.get_driver_response_topic()
                 self.kafka_manager.create_topic_if_not_exists(
                     driver_response_topic,
-                    num_partitions=1,  # 每个Driver只需要1个分区
+                    num_partitions=3,  # 多个分区支持更好的并发性能
                     replication_factor=1
                 )
 
-                # 订阅该Driver的专属响应主题
-                # 重要：使用独立主题后，不再需要应用层过滤，Kafka层已经实现了消息隔离
+                # 订阅统一的Driver响应主题
+                # 重要：每个Driver使用独立的consumer group，确保每个Driver都能收到属于自己的消息
+                # 应用层通过 driver_id 字段过滤消息
                 self.kafka_manager.init_consumer(
                     driver_response_topic,
-                    f"driver_{self.args.id_client}_consumer_group",  # consumer group
+                    f"driver_{self.args.id_client}_consumer_group",  # 每个Driver独立的consumer group
                     self._handle_kafka_message,
                 )
 
                 self.logger.info("Kafka producer initialized successfully")
-                self.logger.info(f"Subscribed to personal response topic: {driver_response_topic}")
+                self.logger.info(f"Subscribed to unified response topic: {driver_response_topic} with driver_id filter: {self.args.id_client}")
                 return True
             else:
                 self.logger.error("Failed to initialize Kafka producer")
@@ -342,13 +343,24 @@ class Driver:
             return False
 
     def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息"""
+        """处理来自Kafka的消息（带driver_id过滤）"""
         try:
             msg_type = message.get("type")
+            message_driver_id = message.get("driver_id")
 
-            # 由于每个Driver使用独立的响应主题，所以收到的所有消息都是属于当前Driver的
-            # 不再需要应用层过滤，Kafka主题隔离已经保证了消息的正确路由
-            self.logger.debug(f"Received Kafka message from personal topic: type={msg_type}")
+            # 应用层过滤：只处理属于当前Driver的消息
+            # 由于使用统一的响应主题，需要检查消息中的driver_id字段
+            if message_driver_id != self.args.id_client:
+                # 消息不属于当前Driver，忽略（这在正常情况下不应该发生，因为consumer group机制）
+                self.logger.debug(
+                    f"Ignoring message for different driver: message_driver_id={message_driver_id}, "
+                    f"current_driver_id={self.args.id_client}"
+                )
+                return
+
+            self.logger.debug(
+                f"Received Kafka message from unified topic: type={msg_type}, driver_id={message_driver_id}"
+            )
 
             # 使用消息分发器处理Kafka消息
             # DriverMessageDispatcher 会处理以下类型：
