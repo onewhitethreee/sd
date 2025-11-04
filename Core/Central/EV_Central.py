@@ -5,8 +5,6 @@ Módulo que representa la central de control de toda la solución. Implementa la
 import sys
 import os
 import time
-import uuid
-from datetime import datetime, timezone
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Config.AppArgumentParser import AppArgumentParser, ip_port_type
@@ -48,12 +46,6 @@ class EV_Central:
                 type=ip_port_type,
                 help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)",
             )
-            self.tools.add_argument(
-                "--db",
-                type=ip_port_type,
-                help="IP y puerto del servidor de base de datos (formato IP:PORT)",
-                default=("localhost", 5432),
-            )
             self.args = self.tools.parse_args()
 
         else:
@@ -74,19 +66,6 @@ class EV_Central:
                 sql_schema_file=self.sql_schema,
                 create_tables_if_not_exist=True,
             )
-            if not self.db_manager.is_sqlite_available():
-                self.logger.error(
-                    "Database is not available or not properly initialized."
-                )
-                sys.exit(1)
-
-            self.db_manager.set_all_charging_points_status(Status.DISCONNECTED.value) 
-
-            charging_points_count = len(self.db_manager.get_all_charging_points())
-            self.logger.info(
-                f"Database initialized successfully. {charging_points_count} charging points set to DISCONNECTED."
-            )
-
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             sys.exit(1)
@@ -122,13 +101,18 @@ class EV_Central:
             self.logger.error(f"Failed to initialize socket server: {e}")
             sys.exit(1)
 
-        # 初始化消息分发器
-        self.message_dispatcher = MessageDispatcher(
-            logger=self.logger,
-            db_manager=self.db_manager,
-            socket_server=self.socket_server,
-        )
-
+    def _initialize_message_dispatcher(self):
+        try:
+            self.message_dispatcher = MessageDispatcher(
+                logger=self.logger,
+                db_manager=self.db_manager,
+                socket_server=self.socket_server,
+                kafka_manager=self.kafka_manager,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to initialize MessageDispatcher: {e}")
+            sys.exit(1)
+    
     def _handle_client_disconnect(self, client_id):
         """
         处理客户端断开连接
@@ -167,15 +151,51 @@ class EV_Central:
     def _init_kafka_producer(self):
         """初始化Kafka生产者"""
         self.logger.debug("Initializing Kafka producer")
-        if self.debug_mode:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        else:
-            broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        
+        broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
         try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)
 
             if self.kafka_manager.init_producer():
+                # 创建Central需要的所有Kafka topics
+                self.logger.info("Creating required Kafka topics...")
+
+                # 充电会话相关topics（Engine -> Central）
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_DATA,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.CHARGING_SESSION_COMPLETE,
+                    num_partitions=1,
+                    replication_factor=1
+                )
+
+                # Driver请求相关topics（Driver -> Central）
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CHARGE_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_STOP_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_CPS_REQUESTS,
+                    num_partitions=3,
+                    replication_factor=1
+                )
+
+                # 创建统一的Driver响应主题（所有Driver共享）
+                # 通过消息中的driver_id字段区分不同Driver
+                self.kafka_manager.create_topic_if_not_exists(
+                    KafkaTopics.DRIVER_RESPONSES,
+                    num_partitions=3,  # 多分区支持更好的并发性能
+                    replication_factor=1
+                )
+
                 self.logger.info("Kafka producer initialized successfully")
                 return True
             else:
@@ -186,7 +206,7 @@ class EV_Central:
             return False
 
     def _init_kafka_consumer(self):
-        """初始化Kafka消费者"""
+        """初始化Kafka消费者（订阅Engine和Driver发送的消息）"""
         self.logger.debug("Initializing Kafka consumer")
         try:
             if not self.kafka_manager:
@@ -196,44 +216,122 @@ class EV_Central:
             # 启动Kafka管理器
             self.kafka_manager.start()
 
-            # 初始化消费者订阅相关主题
-            topics_to_subscribe = [
-                (KafkaTopics.CHARGING_POINT_HEARTBEAT, "central_group"),
-                (KafkaTopics.CHARGING_POINT_FAULT, "central_group"),
-                (KafkaTopics.SYSTEM_ALERTS, "central_group"),
-            ]
+            # 订阅充电数据主题（来自Engine）
+            success1 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.CHARGING_SESSION_DATA,
+                self._handle_charging_data_from_kafka,
+                group_id="central_charging_data_group",
+            )
 
-            for topic, group_id in topics_to_subscribe:
-                self.kafka_manager.init_consumer(
-                    topic, group_id, self._handle_kafka_message
+            # 订阅充电完成主题（来自Engine）
+            success2 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.CHARGING_SESSION_COMPLETE,
+                self._handle_charging_complete_from_kafka,
+                group_id="central_charging_complete_group",
+            )
+
+            # 订阅Driver充电请求主题
+            success3 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.DRIVER_CHARGE_REQUESTS,
+                self._handle_driver_request_from_kafka,
+                group_id="central_driver_requests_group",
+            )
+
+            # 订阅Driver停止充电请求主题
+            success4 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.DRIVER_STOP_REQUESTS,
+                self._handle_driver_request_from_kafka,
+                group_id="central_driver_stop_group",
+            )
+
+            # 订阅Driver查询可用充电桩请求主题
+            success5 = self.kafka_manager.subscribe_topic(
+                KafkaTopics.DRIVER_CPS_REQUESTS,
+                self._handle_driver_request_from_kafka,
+                group_id="central_driver_cps_group",
+            )
+
+            if success1 and success2 and success3 and success4 and success5:
+                self.logger.info(
+                    "Kafka consumers initialized successfully (charging_session_data, charging_session_complete, driver_requests)"
                 )
+                return True
+            else:
+                self.logger.error("Failed to initialize some Kafka consumers")
+                return False
 
-            self.logger.info("Kafka consumers initialized successfully")
-            return True
         except Exception as e:
             self.logger.error(f"Error initializing Kafka consumer: {e}")
             return False
 
-    def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息"""
+    def _handle_charging_data_from_kafka(self, message):
+        """处理来自Kafka的充电数据（由Engine发送）"""
         try:
-            self.logger.debug(f"Received Kafka message: {message}")
-            # 这里可以添加具体的消息处理逻辑
+            self.logger.debug(f"Received charging data from Kafka: {message}")
+
+            # 委托给 MessageDispatcher 处理
+            if self.message_dispatcher:
+                self.message_dispatcher.dispatch_message("Kafka", message)
+            else:
+                self.logger.warning(
+                    "MessageDispatcher not initialized, cannot process Kafka message"
+                )
+
         except Exception as e:
-            self.logger.error(f"Error handling Kafka message: {e}")
+            self.logger.error(f"Error handling charging data from Kafka: {e}")
+
+    def _handle_charging_complete_from_kafka(self, message):
+        """处理来自Kafka的充电完成消息（由Engine发送）"""
+        try:
+            self.logger.info(f"Received charging completion from Kafka: {message}")
+
+            # 委托给 MessageDispatcher 处理
+            if self.message_dispatcher:
+                self.message_dispatcher.dispatch_message("Kafka", message)
+            else:
+                self.logger.warning(
+                    "MessageDispatcher not initialized, cannot process Kafka message"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error handling charging completion from Kafka: {e}")
+
+    def _handle_driver_request_from_kafka(self, message):
+        """处理来自Kafka的Driver请求（充电请求、停止请求、查询可用充电桩）"""
+        try:
+            msg_type = message.get("type", "unknown")
+            driver_id = message.get("driver_id", "unknown")
+            self.logger.info(f"Received Driver request from Kafka: type={msg_type}, driver_id={driver_id}")
+
+            # 委托给 MessageDispatcher 处理
+            # 注意：由于Driver不再通过Socket连接，我们需要使用driver_id作为client_id
+            if self.message_dispatcher:
+                self.message_dispatcher.dispatch_message(driver_id, message)
+            else:
+                self.logger.warning(
+                    "MessageDispatcher not initialized, cannot process Kafka message"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error handling Driver request from Kafka: {e}")
 
     def initialize_systems(self):
         self.logger.info("Initializing systems...")
-        self._init_database()
         self._init_socket_server()
 
-        # 初始化Kafka
-        # if self._init_kafka_producer():
-        #     self._init_kafka_consumer()
-        # else:
-        #     self.logger.warning(
-        #         "Kafka initialization failed, continuing without Kafka support"
-        #     )
+        self._init_database()
+
+        # 先初始化Kafka（这样MessageDispatcher可以使用它）
+        if self._init_kafka_producer():
+            # MessageDispatcher需要kafka_manager，所以在这里初始化
+            self._initialize_message_dispatcher()
+            self._init_kafka_consumer()
+        else:
+            self.logger.warning(
+                "Kafka initialization failed, continuing without Kafka support"
+            )
+            # 即使Kafka失败，也需要初始化MessageDispatcher（用于Socket通信）
+            self._initialize_message_dispatcher()
 
         # 初始化管理员CLI
         self._init_admin_cli()
@@ -259,14 +357,6 @@ class EV_Central:
             self.socket_server.stop()
         if self.kafka_manager:
             self.kafka_manager.stop()
-        if self.db_manager:
-            try:
-                self.db_manager.set_all_charging_points_status(
-                    Status.DISCONNECTED.value
-                )
-                self.logger.info("All charging points set to DISCONNECTED.")
-            except Exception as e:
-                self.logger.error(f"Error setting charging points to DISCONNECTED: {e}")
         self.running = False
 
     def start(self):

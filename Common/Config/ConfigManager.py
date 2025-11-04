@@ -61,23 +61,18 @@ class ConfigManager:
     
     def get_db_path(self):
         return self.get("DB_PATH", "ev_central.db")
-    
-    def get_client_id(self):
-        return self.get("CLIENT_ID", "client_001")
-    
+        
     def get_ip_port_ev_cp_e(self):
         ip_port = self.get("IP_PORT_EV_CP_E", "localhost:6000").split(":")
         return (ip_port[0], int(ip_port[1]))
     def get_ip_port_ev_cp_central(self):
         ip_port = self.get("IP_PORT_EV_CP_CENTRAL", "localhost:5000").split(":")
         return (ip_port[0], int(ip_port[1]))
-    def get_id_cp(self):
-        return self.get("ID_CP", "cp_001")
+
     def get_ip_port_ev_m(self):
         ip_port = self.get("IP_PORT_EV_M", "localhost:6000").split(":")
         return (ip_port[0], int(ip_port[1]))
-    def get_location(self):
-        return self.get("LOCATION", "location_001")
+    
 if __name__ == "__main__":
 
     config = ConfigManager()

@@ -150,6 +150,3 @@ class ConnectionManager:
         self._client.disconnect()
         self.logger.info(f"[{self.name}] Reconnect loop terminated.")
 
-# Charging point instasnce how many have ?
-# Message formatter should be string cointaning # to seperate?
-# 

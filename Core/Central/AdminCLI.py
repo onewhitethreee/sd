@@ -47,19 +47,22 @@ class AdminCLI:
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self._print_welcome()
-        self._print_help()
+        self.logger.info("Admin CLI ready. Press ENTER to show menu...")
 
         while self.running:
             try:
-                command = input("\nAdmin> ").strip()
-                if not command:
+                # 等待用户输入
+                user_input = input().strip()
+
+                # 如果按 ENTER 不输入任何内容，显示菜单
+                if not user_input:
+                    self._show_menu()
                     continue
 
-                self._process_command(command)
+                self._process_command(user_input)
 
             except KeyboardInterrupt:
-                print("\n检测到中断，使用 'quit' 命令退出")
+                print("\n检测到中断，使用 '0' 退出")
                 continue
             except EOFError:
                 break
@@ -67,199 +70,194 @@ class AdminCLI:
                 self.logger.error(f"处理命令时出错: {e}")
                 print(f"错误: {e}")
 
-    def _print_welcome(self):
-        """打印欢迎信息"""
+    def _show_menu(self):
+        """显示菜单"""
         print("\n" + "=" * 60)
-        print(" EV Central 管理员控制台")
+        print("  EV_CENTRAL - ADMIN CONTROL MENU")
         print("=" * 60)
 
-    def _print_help(self):
-        """打印帮助信息"""
-        help_text = """
-可用命令:
-  list                    - 列出所有充电桩及其状态
-  list available          - 列出所有可用的充电桩
-  list active             - 列出所有活跃的充电桩
-  list sessions           - 列出所有充电会话
+        # 获取基本统计信息
+        try:
+            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            all_sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            pending = self.central.message_dispatcher.get_pending_authorizations()
 
-  stop <cp_id>           - 停止指定的充电桩
-  stop all               - 停止所有充电桩
+            print(f"  Total Charging Points: {len(all_cps)}")
+            print(f"  Total Sessions: {len(all_sessions)}")
+            print(f"  Pending Authorizations: {len(pending)}")
+        except:
+            pass
 
-  resume <cp_id>         - 恢复指定的充电桩
-  resume all             - 恢复所有充电桩
-
-  status <cp_id>         - 查看指定充电桩的详细状态
-  session <session_id>   - 查看指定充电会话的详细信息
-
-  stats                  - 显示系统统计信息
-  help                   - 显示此帮助信息
-  quit                   - 退出管理员控制台
-"""
-        print(help_text)
+        print("-" * 60)
+        print("  CHARGING POINT MANAGEMENT:")
+        print("  [1] List all charging points")
+        print("  [2] List available charging points")
+        print("  [3] List active charging points")
+        print("  [4] Show charging point status (requires CP ID)")
+        print()
+        print("  SESSION MANAGEMENT:")
+        print("  [5] List all charging sessions")
+        print("  [6] Show session details (requires Session ID)")
+        print()
+        print("  AUTHORIZATION:")
+        print("  [7] List pending authorizations")
+        print("  [8] Authorize charging point (requires CP ID or 'all')")
+        print()
+        print("  CONTROL:")
+        print("  [9] Stop charging point (requires CP ID or 'all')")
+        print("  [10] Resume charging point (requires CP ID or 'all')")
+        print()
+        print("  SYSTEM:")
+        print("  [11] Show system statistics")
+        print()
+        print("  [0] Exit Admin Console")
+        print("=" * 60)
 
     def _process_command(self, command: str):
         """
         处理用户输入的命令
 
         Args:
-            command: 用户输入的命令字符串
+            command: 用户输入的命令字符串（数字选项）
         """
-        parts = command.lower().split()
-        if not parts:
-            return
-
-        cmd = parts[0]
-
         try:
-            if cmd == "help":
-                self._print_help()
-
-            elif cmd == "quit" or cmd == "exit":
+            if command == "0":
                 print("退出管理员控制台...")
                 self.running = False
 
-            elif cmd == "list":
-                subcommand = parts[1] if len(parts) > 1 else None
-                self._handle_list_command(subcommand)
+            elif command == "1":
+                self._show_registered_charging_points(filter_type=None)
 
-            elif cmd == "stop":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID或使用 'all'")
-                    print("用法: stop <cp_id> 或 stop all")
-                else:
-                    cp_id = parts[1]
-                    self._handle_stop_command(cp_id)
+            elif command == "2":
+                self._show_registered_charging_points(filter_type="available")
 
-            elif cmd == "resume":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID或使用 'all'")
-                    print("用法: resume <cp_id> 或 resume all")
-                else:
-                    cp_id = parts[1]
-                    self._handle_resume_command(cp_id)
+            elif command == "3":
+                self._show_registered_charging_points(filter_type="active")
 
-            elif cmd == "status":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID")
-                    print("用法: status <cp_id>")
-                else:
-                    cp_id = parts[1]
+            elif command == "4":
+                cp_id = input("请输入充电桩ID: ").strip()
+                if cp_id :
                     self._handle_status_command(cp_id)
-
-            elif cmd == "session":
-                if len(parts) < 2:
-                    print("错误: 请指定会话ID")
-                    print("用法: session <session_id>")
                 else:
-                    session_id = parts[1]
-                    self._handle_session_command(session_id)
+                    print("错误: 充电桩ID不能为空")
 
-            elif cmd == "stats":
+            elif command == "5":
+                self._list_sessions()
+
+            elif command == "6":
+                session_id = input("请输入会话ID: ").strip()
+                if session_id:
+                    self._handle_session_command(session_id)
+                else:
+                    print("错误: 会话ID不能为空")
+
+            elif command == "7":
+                self._list_pending_authorizations()
+
+            elif command == "8":
+                cp_id = input("请输入充电桩ID (或按回车授权所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
+                self._handle_authorize_command(cp_id)
+
+            elif command == "9":
+                cp_id = input("请输入充电桩ID (或按回车停止所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
+                self._handle_stop_command(cp_id)
+
+            elif command == "10":
+                cp_id = input("请输入充电桩ID (或按回车恢复所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
+                self._handle_resume_command(cp_id)
+
+            elif command == "11":
                 self._handle_stats_command()
 
             else:
-                print(f"未知命令: {cmd}")
-                print("输入 'help' 查看可用命令")
+                print(f"未知选项: {command}")
+                print("按 ENTER 显示菜单")
 
         except Exception as e:
             self.logger.error(f"执行命令时出错: {e}")
             print(f"错误: {e}")
 
-    def _handle_list_command(self, subcommand: str = None):
-        """处理list命令"""
-        if subcommand == "sessions":
-            self._list_sessions()
-        elif subcommand == "available":
-            self._list_available_charging_points()
-        elif subcommand == "active":
-            self._list_active_charging_points()
-        else:
-            self._list_all_charging_points()
 
-    def _list_all_charging_points(self):
-        """列出所有充电桩"""
+    def _show_registered_charging_points(self, filter_type: str = None):
+        """
+        统一显示充电桩列表的方法
+
+        Args:
+            filter_type: 过滤类型，可选值：None(所有), 'available'(可用), 'active'(活跃)
+        """
         try:
-            charging_points = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            # 根据过滤类型获取充电桩列表
+            if filter_type == "available":
+                charging_points = (
+                    self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
+                )
+                list_title = "可用"
+                empty_message = "当前没有可用的充电桩"
+            elif filter_type == "active":
+                all_cps = (
+                    self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+                )
+                charging_points = [cp for cp in all_cps if cp.get("status") == "ACTIVE"]
+                list_title = "活跃"
+                empty_message = "当前没有活跃状态的充电桩"
+            else:
+                # 默认显示所有充电桩
+                charging_points = (
+                    self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+                )
+                list_title = ""
+                empty_message = "当前没有注册的充电桩"
 
+            # 检查是否为空
             if not charging_points:
-                print("当前没有注册的充电桩")
+                print(empty_message)
                 return
 
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
-            print("-" * 100)
+            # 根据是否显示状态列决定表头格式
+            show_status = (filter_type is None)
 
+            if show_status:
+                # 显示所有充电桩时包含状态列
+                print(f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15}")
+                print("-" * 85)
+            else:
+                # 过滤后的列表不显示状态列
+                print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15}")
+                print("-" * 70)
+
+            # 打印充电桩信息
             for cp in charging_points:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                status = cp.get('status', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
+                cp_id = cp.get("cp_id", "N/A")
+                location = cp.get("location", "N/A")
+                price = cp.get("price_per_kwh", 0.0)
 
-                print(f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f} {max_rate:<.1f}")
+                if show_status:
+                    status = cp.get("status", "N/A")
+                    print(f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f}")
+                else:
+                    print(f"{cp_id:<20} {location:<30} {price:<15.4f}")
 
-            print(f"\n总计: {len(charging_points)} 个充电桩")
-
-        except Exception as e:
-            self.logger.error(f"获取充电桩列表失败: {e}")
-            print(f"错误: 无法获取充电桩列表 - {e}")
-
-    def _list_available_charging_points(self):
-        """列出所有可用的充电桩"""
-        try:
-            charging_points = self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
-
-            if not charging_points:
-                print("当前没有可用的充电桩")
-                return
-
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
-            print("-" * 85)
-
-            for cp in charging_points:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
-
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
-
-            print(f"\n总计: {len(charging_points)} 个可用充电桩")
+            # 打印总计
+            count_text = f"{list_title}充电桩" if list_title else "充电桩"
+            print(f"\n总计: {len(charging_points)} 个{count_text}")
 
         except Exception as e:
-            self.logger.error(f"获取可用充电桩列表失败: {e}")
-            print(f"错误: 无法获取可用充电桩列表 - {e}")
-
-    def _list_active_charging_points(self):
-        """列出所有活跃状态的充电桩"""
-        try:
-            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            active_cps = [cp for cp in all_cps if cp.get('status') == 'ACTIVE']
-
-            if not active_cps:
-                print("当前没有活跃状态的充电桩")
-                return
-
-            print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} {'最大功率(kW)'}")
-            print("-" * 85)
-
-            for cp in active_cps:
-                cp_id = cp.get('cp_id', 'N/A')
-                location = cp.get('location', 'N/A')
-                price = cp.get('price_per_kwh', 0.0)
-                max_rate = cp.get('max_charging_rate_kw', 0.0)
-
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f} {max_rate:<.1f}")
-
-            print(f"\n总计: {len(active_cps)} 个活跃充电桩")
-
-        except Exception as e:
-            self.logger.error(f"获取活跃充电桩列表失败: {e}")
-            print(f"错误: 无法获取活跃充电桩列表 - {e}")
+            error_type = "充电桩列表" if not filter_type else f"{filter_type}充电桩列表"
+            self.logger.error(f"获取{error_type}失败: {e}")
+            print(f"错误: 无法获取{error_type} - {e}")
 
     def _list_sessions(self):
         """列出所有充电会话"""
         try:
-            sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            sessions = (
+                self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            )
 
             if not sessions:
                 print("当前没有充电会话记录")
@@ -269,10 +267,10 @@ class AdminCLI:
             print("-" * 100)
 
             for session in sessions:
-                session_id = session.get('session_id', 'N/A')
-                cp_id = session.get('cp_id', 'N/A')
-                driver_id = session.get('driver_id', 'N/A')
-                status = session.get('status', 'N/A')
+                session_id = session.get("session_id", "N/A")
+                cp_id = session.get("cp_id", "N/A")
+                driver_id = session.get("driver_id", "N/A")
+                status = session.get("status", "N/A")
 
                 print(f"{session_id:<38} {cp_id:<20} {driver_id:<20} {status:<15}")
 
@@ -292,13 +290,12 @@ class AdminCLI:
                 "command": "stop",
                 "cp_id": cp_id,
                 "admin_id": "admin_cli",
-                "timestamp": int(time.time())
+                "timestamp": int(time.time()),
             }
 
             # 使用MessageDispatcher处理命令
             response = self.central.message_dispatcher._handle_manual_command(
-                client_id="admin_cli",
-                message=message
+                client_id="admin_cli", message=message
             )
 
             # 显示结果
@@ -328,13 +325,12 @@ class AdminCLI:
                 "command": "resume",
                 "cp_id": cp_id,
                 "admin_id": "admin_cli",
-                "timestamp": int(time.time())
+                "timestamp": int(time.time()),
             }
 
             # 使用MessageDispatcher处理命令
             response = self.central.message_dispatcher._handle_manual_command(
-                client_id="admin_cli",
-                message=message
+                client_id="admin_cli", message=message
             )
 
             # 显示结果
@@ -357,7 +353,9 @@ class AdminCLI:
     def _handle_status_command(self, cp_id: str):
         """处理查看充电桩状态命令"""
         try:
-            cp_info = self.central.message_dispatcher.charging_point_manager.get_charging_point(cp_id)
+            cp_info = self.central.message_dispatcher.charging_point_manager.get_charging_point(
+                cp_id
+            )
 
             if not cp_info:
                 print(f"错误: 找不到充电桩 {cp_id}")
@@ -369,9 +367,9 @@ class AdminCLI:
             print(f"  位置:           {cp_info.get('location', 'N/A')}")
             print(f"  状态:           {cp_info.get('status', 'N/A')}")
             print(f"  价格:           {cp_info.get('price_per_kwh', 0.0):.4f} 元/kWh")
-            print(f"  最大充电功率:   {cp_info.get('max_charging_rate_kw', 0.0):.1f} kW")
+           
 
-            last_connection = cp_info.get('last_connection_time')
+            last_connection = cp_info.get("last_connection_time")
             if last_connection:
                 print(f"  最后连接时间:   {last_connection}")
             else:
@@ -386,7 +384,11 @@ class AdminCLI:
     def _handle_session_command(self, session_id: str):
         """处理查看充电会话命令"""
         try:
-            session_info = self.central.message_dispatcher.charging_session_manager.get_session(session_id)
+            session_info = (
+                self.central.message_dispatcher.charging_session_manager.get_session(
+                    session_id
+                )
+            )
 
             if not session_info:
                 print(f"错误: 找不到充电会话 {session_id}")
@@ -400,12 +402,12 @@ class AdminCLI:
             print(f"  状态:           {session_info.get('status', 'N/A')}")
             print(f"  开始时间:       {session_info.get('start_time', 'N/A')}")
 
-            end_time = session_info.get('end_time')
+            end_time = session_info.get("end_time")
             if end_time:
                 print(f"  结束时间:       {end_time}")
 
-            energy = session_info.get('energy_consumed_kwh', 0.0)
-            cost = session_info.get('total_cost', 0.0)
+            energy = session_info.get("energy_consumed_kwh", 0.0)
+            cost = session_info.get("total_cost", 0.0)
             print(f"  消耗电量:       {energy:.2f} kWh")
             print(f"  总费用:         {cost:.2f} 元")
             print("-" * 60)
@@ -414,16 +416,79 @@ class AdminCLI:
             self.logger.error(f"获取充电会话信息失败: {e}")
             print(f"错误: 无法获取充电会话信息 - {e}")
 
+    def _handle_authorize_command(self, cp_id: str):
+        """处理授权命令"""
+        if not cp_id:
+            print("错误: 请指定充电点ID或使用 'all'")
+            print("用法: authorize <cp_id> 或 authorize all")
+            return
+
+        try:
+            if cp_id.lower() == "all":
+                # 授权所有待授权的充电点
+                pending = self.central.message_dispatcher.get_pending_authorizations()
+                if not pending:
+                    print("没有待授权的充电点")
+                    return
+
+                authorized_count = 0
+                for auth_info in pending:
+                    cp_id_to_auth = auth_info["cp_id"]
+                    if self.central.message_dispatcher.authorize_charging_point(cp_id_to_auth):
+                        authorized_count += 1
+                        print(f"✅ 已授权充电点: {cp_id_to_auth}")
+
+                print(f"\n成功授权 {authorized_count} 个充电点")
+            else:
+                # 授权指定的充电点
+                if self.central.message_dispatcher.authorize_charging_point(cp_id):
+                    print(f"✅ 充电点 {cp_id} 已获得授权")
+                else:
+                    print(f"❌ 无法授权充电点 {cp_id}（可能不在待授权列表中）")
+
+        except Exception as e:
+            self.logger.error(f"授权充电点失败: {e}")
+            print(f"错误: 无法授权充电点 - {e}")
+
+    def _list_pending_authorizations(self):
+        """列出待授权的充电点"""
+        try:
+            pending = self.central.message_dispatcher.get_pending_authorizations()
+
+            if not pending:
+                print("当前没有待授权的充电点")
+                return
+
+            print("\n待授权的充电点:")
+            print("=" * 60)
+            for auth_info in pending:
+                cp_id = auth_info["cp_id"]
+                client_id = auth_info["client_id"]
+                pending_time = auth_info["pending_time"]
+                print(f"  充电点ID:       {cp_id}")
+                print(f"  客户端ID:      {client_id}")
+                print(f"  等待时间:      {pending_time:.1f} 秒")
+                print(f"  操作:          使用 'authorize {cp_id}' 命令授权")
+                print("-" * 60)
+
+        except Exception as e:
+            self.logger.error(f"获取待授权列表失败: {e}")
+            print(f"错误: 无法获取待授权列表 - {e}")
+
     def _handle_stats_command(self):
         """处理显示统计信息命令"""
         try:
-            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            all_sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            all_cps = (
+                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            )
+            all_sessions = (
+                self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            )
 
             # 统计充电桩状态
             status_count = {}
             for cp in all_cps:
-                status = cp.get('status', 'UNKNOWN')
+                status = cp.get("status", "UNKNOWN")
                 status_count[status] = status_count.get(status, 0) + 1
 
             # 统计会话状态
@@ -431,11 +496,11 @@ class AdminCLI:
             total_energy = 0.0
             total_cost = 0.0
             for session in all_sessions:
-                status = session.get('status', 'UNKNOWN')
+                status = session.get("status", "UNKNOWN")
                 session_status_count[status] = session_status_count.get(status, 0) + 1
 
-                energy = session.get('energy_consumed_kwh', 0.0)
-                cost = session.get('total_cost', 0.0)
+                energy = session.get("energy_consumed_kwh", 0.0)
+                cost = session.get("total_cost", 0.0)
                 if energy:
                     total_energy += energy
                 if cost:
