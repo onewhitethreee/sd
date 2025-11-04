@@ -1,7 +1,4 @@
-"""
-Kafka消息队列管理器
-用于处理与Kafka的连接、生产者和消费者的创建和管理
-"""
+
 
 import json
 import threading
@@ -19,16 +16,16 @@ logging.getLogger("kafka.metrics").setLevel(logging.WARNING)
 
 class KafkaManager:
     """
-    Kafka管理器类，负责管理Kafka生产者和消费者
+    Clase para gestionar la conexión y comunicación con kafka. Pruducer and consumer. 
     """
 
     def __init__(self, broker_address, logger=None):
         """
-        初始化Kafka管理器
+        inicializar el gestor de Kafka
 
         Args:
-            broker_address: Kafka代理地址，格式为 "host:port"
-            logger: 日志记录器
+            broker_address: Dirección del broker de Kafka, en formato "host:port"
+            logger: Logger personalizado
         """
         self.broker_address = broker_address
         self.logger = logger or logging.getLogger(__name__)
@@ -39,7 +36,7 @@ class KafkaManager:
 
     def init_producer(self):
         """
-        初始化Kafka生产者
+        Inicializar producer de Kafka
         """
         try:
             self.producer = KafkaProducer(
@@ -49,39 +46,27 @@ class KafkaManager:
                 retries=3,
                 max_in_flight_requests_per_connection=1,
             )
-            self.logger.info(f"Kafka生产者初始化成功: {self.broker_address}")
+            self.logger.info(f"Kafka producer initialized successfully: {self.broker_address}")
             return True
         except Exception as e:
-            self.logger.error(f"Kafka生产者初始化失败: {e}")
+            self.logger.error(f"Failed to initialize Kafka producer: {e}")
             return False
 
-    def send_message(self, topic, message):
-        """
-        发送消息到Kafka主题（已弃用，使用 produce_message）
-
-        Args:
-            topic: 主题名称
-            message: 消息内容（字典）
-
-        Returns:
-            True if successful, False otherwise
-        """
-        return self.produce_message(topic, message)
 
     def produce_message(self, topic, message, retry=3):
         """
-        发送消息到Kafka主题（改进版，支持重试）
+        Enviar mensaje a un tema de Kafka (versión mejorada, con soporte de reintentos)
 
         Args:
-            topic: 主题名称
-            message: 消息内容（字典）
-            retry: 重试次数，默认3次
+            topic: Nombre del tema
+            message: Contenido del mensaje (diccionario)
+            retry: Número de reintentos, por defecto 3
 
         Returns:
-            True if successful, False otherwise
+            bool: Si fue exitoso
         """
         if not self.producer:
-            self.logger.error("Kafka生产者未初始化")
+            self.logger.error("Kafka producer not initialized")
             return False
 
         import time
@@ -90,28 +75,28 @@ class KafkaManager:
                 future = self.producer.send(topic, value=message)
                 record_metadata = future.get(timeout=10)
                 self.logger.debug(
-                    f"消息已发送到主题 {topic}, 分区 {record_metadata.partition}, 偏移量 {record_metadata.offset}"
+                    f"Message sent to topic {topic}, partition {record_metadata.partition}, offset {record_metadata.offset}"
                 )
                 return True
             except KafkaError as e:
-                self.logger.warning(f"发送消息失败 (尝试 {attempt + 1}/{retry}): {e}")
+                self.logger.warning(f"Failed to send message (attempt {attempt + 1}/{retry}): {e}")
                 if attempt == retry - 1:
-                    self.logger.error(f"发送消息到Kafka失败，已重试 {retry} 次")
+                    self.logger.error(f"Failed to send message to Kafka after {retry} attempts")
                     return False
-                time.sleep(1 * (attempt + 1))  # 指数退避
+                time.sleep(1 * (attempt + 1))  # Exponential backoff
             except Exception as e:
-                self.logger.error(f"发送消息时出错: {e}")
+                self.logger.error(f"Error sending message: {e}")
                 return False
         return False
 
     def init_consumer(self, topic, group_id, message_callback):
         """
-        初始化Kafka消费者
+        Inicializar consumidor de Kafka
 
         Args:
-            topic: 主题名称
-            group_id: 消费者组ID
-            message_callback: 消息回调函数
+            topic: Nombre del tema
+            group_id: ID del grupo de consumidores
+            message_callback: Función de callback para procesar mensajes
 
         Returns:
             True if successful, False otherwise
@@ -129,7 +114,6 @@ class KafkaManager:
 
             self.consumers[topic] = consumer
 
-            # 启动消费者线程
             consumer_thread = threading.Thread(
                 target=self._consume_messages,
                 args=(topic, message_callback),
@@ -139,27 +123,27 @@ class KafkaManager:
             consumer_thread.start()
             self.consumer_threads[topic] = consumer_thread
 
-            self.logger.debug(f"Kafka消费者初始化成功: 主题={topic}, 组ID={group_id}")
+            self.logger.debug(f"Kafka consumer initialized successfully: Topic={topic}, Group ID={group_id}")
             return True
 
         except Exception as e:
-            self.logger.error(f"Kafka消费者初始化失败: {e}")
+            self.logger.error(f"Failed to initialize Kafka consumer: {e}")
             return False
 
     def _consume_messages(self, topic, message_callback):
         """
-        消费消息的内部方法
+        Método interno para consumir mensajes
 
         Args:
-            topic: 主题名称
-            message_callback: 消息回调函数
+            topic: Nombre del tema
+            message_callback: Función de callback para procesar mensajes
         """
         consumer = self.consumers.get(topic)
         if not consumer:
-            self.logger.error(f"消费者未找到: {topic}")
+            self.logger.error(f"Consumer not found: {topic}")
             return
 
-        self.logger.info(f"开始消费主题 {topic} 的消息")
+        self.logger.info(f"Starting to consume messages from topic {topic}")
 
         try:
             for message in consumer:
@@ -167,60 +151,60 @@ class KafkaManager:
                     break
 
                 try:
-                    self.logger.debug(f"收到消息: {message.value}")
+                    self.logger.debug(f"Received message: {message.value}")
                     message_callback(message.value)
                 except Exception as e:
-                    self.logger.error(f"处理消息时出错: {e}")
+                    self.logger.error(f"Error processing message: {e}")
 
         except Exception as e:
-            self.logger.error(f"消费消息时出错: {e}")
-        
+            self.logger.error(f"Error consuming messages: {e}")
+
 
     def start(self):
         """
-        启动Kafka管理器
+        Start the Kafka manager
         """
         self.running = True
-        self.logger.info("Kafka管理器已启动")
+        self.logger.info("Kafka manager started")
 
     def stop(self):
         """
-        停止Kafka管理器
+        Stop the Kafka manager
         """
         self.running = False
 
-        # 关闭所有消费者
+        # Close all consumers
         for topic, consumer in self.consumers.items():
             try:
                 consumer.close()
-                self.logger.info(f"消费者已关闭: {topic}")
+                self.logger.info(f"Consumer closed: {topic}")
             except Exception as e:
-                self.logger.error(f"关闭消费者失败: {e}")
+                self.logger.error(f"Failed to close consumer: {e}")
 
-        # 关闭生产者
+        # Close producer
         if self.producer:
             try:
                 self.producer.close()
-                self.logger.info("生产者已关闭")
+                self.logger.info("Producer closed successfully")
             except Exception as e:
-                self.logger.error(f"关闭生产者失败: {e}")
+                self.logger.error(f"Failed to close producer: {e}")
 
-        self.logger.info("Kafka管理器已停止")
+        self.logger.info("Kafka manager stopped")
 
     def is_connected(self):
         """
-        检查Kafka连接状态
+        Check Kafka connection status
         """
         return self.producer is not None and self.running
 
     def subscribe_topic(self, topic, callback, group_id=None):
         """
-        订阅Kafka主题（便捷方法）
+        Subscribe to a Kafka topic 
 
         Args:
-            topic: 主题名称
-            callback: 消息回调函数
-            group_id: 消费者组ID，默认为 f"{topic}_group"
+            topic: Topic name
+            callback: Message callback function
+            group_id: Consumer group ID, defaults to f"{topic}_group"
 
         Returns:
             True if successful, False otherwise
@@ -232,12 +216,12 @@ class KafkaManager:
 
     def create_topic_if_not_exists(self, topic, num_partitions=3, replication_factor=1):
         """
-        创建Kafka主题（如果不存在）
+        Create a Kafka topic if it does not exist
 
         Args:
-            topic: 主题名称
-            num_partitions: 分区数量，默认3
-            replication_factor: 副本因子，默认1
+            topic: Topic name
+            num_partitions: Number of partitions, defaults to 3
+            replication_factor: Replication factor, defaults to 1
 
         Returns:
             True if successful or already exists, False otherwise
@@ -250,14 +234,12 @@ class KafkaManager:
                 request_timeout_ms=10000
             )
 
-            # 检查主题是否存在
             existing_topics = admin.list_topics()
             if topic in existing_topics:
                 # self.logger.debug(f"Topic {topic} already exists")
                 admin.close()
                 return True
 
-            # 创建主题
             new_topic = NewTopic(
                 name=topic,
                 num_partitions=num_partitions,
@@ -272,72 +254,32 @@ class KafkaManager:
             self.logger.error(f"Failed to create topic {topic}: {e}")
             return False
 
-    def health_check(self):
-        """
-        健康检查
-
-        Returns:
-            True if Kafka is healthy, False otherwise
-        """
-        try:
-            if self.producer:
-                # 尝试获取元数据
-                metadata = self.producer.partitions_for("__health_check__")
-                return True
-        except Exception as e:
-            self.logger.debug(f"Kafka health check failed: {e}")
-            return False
-        return False
 
 
-# Kafka主题定义
 class KafkaTopics:
     """Kafka主题常量定义"""
 
-    # 充电点相关主题
     CHARGING_POINT_REGISTER = "charging_point_register"
     CHARGING_POINT_HEARTBEAT = "charging_point_heartbeat"
     CHARGING_POINT_STATUS = "charging_point_status"
     CHARGING_POINT_FAULT = "charging_point_fault"
 
-    # 充电会话相关主题
     CHARGING_SESSION_START = "charging_session_start"
     CHARGING_SESSION_DATA = "charging_session_data"
     CHARGING_SESSION_COMPLETE = "charging_session_complete"
-    
-    # 司机相关主题
-    DRIVER_CHARGE_REQUESTS = "driver_charge_requests"  # Driver → Central: 充电请求
-    DRIVER_STOP_REQUESTS = "driver_stop_requests"  # Driver → Central: 停止充电请求
-    DRIVER_CPS_REQUESTS = "driver_cps_requests"  # Driver → Central: 查询可用充电桩
 
-    # Driver响应主题（统一topic，通过driver_id区分不同driver）
-    DRIVER_RESPONSES = "driver_responses"  # Central → Driver: 所有响应消息（包含driver_id字段）
+    DRIVER_CHARGE_REQUESTS = "driver_charge_requests"  # Driver → Central
+    DRIVER_STOP_REQUESTS = "driver_stop_requests"  # Driver → Central
+    DRIVER_CPS_REQUESTS = "driver_cps_requests"  # Driver → Central
 
-    # 系统主题
-    SYSTEM_EVENTS = "system_events"
-    SYSTEM_ALERTS = "system_alerts"
+    DRIVER_RESPONSES = "driver_responses"  # Central → Driver: 
+
 
     @staticmethod
-    def get_driver_response_topic(driver_id: str = None) -> str:
+    def get_driver_response_topic() -> str:
         """
-        获取Driver响应主题名称（统一主题）
-
-        新架构使用单一的响应主题 "driver_responses"，通过消息中的 driver_id 字段区分不同Driver。
-        所有Driver的响应消息都发送到同一个主题，每个Driver的Consumer通过driver_id过滤属于自己的消息。
-
-        优点：
-        - 只需要一个topic，避免topic数量随driver数量增长
-        - 易于管理和监控
-        - 支持大规模driver部署
-
-        消息格式要求：
-        - 所有发送到此主题的消息必须包含 "driver_id" 字段
-        - Consumer端需要根据 driver_id 过滤消息
-
-        Args:
-            driver_id: Driver的唯一标识符（可选，保留参数用于向后兼容）
-
+        Obtener el tema de respuestas para conductores
         Returns:
-            str: 统一的Driver响应主题名称 "driver_responses"
+            str: Tema de respuestas para conductores
         """
         return KafkaTopics.DRIVER_RESPONSES

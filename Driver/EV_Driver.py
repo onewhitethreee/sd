@@ -341,12 +341,12 @@ class Driver:
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_STOP_REQUESTS,
-                    num_partitions=1,
+                    num_partitions=3,
                     replication_factor=1
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_CPS_REQUESTS,
-                    num_partitions=1,
+                    num_partitions=3,
                     replication_factor=1
                 )
                 # 创建统一的Driver响应主题（所有Driver共享一个主题）
