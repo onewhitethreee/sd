@@ -117,7 +117,7 @@ class MonitorMessageDispatcher:
 
         Args:
             message: 认证响应消息，包含：
-                - status: "success" 或 "failure"
+                - status: "success" 或 "failure" 或 "pending"
                 - message: 响应描述
                 - cp_id: 充电点ID
         """
@@ -129,8 +129,16 @@ class MonitorMessageDispatcher:
             # 设置授权标志
             self.monitor._authorized = True
             # 认证成功后，自动尝试注册
+            # 注意：对于重新连接的充电点，这会更新其注册信息（如价格等）
             self.monitor._register_with_central()
+        elif status == "pending":
+            # 首次连接，等待管理员批准
+            reason = message.get(MessageFields.MESSAGE, "等待管理员批准")
+            self.logger.info(f"⏳ Authentication pending: {reason}")
+            self.logger.info("Waiting for administrator to authorize this charging point...")
+            self.monitor._authorized = False
         else:
+            # 认证失败
             reason = message.get(MessageFields.REASON, message.get(MessageFields.MESSAGE, "Unknown"))
             self.logger.error(f"❌ Authentication failed: {reason}")
             self.logger.info("Waiting for administrator to authorize this charging point...")

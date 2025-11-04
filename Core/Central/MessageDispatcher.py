@@ -302,9 +302,12 @@ class MessageDispatcher:
     def _handle_auth_request(self, client_id, message):
         """
         处理充电点的认证请求
-        
+
         认证请求会被添加到待授权列表，等待管理员手动批准。
         只有经过授权的充电点才能进行注册。
+
+        特殊情况：如果充电点已经在数据库中注册过（重新连接场景），
+        直接返回认证成功，无需重新授权。
         """
         self.logger.info(f"收到来自 {client_id} 的认证请求...")
 
@@ -318,14 +321,31 @@ class MessageDispatcher:
         cp_id = data["id"]
         message_id = data["message_id"]
 
-        # 检查是否已经授权
+        # ✅ 检查充电点是否已经注册过（重新连接场景）
+        if self.charging_point_manager.is_charging_point_registered(cp_id):
+            self.logger.info(
+                f"充电点 {cp_id} 已在数据库中注册，自动通过认证（重新连接场景）"
+            )
+            # 更新连接映射
+            self.charging_point_manager.update_charging_point_connection(cp_id, client_id)
+
+            # 返回认证成功响应
+            return {
+                MessageFields.TYPE: MessageTypes.AUTH_RESPONSE,
+                MessageFields.MESSAGE_ID: message_id,
+                MessageFields.STATUS: ResponseStatus.SUCCESS,
+                MessageFields.MESSAGE: f"充电点 {cp_id} 认证成功（已注册），可以直接发送注册请求更新信息",
+                MessageFields.CP_ID: cp_id,
+            }
+
+        # 检查是否已经在待授权列表中
         if cp_id in self._pending_authorizations:
             self.logger.warning(f"充电点 {cp_id} 已存在待授权请求，等待管理员批准")
             return self._create_failure_response(
                 "auth_request", message_id, "认证请求已存在，等待管理员批准"
             )
 
-        # 添加到待授权列表
+        # 添加到待授权列表（首次连接的新充电点）
         self._pending_authorizations[cp_id] = {
             "client_id": client_id,
             "timestamp": time.time(),
@@ -398,7 +418,13 @@ class MessageDispatcher:
         ]
 
     def _handle_register_message(self, client_id, message):
-        """专门处理充电桩的注册请求"""
+        """
+        专门处理充电桩的注册请求
+
+        支持两种场景：
+        1. 首次注册：新的充电点注册到系统
+        2. 重新注册：已注册的充电点重新连接，更新其信息
+        """
         self.logger.info(f"正在处理来自 {client_id} 的注册请求...")
 
         # 验证并提取字段
@@ -413,13 +439,18 @@ class MessageDispatcher:
         price_per_kwh = data["price_per_kwh"]
         message_id = data["message_id"]
 
-        # 检查是否已经授权
-        if cp_id in self._pending_authorizations:
-            return self._create_failure_response(
-                "register", message_id, f"充电点 {cp_id} 尚未获得授权，请先通过认证"
-            )
+        # 检查充电点是否已经注册过
+        is_already_registered = self.charging_point_manager.is_charging_point_registered(cp_id)
 
-        # 注册充电桩
+        if not is_already_registered:
+            # 首次注册：检查是否在待授权列表中
+            if cp_id in self._pending_authorizations:
+                return self._create_failure_response(
+                    "register", message_id, f"充电点 {cp_id} 尚未获得授权，请先通过认证"
+                )
+
+        # 注册或更新充电桩信息
+        # 注意：register_charging_point 使用 insert_or_update，所以支持更新场景
         success, error_msg = self.charging_point_manager.register_charging_point(
             cp_id, location, price_per_kwh
         )
@@ -433,9 +464,17 @@ class MessageDispatcher:
         self.charging_point_manager.update_charging_point_connection(cp_id, client_id)
         self._show_registered_charging_points()
 
-        return self._create_success_response(
-            "register", message_id, f"charging point {cp_id} registered successfully."
-        )
+        # 根据是否已注册返回不同的消息
+        if is_already_registered:
+            self.logger.info(f"充电点 {cp_id} 重新连接，信息已更新")
+            return self._create_success_response(
+                "register", message_id, f"charging point {cp_id} reconnected and updated successfully."
+            )
+        else:
+            self.logger.info(f"充电点 {cp_id} 首次注册成功")
+            return self._create_success_response(
+                "register", message_id, f"charging point {cp_id} registered successfully."
+            )
 
     def _handle_heartbeat_message(self, client_id, message):
         """处理充电桩发送的心跳消息，更新其最后连接时间"""
