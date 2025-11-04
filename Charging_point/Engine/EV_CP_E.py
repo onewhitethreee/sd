@@ -35,8 +35,9 @@ class EV_CP_E:
                 help="IP y puerto del Broker/Bootstrap-server (formato IP:PORT)",
             )
             self.tools.add_argument(
-                "debug_port",
+                "--debug_port",
                 type=int,
+
                 help="Puerto para el modo debug (predeterminado: 5004)"
             )
             self.args = self.tools.parse_args()
