@@ -462,7 +462,6 @@ class MessageDispatcher:
 
         # 更新连接映射
         self.charging_point_manager.update_charging_point_connection(cp_id, client_id)
-        self._show_registered_charging_points()
 
         # 根据是否已注册返回不同的消息
         if is_already_registered:
@@ -511,7 +510,6 @@ class MessageDispatcher:
             self.charging_point_manager.update_charging_point_connection(
                 cp_id, client_id
             )
-            self._show_registered_charging_points()
 
             return self._create_success_response(
                 "heartbeat", message_id, "heartbeat更新最后连接时间成功"
@@ -1043,26 +1041,7 @@ class MessageDispatcher:
                 "recovery_response", message_id, f"恢复通知处理失败: {e}"
             )
 
-    def _show_registered_charging_points(self):
-        """
-        打印所有已注册的充电桩及其状态。
-        """
-        charging_points = self.charging_point_manager.get_all_charging_points()
-        if not charging_points:
-            print("No registered charging points found.")
-            return
-
-        print("\n" + "╔" + "═" * 60 + "╗")
-        print("║" + " Puntos de recarga registrados ".center(60) + "║")
-        print("╚" + "═" * 60 + "╝\n")
-
-        for i, cp in enumerate(charging_points, 1):
-            print(f"[{i}] charging point {cp['cp_id']}")
-            print(f"    ├─ Location: {cp['location']}")
-            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
-            print(f"    ├─ Status: {cp['status']}")
-            print(f"    └─ Last Connection: {cp['last_connection_time']}")
-            print()
+    
 
     def _send_charging_status_to_driver(self, driver_id, charging_data):
         """向指定司机发送充电状态更新（通过统一的响应主题）"""

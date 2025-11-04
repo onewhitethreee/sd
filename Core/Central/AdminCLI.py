@@ -47,18 +47,22 @@ class AdminCLI:
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self._print_help()
+        self.logger.info("Admin CLI ready. Press ENTER to show menu...")
 
         while self.running:
             try:
-                command = input("\nAdmin> ").strip()
-                if not command:
+                # 等待用户输入
+                user_input = input().strip()
+
+                # 如果按 ENTER 不输入任何内容，显示菜单
+                if not user_input:
+                    self._show_menu()
                     continue
 
-                self._process_command(command)
+                self._process_command(user_input)
 
             except KeyboardInterrupt:
-                print("\n检测到中断，使用 'quit' 命令退出")
+                print("\n检测到中断，使用 '0' 退出")
                 continue
             except EOFError:
                 break
@@ -66,117 +70,119 @@ class AdminCLI:
                 self.logger.error(f"处理命令时出错: {e}")
                 print(f"错误: {e}")
 
-    
+    def _show_menu(self):
+        """显示菜单"""
+        print("\n" + "=" * 60)
+        print("  EV_CENTRAL - ADMIN CONTROL MENU")
+        print("=" * 60)
 
-    def _print_help(self):
-        """打印帮助信息"""
-        help_text = """
-可用命令:
-  list                    - 列出所有充电桩及其状态
-  list available          - 列出所有可用的充电桩
-  list active             - 列出所有活跃的充电桩
-  list sessions           - 列出所有充电会话
-  list pending            - 列出待授权的充电点
+        # 获取基本统计信息
+        try:
+            all_cps = self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+            all_sessions = self.central.message_dispatcher.charging_session_manager.get_all_sessions()
+            pending = self.central.message_dispatcher.get_pending_authorizations()
 
-  authorize <cp_id>       - 授权指定的充电点（允许注册）
-  authorize all           - 授权所有待授权的充电点
+            print(f"  Total Charging Points: {len(all_cps)}")
+            print(f"  Total Sessions: {len(all_sessions)}")
+            print(f"  Pending Authorizations: {len(pending)}")
+        except:
+            pass
 
-  stop <cp_id>           - 停止指定的充电桩
-  stop all               - 停止所有充电桩
-
-  resume <cp_id>         - 恢复指定的充电桩
-  resume all             - 恢复所有充电桩
-
-  status <cp_id>         - 查看指定充电桩的详细状态
-  session <session_id>   - 查看指定充电会话的详细信息
-
-  stats                  - 显示系统统计信息
-  help                   - 显示此帮助信息
-  quit                   - 退出管理员控制台
-"""
-        print(help_text)
+        print("-" * 60)
+        print("  CHARGING POINT MANAGEMENT:")
+        print("  [1] List all charging points")
+        print("  [2] List available charging points")
+        print("  [3] List active charging points")
+        print("  [4] Show charging point status (requires CP ID)")
+        print()
+        print("  SESSION MANAGEMENT:")
+        print("  [5] List all charging sessions")
+        print("  [6] Show session details (requires Session ID)")
+        print()
+        print("  AUTHORIZATION:")
+        print("  [7] List pending authorizations")
+        print("  [8] Authorize charging point (requires CP ID or 'all')")
+        print()
+        print("  CONTROL:")
+        print("  [9] Stop charging point (requires CP ID or 'all')")
+        print("  [10] Resume charging point (requires CP ID or 'all')")
+        print()
+        print("  SYSTEM:")
+        print("  [11] Show system statistics")
+        print()
+        print("  [0] Exit Admin Console")
+        print("=" * 60)
 
     def _process_command(self, command: str):
         """
         处理用户输入的命令
 
         Args:
-            command: 用户输入的命令字符串
+            command: 用户输入的命令字符串（数字选项）
         """
-        parts = command.lower().split()
-        if not parts:
-            return
-
-        cmd = parts[0]
-
         try:
-            if cmd == "help":
-                self._print_help()
-
-            elif cmd == "quit" or cmd == "exit":
+            if command == "0":
                 print("退出管理员控制台...")
                 self.running = False
 
-            elif cmd == "list":
-                subcommand = parts[1] if len(parts) > 1 else None
-                self._handle_list_command(subcommand)
+            elif command == "1":
+                self._show_registered_charging_points(filter_type=None)
 
-            elif cmd == "authorize":
-                cp_id = parts[1] if len(parts) > 1 else None
+            elif command == "2":
+                self._show_registered_charging_points(filter_type="available")
+
+            elif command == "3":
+                self._show_registered_charging_points(filter_type="active")
+
+            elif command == "4":
+                cp_id = input("请输入充电桩ID: ").strip()
+                if cp_id :
+                    self._handle_status_command(cp_id)
+                else:
+                    print("错误: 充电桩ID不能为空")
+
+            elif command == "5":
+                self._list_sessions()
+
+            elif command == "6":
+                session_id = input("请输入会话ID: ").strip()
+                if session_id:
+                    self._handle_session_command(session_id)
+                else:
+                    print("错误: 会话ID不能为空")
+
+            elif command == "7":
+                self._list_pending_authorizations()
+
+            elif command == "8":
+                cp_id = input("请输入充电桩ID (或按回车授权所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
                 self._handle_authorize_command(cp_id)
 
-            elif cmd == "stop":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID或使用 'all'")
-                    print("用法: stop <cp_id> 或 stop all")
-                else:
-                    cp_id = parts[1]
-                    self._handle_stop_command(cp_id)
+            elif command == "9":
+                cp_id = input("请输入充电桩ID (或按回车停止所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
+                self._handle_stop_command(cp_id)
 
-            elif cmd == "resume":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID或使用 'all'")
-                    print("用法: resume <cp_id> 或 resume all")
-                else:
-                    cp_id = parts[1]
-                    self._handle_resume_command(cp_id)
+            elif command == "10":
+                cp_id = input("请输入充电桩ID (或按回车恢复所有): ").strip()
+                if not cp_id:
+                    cp_id = "all"
+                self._handle_resume_command(cp_id)
 
-            elif cmd == "status":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID")
-                    print("用法: status <cp_id>")
-                else:
-                    cp_id = parts[1]
-                    self._handle_status_command(cp_id)
-
-            elif cmd == "session":
-                if len(parts) < 2:
-                    print("错误: 请指定会话ID")
-                    print("用法: session <session_id>")
-                else:
-                    session_id = parts[1]
-                    self._handle_session_command(session_id)
-
-            elif cmd == "stats":
+            elif command == "11":
                 self._handle_stats_command()
 
             else:
-                print(f"未知命令: {cmd}")
-                print("输入 'help' 查看可用命令")
+                print(f"未知选项: {command}")
+                print("按 ENTER 显示菜单")
 
         except Exception as e:
             self.logger.error(f"执行命令时出错: {e}")
             print(f"错误: {e}")
 
-    def _handle_list_command(self, subcommand: str = None):
-        """处理list命令"""
-        if subcommand == "sessions":
-            self._list_sessions()
-        elif subcommand == "pending":
-            self._list_pending_authorizations()
-        else:
-            # 统一处理所有充电桩列表显示
-            self._show_registered_charging_points(filter_type=subcommand)
 
     def _show_registered_charging_points(self, filter_type: str = None):
         """

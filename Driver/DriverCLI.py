@@ -49,18 +49,22 @@ class DriverCLI:
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self._print_help()
+        self.logger.info("Driver CLI ready. Press ENTER to show menu...")
 
         while self.running and self.driver.running:
             try:
-                command = input("\nDriver> ").strip()
-                if not command:
+                # 等待用户输入
+                user_input = input().strip()
+
+                # 如果按 ENTER 不输入任何内容，显示菜单
+                if not user_input:
+                    self._show_menu()
                     continue
 
-                self._process_command(command)
+                self._process_command(user_input)
 
             except KeyboardInterrupt:
-                print("\n检测到中断，使用 'quit' 命令退出")
+                print("\n检测到中断，使用 '0' 退出")
                 continue
             except EOFError:
                 break
@@ -68,65 +72,73 @@ class DriverCLI:
                 self.logger.error(f"处理命令时出错: {e}")
                 print(f"错误: {e}")
 
-    def _print_help(self):
-        """打印帮助信息"""
-        help_text = """
-可用命令:
-  list                    - 显示可用的充电桩
-  charge <cp_id>          - 在指定充电桩发起充电请求
-  stop                    - 停止当前充电会话
-  status                  - 显示当前充电状态
-  history                 - 显示充电历史记录
-  help                    - 显示此帮助信息
-  quit                    - 退出应用程序
-"""
-        print(help_text)
+    def _show_menu(self):
+        """显示菜单"""
+        print("\n" + "=" * 60)
+        print("  EV_DRIVER - DRIVER CONTROL MENU")
+        print("=" * 60)
+        print(f"  Driver ID: {self.driver.args.id_client}")
+
+        # 显示当前充电状态
+        with self.driver.lock:
+            if self.driver.current_charging_session:
+                session = self.driver.current_charging_session
+                print(f"  Status: CHARGING")
+                print(f"  Session ID: {session.get('session_id', 'N/A')}")
+                print(f"  CP ID: {session.get('cp_id', 'N/A')}")
+                print(f"  Energy: {session.get('energy_consumed_kwh', 0.0):.3f} kWh")
+                print(f"  Cost: €{session.get('total_cost', 0.0):.2f}")
+            else:
+                print(f"  Status: IDLE")
+
+        print("-" * 60)
+        print("  CHARGING OPERATIONS:")
+        print("  [1] List available charging points")
+        print("  [2] Request charging (requires CP ID)")
+        print("  [3] Stop current charging session")
+        print()
+        print("  INFORMATION:")
+        print("  [4] Show current charging status")
+        print("  [5] Show charging history")
+        print()
+        print("  [0] Exit Driver Application")
+        print("=" * 60)
 
     def _process_command(self, command: str):
         """
         处理用户输入的命令
 
         Args:
-            command: 用户输入的命令字符串
+            command: 用户输入的命令字符串（数字选项）
         """
-        parts = command.lower().split()
-        if not parts:
-            return
-
-        cmd = parts[0]
-
         try:
-            if cmd == "help":
-                self._print_help()
-
-            elif cmd == "quit" or cmd == "exit":
+            if command == "0":
                 print("退出Driver应用...")
                 self.driver.running = False
                 self.running = False
 
-            elif cmd == "list":
+            elif command == "1":
                 self._handle_list_command()
 
-            elif cmd == "charge":
-                if len(parts) < 2:
-                    print("错误: 请指定充电桩ID")
-                    print("用法: charge <cp_id>")
-                else:
-                    cp_id = parts[1]
+            elif command == "2":
+                cp_id = input("请输入充电桩ID: ").strip()
+                if cp_id:
                     self._handle_charge_command(cp_id)
+                else:
+                    print("错误: 充电桩ID不能为空")
 
-            elif cmd == "stop":
+            elif command == "3":
                 self._handle_stop_command()
 
-            elif cmd == "status":
+            elif command == "4":
                 self._handle_status_command()
 
-            elif cmd == "history":
+            elif command == "5":
                 self._handle_history_command()
 
             else:
-                print(f"未知命令: {cmd}")
-                print("输入 'help' 查看可用命令")
+                print(f"未知选项: {command}")
+                print("按 ENTER 显示菜单")
 
         except Exception as e:
             self.logger.error(f"执行命令时出错: {e}")
