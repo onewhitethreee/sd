@@ -46,12 +46,6 @@ class EV_Central:
                 type=ip_port_type,
                 help="IP y puerto del Broker/Bootstrap-server del gestor de colas (formato IP:PORT)",
             )
-            self.tools.add_argument(
-                "--db",
-                type=ip_port_type,
-                help="IP y puerto del servidor de base de datos (formato IP:PORT)",
-                default=("localhost", 5432),
-            )
             self.args = self.tools.parse_args()
 
         else:

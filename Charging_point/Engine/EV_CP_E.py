@@ -37,8 +37,9 @@ class EV_CP_E:
             self.args = self.tools.parse_args()
 
             # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
-            listen_port = os.getenv('ENGINE_LISTEN_PORT')
-            listen_host = os.getenv('ENGINE_LISTEN_HOST', 'localhost')
+            listen_adress = os.getenv("IP_PORT_EV_CP_E")
+            listen_host = listen_adress.split(":")[0] if listen_adress else "localhost"
+            listen_port = listen_adress.split(":")[1] if listen_adress else None
 
             if listen_port:
                 self.engine_listen_address = (listen_host, int(listen_port))
@@ -188,9 +189,7 @@ class EV_CP_E:
     def _init_kafka(self):
         """初始化Kafka连接"""
 
-        
         broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
-        
 
         try:
             self.kafka_manager = KafkaManager(broker_address, self.logger)

@@ -14,7 +14,7 @@ class MySocketServer:
     def __init__(
         self,
         host="0.0.0.0",
-        port=5002,
+        port=5000,
         logger=None,
         message_callback=None,
         disconnect_callback=None,
