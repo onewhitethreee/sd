@@ -15,7 +15,7 @@ from Common.Config.ConfigManager import ConfigManager
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Driver.DriverMessageDispatcher import DriverMessageDispatcher
 from Driver.DriverCLI import DriverCLI
-
+from Common.Message.MessageTypes import MessageTypes
 
 class Driver:
     def __init__(self, logger=None):
@@ -166,7 +166,7 @@ class Driver:
             bool: 请求是否成功发送
         """
         request_message = {
-            "type": "charging_history_request",
+            "type": MessageTypes.CHARGING_HISTORY_REQUEST,
             "message_id": str(uuid.uuid4()),
             "driver_id": self.args.id_client,
             "timestamp": int(time.time()),
