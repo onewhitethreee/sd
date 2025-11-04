@@ -53,7 +53,6 @@ class EV_Central:
             class Args:
                 listen_port = self.config.get_listen_port()
                 broker = self.config.get_broker()
-                db = self.config.get_db()
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")

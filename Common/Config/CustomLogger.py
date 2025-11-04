@@ -1,3 +1,6 @@
+"""
+Clase para crear un logger personalizado con colores y formatos específicos.
+"""
 import logging
 import colorlog
 
