@@ -500,6 +500,9 @@ class EV_CP_M:
     def _handle_start_charging_command(self, message):
         """
         处理来自Central的启动充电命令（转发）。
+
+        重要：Monitor在转发命令后应立即更新状态为CHARGING，
+        以便监控面板能够实时显示正确的状态。
         """
         self.logger.info("Received start charging command from Central.")
         cp_id = message.get("cp_id")
@@ -529,6 +532,10 @@ class EV_CP_M:
             self.logger.info(
                 f"Start charging command sent to Engine for session {session_id}, price: €{price_per_kwh}/kWh."
             )
+            # ✅ 立即更新Monitor状态为CHARGING
+            # 这样监控面板能够实时显示正确的状态
+            self.update_cp_status(Status.CHARGING.value)
+            self.logger.info(f"Monitor status updated to CHARGING for session {session_id}")
             return True
         else:
             self.logger.error("Failed to send start charging command to Engine.")
@@ -578,6 +585,9 @@ class EV_CP_M:
     def _handle_charging_completion_from_engine(self, message):
         """
         处理来自Engine的充电完成通知（转发）。
+
+        重要：Monitor在转发充电完成消息后应更新状态为ACTIVE，
+        表示充电桩已完成充电并恢复到可用状态。
         """
         self.logger.info("Received charging completion from Engine.")
         if not self.central_conn_mgr.is_connected:
@@ -596,17 +606,24 @@ class EV_CP_M:
                 f"Charging completion from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
+
+        session_id = message.get("session_id")
+
         # TODO 这里用response常量
         completion_message = {
             "type": "charge_completion",
             "message_id": message.get("message_id"),
             "cp_id": message.get("cp_id"),
-            "session_id": message.get("session_id"),
+            "session_id": session_id,
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
         }
         if self.central_conn_mgr.send(completion_message):
             self.logger.info("Charging completion forwarded to Central.")
+            # ✅ 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
+            # 这样监控面板能够实时显示正确的状态
+            self.update_cp_status(Status.ACTIVE.value)
+            self.logger.info(f"Monitor status updated to ACTIVE after charging completion for session {session_id}")
             return True
         else:
             self.logger.error("Failed to forward charging completion to Central.")

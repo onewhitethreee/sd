@@ -215,6 +215,9 @@ class MonitorMessageDispatcher:
             message: 停止充电命令，包含：
                 - cp_id: 充电点ID
                 - session_id: 会话ID
+
+        重要：Monitor在转发停止命令后应立即更新状态为ACTIVE，
+        表示充电桩已停止充电并恢复到可用状态。
         """
         self.logger.info("Received stop charging command from Central.")
 
@@ -232,6 +235,11 @@ class MonitorMessageDispatcher:
         if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
             self.monitor.engine_conn_mgr.send(stop_message)
             self.logger.info(f"停止充电命令已转发给Engine: CP {cp_id}, Session {session_id}")
+            # ✅ 立即更新Monitor状态为ACTIVE（停止充电，恢复可用状态）
+            # 注意：如果Engine或Central断开连接，update_cp_status会自动处理为FAULTY状态
+            from Common.Config.Status import Status
+            self.monitor.update_cp_status(Status.ACTIVE.value)
+            self.logger.info(f"Monitor status updated to ACTIVE after stop charging for session {session_id}")
             return True
         else:
             self.logger.error("Engine连接不可用，无法转发停止充电命令")
