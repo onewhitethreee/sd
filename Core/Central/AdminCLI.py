@@ -172,105 +172,79 @@ class AdminCLI:
         """处理list命令"""
         if subcommand == "sessions":
             self._list_sessions()
-        elif subcommand == "available":
-            self._list_available_charging_points()
-        elif subcommand == "active":
-            self._list_active_charging_points()
         elif subcommand == "pending":
             self._list_pending_authorizations()
         else:
-            self._list_all_charging_points()
+            # 统一处理所有充电桩列表显示
+            self._show_registered_charging_points(filter_type=subcommand)
 
-    def _list_all_charging_points(self):
-        """列出所有充电桩"""
+    def _show_registered_charging_points(self, filter_type: str = None):
+        """
+        统一显示充电桩列表的方法
+
+        Args:
+            filter_type: 过滤类型，可选值：None(所有), 'available'(可用), 'active'(活跃)
+        """
         try:
-            charging_points = (
-                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            )
-
-            if not charging_points:
-                print("当前没有注册的充电桩")
-                return
-
-            print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15} "
-            )
-            print("-" * 85)
-
-            for cp in charging_points:
-                cp_id = cp.get("cp_id", "N/A")
-                location = cp.get("location", "N/A")
-                status = cp.get("status", "N/A")
-                price = cp.get("price_per_kwh", 0.0)
-
-                print(
-                    f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f}"
+            # 根据过滤类型获取充电桩列表
+            if filter_type == "available":
+                charging_points = (
+                    self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
                 )
+                list_title = "可用"
+                empty_message = "当前没有可用的充电桩"
+            elif filter_type == "active":
+                all_cps = (
+                    self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+                )
+                charging_points = [cp for cp in all_cps if cp.get("status") == "ACTIVE"]
+                list_title = "活跃"
+                empty_message = "当前没有活跃状态的充电桩"
+            else:
+                # 默认显示所有充电桩
+                charging_points = (
+                    self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
+                )
+                list_title = ""
+                empty_message = "当前没有注册的充电桩"
 
-            print(f"\n总计: {len(charging_points)} 个充电桩")
-
-        except Exception as e:
-            self.logger.error(f"获取充电桩列表失败: {e}")
-            print(f"错误: 无法获取充电桩列表 - {e}")
-
-    def _list_available_charging_points(self):
-        """列出所有可用的充电桩"""
-        try:
-            charging_points = (
-                self.central.message_dispatcher.charging_point_manager.get_available_charging_points()
-            )
-
+            # 检查是否为空
             if not charging_points:
-                print("当前没有可用的充电桩")
+                print(empty_message)
                 return
 
-            print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} "
-            )
-            print("-" * 70)
+            # 根据是否显示状态列决定表头格式
+            show_status = (filter_type is None)
 
+            if show_status:
+                # 显示所有充电桩时包含状态列
+                print(f"\n{'充电桩ID':<20} {'位置':<30} {'状态':<15} {'价格(元/kWh)':<15}")
+                print("-" * 85)
+            else:
+                # 过滤后的列表不显示状态列
+                print(f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15}")
+                print("-" * 70)
+
+            # 打印充电桩信息
             for cp in charging_points:
                 cp_id = cp.get("cp_id", "N/A")
                 location = cp.get("location", "N/A")
                 price = cp.get("price_per_kwh", 0.0)
 
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f}")
+                if show_status:
+                    status = cp.get("status", "N/A")
+                    print(f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f}")
+                else:
+                    print(f"{cp_id:<20} {location:<30} {price:<15.4f}")
 
-            print(f"\n总计: {len(charging_points)} 个可用充电桩")
-
-        except Exception as e:
-            self.logger.error(f"获取可用充电桩列表失败: {e}")
-            print(f"错误: 无法获取可用充电桩列表 - {e}")
-
-    def _list_active_charging_points(self):
-        """列出所有活跃状态的充电桩"""
-        try:
-            all_cps = (
-                self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
-            )
-            active_cps = [cp for cp in all_cps if cp.get("status") == "ACTIVE"]
-
-            if not active_cps:
-                print("当前没有活跃状态的充电桩")
-                return
-
-            print(
-                f"\n{'充电桩ID':<20} {'位置':<30} {'价格(元/kWh)':<15} "
-            )
-            print("-" * 70)
-
-            for cp in active_cps:
-                cp_id = cp.get("cp_id", "N/A")
-                location = cp.get("location", "N/A")
-                price = cp.get("price_per_kwh", 0.0)
-
-                print(f"{cp_id:<20} {location:<30} {price:<15.4f} ")
-
-            print(f"\n总计: {len(active_cps)} 个活跃充电桩")
+            # 打印总计
+            count_text = f"{list_title}充电桩" if list_title else "充电桩"
+            print(f"\n总计: {len(charging_points)} 个{count_text}")
 
         except Exception as e:
-            self.logger.error(f"获取活跃充电桩列表失败: {e}")
-            print(f"错误: 无法获取活跃充电桩列表 - {e}")
+            error_type = "充电桩列表" if not filter_type else f"{filter_type}充电桩列表"
+            self.logger.error(f"获取{error_type}失败: {e}")
+            print(f"错误: 无法获取{error_type} - {e}")
 
     def _list_sessions(self):
         """列出所有充电会话"""
