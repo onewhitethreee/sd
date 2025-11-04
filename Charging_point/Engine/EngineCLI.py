@@ -247,6 +247,7 @@ class EngineCLI:
         if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
             failure_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  # ✅ 添加message_id以确保消息格式完整
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "FAULTY",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
@@ -280,6 +281,7 @@ class EngineCLI:
         if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
             recovery_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  # ✅ 添加message_id以确保消息格式完整
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "ACTIVE",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
