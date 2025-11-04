@@ -58,9 +58,6 @@ class Driver:
         self.available_charging_points = []  # 可用充电桩列表（短期缓存）
         self.available_cps_cache_time = None  # 缓存时间戳
 
-        # 历史数据：不在内存中存储，通过查询 API 按需获取
-        # self.charging_history = []  # ❌ 已移除：改用远程查询
-
         # 自动模式队列（仅用于自动模式的本地调度）
         self.service_queue = []
 
