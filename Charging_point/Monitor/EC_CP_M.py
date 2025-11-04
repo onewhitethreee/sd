@@ -21,7 +21,7 @@ from Common.Message.MessageTypes import MessageFields, MessageTypes
 
 
 class EV_CP_M:
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, enable_panel=True):
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
@@ -43,7 +43,14 @@ class EV_CP_M:
             self.tools.add_argument(
                 "id_cp", type=str, help="Identificador único del punto de recarga"
             )
+            self.tools.add_argument(
+                "--no-panel",
+                action="store_true",
+                help="禁用实时状态监控面板"
+            )
             self.args = self.tools.parse_args()
+            # 默认启用面板，除非使用--no-panel参数
+            enable_panel = enable_panel and not self.args.no_panel
         else:
 
             class Args:
@@ -51,6 +58,7 @@ class EV_CP_M:
                 ip_port_ev_central = self.config.get_ip_port_ev_cp_central()
                 import random
                 id_cp = f"cp_{random.randint(0,99999)}"
+                no_panel = not enable_panel
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
@@ -63,6 +71,10 @@ class EV_CP_M:
 
         self._heartbeat_thread = None
         self._engine_health_thread = None
+
+        # 状态面板 - 默认启用
+        self.enable_panel = enable_panel
+        self.status_panel = None
 
         self.HEARTBEAT_INTERVAL = 30  # 向 Central 发送心跳的间隔（秒）
         self.ENGINE_HEALTH_TIMEOUT = (
@@ -107,8 +119,8 @@ class EV_CP_M:
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "location": f"Location_{random.randint(1,99999)}",
-            "price_per_kwh": (random.uniform(0.15, 0.25)),
+            "location": "Unknown",  
+            "price_per_kwh": 0.20,
         }
         success = self.central_conn_mgr.send(register_message)
         if success:
@@ -616,6 +628,10 @@ class EV_CP_M:
         """
         self.logger.info("Initiating graceful shutdown.")
         self.running = False  # 首先，通知所有应用层循环停止
+
+        # 停止状态面板
+        self._stop_status_panel()
+
         # 停止所有 ConnectionManager
         if self.central_conn_mgr:
             self.central_conn_mgr.stop()
@@ -631,6 +647,34 @@ class EV_CP_M:
         # 原来的 _exit(0) 彻底移除！
 
         self.logger.info("Shutdown complete")
+
+    def _start_status_panel(self):
+        """启动状态监控面板"""
+        if not self.enable_panel:
+            return
+
+        try:
+            from Charging_point.Monitor.MonitorStatusPanel import MonitorStatusPanel
+
+            self.logger.info("启动Monitor状态监控面板...")
+            self.status_panel = MonitorStatusPanel(self)
+            self.status_panel.start()
+            self.logger.info("Monitor状态监控面板已启动")
+
+        except ImportError as e:
+            self.logger.error(f"无法导入MonitorStatusPanel: {e}")
+            self.logger.error("请确保MonitorStatusPanel.py文件存在")
+            self.enable_panel = False
+        except Exception as e:
+            self.logger.error(f"启动状态面板失败: {e}")
+            self.enable_panel = False
+
+    def _stop_status_panel(self):
+        """停止状态监控面板"""
+        if self.status_panel:
+            self.logger.info("正在停止Monitor状态监控面板...")
+            self.status_panel.stop()
+            self.status_panel = None
 
     def initialize_systems(self):
         """
@@ -659,6 +703,9 @@ class EV_CP_M:
         )
         self.engine_conn_mgr.start()
         self.logger.info("Connection managers started. Waiting for connections...")
+
+        # 启动状态面板(如果启用)
+        self._start_status_panel()
 
     def start(self):
         self.running = True

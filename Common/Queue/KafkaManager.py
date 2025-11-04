@@ -253,7 +253,7 @@ class KafkaManager:
             # 检查主题是否存在
             existing_topics = admin.list_topics()
             if topic in existing_topics:
-                self.logger.debug(f"Topic {topic} already exists")
+                # self.logger.debug(f"Topic {topic} already exists")
                 admin.close()
                 return True
 
