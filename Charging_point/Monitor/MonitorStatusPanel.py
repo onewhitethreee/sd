@@ -150,18 +150,39 @@ class MonitorStatusPanel:
         print(f"  当前状态: {status_color}{current_status}{self._reset_color()}")
         print()
 
-        # 绘制连接状态
-        print(f"【连接状态】")
-        central_color = Fore.GREEN if central_connected and self.use_colors else ""
-        central_status = "已连接" if central_connected else "未连接"
-        engine_color = Fore.GREEN if engine_connected and self.use_colors else ""
-        engine_status = "已连接" if engine_connected else "未连接"
+        # ✅ 绘制组件状态（Central和Engine）
+        print(f"【组件状态】")
 
-        print(f"  Central:  {central_color}{central_status}{self._reset_color()}")
+        # Central状态判断
+        if central_connected:
+            if registered:
+                central_component_status = "ACTIVE"
+                central_status_color = self._get_color("ACTIVE")
+            else:
+                central_component_status = "CONNECTED (未注册)"
+                central_status_color = Fore.YELLOW if self.use_colors else ""
+        else:
+            central_component_status = "DISCONNECTED"
+            central_status_color = self._get_color("DISCONNECTED")
+
+        # Engine状态判断
+        if engine_connected:
+            # 根据健康检查判断Engine状态
+            if last_health_time and (time.time() - last_health_time < self.monitor.ENGINE_HEALTH_TIMEOUT):
+                engine_component_status = "ACTIVE"
+                engine_status_color = self._get_color("ACTIVE")
+            else:
+                engine_component_status = "FAULTY (健康检查超时)"
+                engine_status_color = self._get_color("FAULTY")
+        else:
+            engine_component_status = "DISCONNECTED"
+            engine_status_color = self._get_color("DISCONNECTED")
+
+        print(f"  Central:  {central_status_color}{central_component_status}{self._reset_color()}")
         if self.monitor.central_conn_mgr:
             print(f"            地址: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}")
 
-        print(f"  Engine:   {engine_color}{engine_status}{self._reset_color()}")
+        print(f"  Engine:   {engine_status_color}{engine_component_status}{self._reset_color()}")
         if self.monitor.engine_conn_mgr:
             print(f"            地址: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}")
         print()

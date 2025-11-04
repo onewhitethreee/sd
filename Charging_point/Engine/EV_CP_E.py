@@ -34,12 +34,20 @@ class EV_CP_E:
                 type=ip_port_type,
                 help="IP y puerto del Broker/Bootstrap-server (formato IP:PORT)",
             )
+            self.tools.add_argument(
+                "debug_port",
+                type=int,
+                help="Puerto para el modo debug (predeterminado: 5004)"
+            )
             self.args = self.tools.parse_args()
 
             # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
-            listen_adress = os.getenv("IP_PORT_EV_CP_E")
-            listen_host = listen_adress.split(":")[0] if listen_adress else "localhost"
-            listen_port = listen_adress.split(":")[1] if listen_adress else None
+            if not self.args.debug_port:
+                listen_address = os.getenv("IP_PORT_EV_CP_E")
+            else:
+                listen_address = f"localhost:{self.args.debug_port}"
+            listen_host = listen_address.split(":")[0] if listen_address else "localhost"
+            listen_port = listen_address.split(":")[1] if listen_address else None
 
             if listen_port:
                 self.engine_listen_address = (listen_host, int(listen_port))

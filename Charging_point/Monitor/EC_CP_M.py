@@ -43,14 +43,8 @@ class EV_CP_M:
             self.tools.add_argument(
                 "id_cp", type=str, help="Identificador único del punto de recarga"
             )
-            self.tools.add_argument(
-                "--no-panel",
-                action="store_true",
-                help="禁用实时状态监控面板"
-            )
             self.args = self.tools.parse_args()
-            # 默认启用面板，除非使用--no-panel参数
-            enable_panel = enable_panel and not self.args.no_panel
+            enable_panel = False
         else:
 
             class Args:
@@ -72,9 +66,13 @@ class EV_CP_M:
         self._heartbeat_thread = None
         self._engine_health_thread = None
 
-        # 状态面板 - 默认启用
-        self.enable_panel = enable_panel
+        # 状态面板 - 可以通过CLI控制
+        self.enable_panel = True  # 始终允许启用面板（通过CLI）
         self.status_panel = None
+        self._auto_start_panel = enable_panel  # 是否自动启动面板
+
+        # CLI控制 - 默认启用
+        self.cli = None
 
         self.HEARTBEAT_INTERVAL = 30  # 向 Central 发送心跳的间隔（秒）
         self.ENGINE_HEALTH_TIMEOUT = (
@@ -646,6 +644,9 @@ class EV_CP_M:
         self.logger.info("Initiating graceful shutdown.")
         self.running = False  # 首先，通知所有应用层循环停止
 
+        # 停止CLI
+        self._stop_cli()
+
         # 停止状态面板
         self._stop_status_panel()
 
@@ -665,9 +666,34 @@ class EV_CP_M:
 
         self.logger.info("Shutdown complete")
 
+    def _start_cli(self):
+        """启动Monitor CLI"""
+        try:
+            from Charging_point.Monitor.MonitorCLI import MonitorCLI
+
+            self.logger.info("启动Monitor CLI...")
+            self.cli = MonitorCLI(self, self.logger)
+            self.cli.start()
+            self.logger.info("Monitor CLI已启动")
+
+        except ImportError as e:
+            self.logger.error(f"无法导入MonitorCLI: {e}")
+            self.logger.error("请确保MonitorCLI.py文件存在")
+        except Exception as e:
+            self.logger.error(f"启动CLI失败: {e}")
+
+    def _stop_cli(self):
+        """停止Monitor CLI"""
+        if self.cli:
+            self.logger.info("正在停止Monitor CLI...")
+            self.cli.stop()
+            self.cli = None
+
     def _start_status_panel(self):
         """启动状态监控面板"""
-        if not self.enable_panel:
+        if not self._auto_start_panel:
+            self.logger.info("状态面板未自动启动（使用--no-panel参数）")
+            self.logger.info("可以通过CLI命令手动启动面板")
             return
 
         try:
@@ -677,14 +703,15 @@ class EV_CP_M:
             self.status_panel = MonitorStatusPanel(self)
             self.status_panel.start()
             self.logger.info("Monitor状态监控面板已启动")
+            # 通知CLI面板已激活
+            if self.cli:
+                self.cli.panel_active = True
 
         except ImportError as e:
             self.logger.error(f"无法导入MonitorStatusPanel: {e}")
             self.logger.error("请确保MonitorStatusPanel.py文件存在")
-            self.enable_panel = False
         except Exception as e:
             self.logger.error(f"启动状态面板失败: {e}")
-            self.enable_panel = False
 
     def _stop_status_panel(self):
         """停止状态监控面板"""
@@ -692,6 +719,9 @@ class EV_CP_M:
             self.logger.info("正在停止Monitor状态监控面板...")
             self.status_panel.stop()
             self.status_panel = None
+            # 通知CLI面板已停止
+            if self.cli:
+                self.cli.panel_active = False
 
     def initialize_systems(self):
         """
@@ -721,7 +751,10 @@ class EV_CP_M:
         self.engine_conn_mgr.start()
         self.logger.info("Connection managers started. Waiting for connections...")
 
-        # 启动状态面板(如果启用)
+        # 启动CLI (总是启动，用于控制面板)
+        self._start_cli()
+
+        # 启动状态面板(如果配置为自动启动)
         self._start_status_panel()
 
     def start(self):
