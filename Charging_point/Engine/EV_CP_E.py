@@ -103,6 +103,10 @@ class EV_CP_E:
             self.logger.warning(f"CP_ID already initialized as {self.cp_id}, ignoring new ID: {cp_id}")
             return False
 
+        # 如果之前有旧的CP_ID（Monitor断开重连的情况），记录变化
+        if self.cp_id is not None and self.cp_id != cp_id:
+            self.logger.info(f"CP_ID changed from {self.cp_id} to {cp_id}")
+
         self.cp_id = cp_id
         self._id_initialized = True
         self.logger.info(f"✅ CP_ID initialized: {self.cp_id}")
@@ -137,8 +141,11 @@ class EV_CP_E:
             )
             self._stop_charging_session()
 
-        # 不要立即进入 FAULTY 状态，Monitor 可能会重连。
-        #  TODO 如果长时间没有 monitor 连接，可以考虑定时检查并切换状态。
+        # 重置CP_ID初始化标志，允许新的Monitor重新初始化
+        self._id_initialized = False
+        self.logger.debug("CP_ID reset - new Monitor can now initialize with a different ID")
+
+
 
     def _start_monitor_server(self):
         """启动服务器等待Monitor连接"""
