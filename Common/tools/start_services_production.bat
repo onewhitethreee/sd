@@ -13,12 +13,12 @@ timeout /t 3 /nobreak >nul
 
 echo [2/4] 启动充电桩引擎 (Charging Point Engine)...
 echo          注意：Engine的CP_ID由Monitor提供
-start "CP Engine" cmd /k "python Charging_point\Engine\EV_CP_E.py localhost:9092"
+start "CP Engine" cmd /k "python Charging_point\Engine\EV_CP_E.py localhost:9092 --debug_port 5003"
 timeout /t 2 /nobreak >nul
 
 echo [3/4] 启动充电桩监控 (Charging Point Monitor)...
 echo          Monitor负责管理充电桩ID
-start "CP Monitor" cmd /k "python Charging_point\Monitor\EC_CP_M.py localhost:5004 localhost:9092 cp_001"
+start "CP Monitor" cmd /k "python Charging_point\Monitor\EC_CP_M.py localhost:5003 localhost:5002 cp_001"
 timeout /t 2 /nobreak >nul
 
 echo [4/4] 启动驱动客户端 (EV Driver)...

@@ -1,3 +1,6 @@
+"""
+Estado de charging point
+"""
 from enum import Enum
 
 class Status(Enum):

@@ -19,13 +19,22 @@ class MySocketServer:
         message_callback=None,
         disconnect_callback=None,
     ):
+        """
+        Inicializar el servidor socket
+        Args:
+            host: Dirección IP o nombre del host para escuchar
+            port: Puerto para escuchar
+            logger: Logger personalizado
+            message_callback: Función callback para procesar mensajes recibidos
+            disconnect_callback: Función callback para manejar desconexiones de clientes
+        """
         self.host = host
         self.port = int(port)
         self.logger = logger
         self.clients = {}  # {client_id: client_socket}
-        self.clients_lock = threading.Lock()  # 用于保护 self.clients 字典的锁
+        self.clients_lock = threading.Lock() 
 
-        self.running_event = threading.Event()  # 这个事件控制服务器的主循环
+        self.running_event = threading.Event()  # Este evento controla el bucle principal del servidor
 
         self.server_socket = None
         self.message_formatter = MessageFormatter()
@@ -35,22 +44,25 @@ class MySocketServer:
         if not callable(disconnect_callback):
             raise ValueError("disconnect_callback must be a callable function")
 
-        self.message_callback = message_callback  # 用于处理消息的回调函数
-        self.disconnect_callback = disconnect_callback  # 用于处理断开连接的回调函数
+        self.message_callback = message_callback  # Función callback para procesar mensajes recibidos
+        self.disconnect_callback = disconnect_callback  # Función callback para manejar desconexiones de clientes
 
     def start(self):
+        """
+        Iniciar el servidor socket
+        """
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.settimeout(1.0)  # 设置 accept 的超时时间
+        self.server_socket.settimeout(1.0)  # Establecer tiempo de espera para accept
 
         try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
 
-            self.running_event.set()  # 标记服务器正在运行
+            self.running_event.set()  # Marcar el servidor como en ejecución
 
             # self.logger.info(f"Socket server started on {self.host}:{self.port}")
-            # 在这个线程中接受客户端连接
+            # Aceptar conexiones de clientes en este hilo
             threading.Thread(target=self._accept_clients, daemon=True).start()
             self.logger.debug(
                 f"Started thread to accept clients, listening on {self.host}:{self.port}"
@@ -58,7 +70,7 @@ class MySocketServer:
         except Exception as e:
             self.logger.error(f"Failed to start server: {e}")
 
-            self.running_event.clear()  # 标记服务器已停止
+            self.running_event.clear()  # Marcar el servidor como detenido
 
             if self.server_socket:
                 self.server_socket.close()
@@ -66,7 +78,7 @@ class MySocketServer:
 
     def _accept_clients(self):
         """
-        Accept incoming client connections.
+        Aceptar conexiones entrantes de clientes.
         """
         while self.running_event.is_set():
             try:
@@ -90,27 +102,29 @@ class MySocketServer:
 
     def _handle_client(self, client_socket, client_address):
         """
-        Handle communication with a connected client.
+        Manejar la comunicación con un cliente conectado.
+        Args:
+            client_socket: Socket del cliente
+            client_address: Dirección del cliente
         """
         client_id = f"{client_address[0]}:{client_address[1]}"
         self.logger.info(f"Handling client {client_id}")
         with self.clients_lock:
             self.clients[client_id] = client_socket
 
-        buffer = b""  # 消息缓冲区
+        buffer = b"" 
 
         try:
             while self.running_event.is_set():
                 try:
-
                     data = client_socket.recv(4096)
                     if not data:
                         self.logger.info(f"Client {client_id} disconnected")
                         break
                 except socket.timeout:
                     if not self.running_event.is_set():
-                        break  # 服务器停止，退出循环
-                    continue  # 继续等待数据
+                        break  
+                    continue  
                 except ConnectionResetError:
                     self.logger.info(f"Client {client_id} disconnected")
                     break
@@ -120,10 +134,8 @@ class MySocketServer:
                 except Exception as e:
                     self.logger.error(f"Unexpected error with client {client_id}: {e}")
                     break
-                # 将新数据添加到缓冲区
                 buffer += data
                 # self.logger.debug(f"Received raw data from {client_id}: {data}")
-                # 处理缓冲区中的完整消息
                 while True:
                     buffer, message = self.message_formatter.extract_complete_message(
                         buffer
@@ -134,8 +146,7 @@ class MySocketServer:
                         # self.logger.debug("No complete message found in buffer yet.")
                         break
 
-                    # 处理消息并获取响应
-                    # 这里调用的是外部的处理函数
+                    # Aqui se llama al callback para procesar el mensaje
                     response = self.message_callback(client_id, message)
 
                     if response:
@@ -161,7 +172,12 @@ class MySocketServer:
                     del self.clients[client_id]
 
     def send_to_client(self, client_id, message) -> bool:
-        """发送消息给特定客户端 - 处理partial send"""
+        """
+        Enviar mensaje a un cliente específico
+        Args:
+            client_id: ID del cliente (formato "ip:port")
+            message: Diccionario del mensaje a enviar
+        """
         with self.clients_lock:
             client_socket = self.clients.get(client_id)
             if not client_socket:
@@ -172,7 +188,6 @@ class MySocketServer:
             packed_message = MessageFormatter.pack_message(message)
             total_sent = 0
 
-            # 循环发送直到完整
             while total_sent < len(packed_message):
                 try:
                     sent = client_socket.send(packed_message[total_sent:])
@@ -183,7 +198,6 @@ class MySocketServer:
                         return False
                     total_sent += sent
                 except socket.timeout:
-                    # 超时，继续尝试
                     continue
 
             return True
@@ -191,24 +205,27 @@ class MySocketServer:
             self.logger.error(f"Send to client {client_id} failed: {e}")
             return False
 
-    def send_broadcast_message(self, message) -> bool:  # 返回是否成功广播（至少一个）
-        """向所有连接的客户端广播消息 - 处理partial send"""
+    def send_broadcast_message(self, message) -> bool:  
+        """
+        Enviar mensaje a todos los clientes conectados
+        Args:
+            message: Diccionario del mensaje a enviar
+        Returns:
+            bool: Si se envió al menos a un cliente
+        """
         if not self.running_event.is_set():
             self.logger.warning("Server is not running, cannot broadcast message.")
             return False
 
-        # 直接打包JSON消息
         packed_message = MessageFormatter.pack_message(message)
         sent_to_any_client = False
 
-        # 使用一个副本，以便安全地在迭代中修改 clients
         with self.clients_lock:
             client_items = list(self.clients.items())
 
         for client_id, client_socket in client_items:
             try:
                 total_sent = 0
-                # 循环发送直到完整
                 while total_sent < len(packed_message):
                     try:
                         sent = client_socket.send(packed_message[total_sent:])
@@ -216,19 +233,18 @@ class MySocketServer:
                             raise socket.error("Socket connection broken")
                         total_sent += sent
                     except socket.timeout:
-                        # 超时，继续尝试
                         continue
 
                 self.logger.debug(f"Broadcast to {client_id}: {message.get('type')}")
                 sent_to_any_client = True
-            except (socket.error, OSError) as e:  # 捕获更具体的socket错误
+            except (socket.error, OSError) as e:  
                 self.logger.error(
                     f"Error broadcasting to {client_id}: {e}. Removing client.",
                     exc_info=False,
-                )  # 不需要完整堆栈
-                # 如果发送失败，说明连接可能已死，进行清理
+                )  
+                # SI el envío falla, eliminar el cliente
                 with self.clients_lock:
-                    if client_id in self.clients:  # 再次检查以防其他线程已清理
+                    if client_id in self.clients: 
                         try:
                             self.clients[client_id].close()
                         except Exception as close_e:
@@ -252,17 +268,19 @@ class MySocketServer:
         return sent_to_any_client
 
     def stop(self):
-        """停止服务器"""
+        """
+        Detener el servidor socket
+        """
         self.logger.info("Stopping socket server...")
-        self.running_event.clear()  # 标记服务器停止
+        self.running_event.clear()  # Detener el bucle principal del servidor
 
         with self.clients_lock:
-            for client_id, client_socket in list(self.clients.items()):  # 迭代副本
+            for client_id, client_socket in list(self.clients.items()):  
                 try:
-                    client_socket.shutdown(socket.SHUT_RDWR)  # 尝试优雅关闭
+                    client_socket.shutdown(socket.SHUT_RDWR)  
                     client_socket.close()
                     self.logger.debug(f"Forcibly closed client socket {client_id}.")
-                except OSError as e:  # 捕获操作系统级别的关闭错误
+                except OSError as e:  
                     self.logger.warning(
                         f"Error shutting down/closing client socket {client_id}: {e}"
                     )
@@ -270,36 +288,27 @@ class MySocketServer:
                     self.logger.error(
                         f"Unexpected error closing client socket {client_id}: {e}"
                     )
-            self.clients.clear()  # 清空客户端字典
+            self.clients.clear() 
 
         if self.server_socket:
             self.server_socket.close()
-            self.server_socket = None  # 清空引用
+            self.server_socket = None  
             self.logger.info("Server listening socket closed.")
 
         self.logger.info("Socket server stopped.")
 
-    def get_connected_clients(self):
-        """获取所有连接的客户端"""
-        with self.clients_lock:
-            return list(self.clients.keys())
-
-    def is_client_connected(self, client_id):
-        """检查客户端是否连接"""
-        with self.clients_lock:
-            return client_id in self.clients
 
     def has_active_clients(self) -> bool:
         """
-        检查当前是否有活跃的客户端连接。
+        Verificar si hay clientes conectados
         """
         with self.clients_lock:
-            return bool(self.clients)  # 直接返回字典是否为空的布尔值
+            return bool(self.clients)  
 
     def get_actual_port(self) -> int:
         """
-        获取服务器实际绑定的端口号。
-        当使用端口 0 时，操作系统会自动分配一个可用端口，此方法返回实际分配的端口。
+        Obtener el puerto actual en el que el servidor está escuchando
+        Cuando el puerto es 0, el sistema asigna un puerto libre automáticamente.
         """
         if self.server_socket:
             return self.server_socket.getsockname()[1]

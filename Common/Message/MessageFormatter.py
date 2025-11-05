@@ -7,6 +7,8 @@ class MessageFormatter:
     ETX = b"\x03"  # End of Text (ASCII)
 
     def __init__(self, encoding="utf-8"):
+        """
+        Inicializar el formateador de mensajes"""
         self.encoding = encoding
 
     @staticmethod
@@ -20,16 +22,16 @@ class MessageFormatter:
     @staticmethod
     def pack_message(message_dict, encoding="utf-8"):
         """
-        
+        Empaqueta un diccionario de mensaje en un formato de bytes.
         """
         if not isinstance(message_dict, dict):
-            raise TypeError("消息必须是字典格式")
+            raise TypeError("message_dict debe ser un diccionario")
 
         try:
             message_json = json.dumps(message_dict, ensure_ascii=False)
             message_bytes = message_json.encode(encoding)
         except Exception as e:
-            raise ValueError(f"无法编码消息: {e}") from e
+            raise ValueError(f"Error al empaquetar mensaje: {e}") from e
 
         lrc = MessageFormatter._calculate_lrc(message_bytes)
         return MessageFormatter.STX + message_bytes + MessageFormatter.ETX + lrc
@@ -37,20 +39,20 @@ class MessageFormatter:
     @staticmethod
     def unpack_message(message_bytes, encoding="utf-8"):
         """
-        从字节字符串中解包JSON消息。
+        Desempaqueta un mensaje JSON de un string de bytes.
 
         Args:
-            message_bytes: 打包的字节字符串
-            encoding: 编码方式
+            message_bytes: El string de bytes empaquetado
+            encoding: El método de codificación
 
         Returns:
-            消息字典
+            El diccionario del mensaje
         """
         if not (
             message_bytes.startswith(MessageFormatter.STX)
             and MessageFormatter.ETX in message_bytes
         ):
-            raise ValueError("消息格式不正确")
+            raise ValueError("El formato del mensaje no es correcto")
 
         try:
             etx_index = message_bytes.index(MessageFormatter.ETX)
@@ -59,26 +61,26 @@ class MessageFormatter:
             lrc_calculated = MessageFormatter._calculate_lrc(json_bytes)
 
             if lrc_received != lrc_calculated:
-                raise ValueError("LRC校验失败，消息已损坏")
+                raise ValueError("LRC no coincide, mensaje corrupto")
 
             message_json = json_bytes.decode(encoding)
             message_dict = json.loads(message_json)
             return message_dict
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as e:
-            raise ValueError(f"解包消息失败: {e}") from e
+            raise ValueError(f"Error al desempaquetar mensaje: {e}") from e
 
     @staticmethod
     def extract_complete_message(buffer):
         """
-        从缓冲区中提取完整的消息。
+        Extrae un mensaje completo del buffer de bytes.
 
         Args:
-            buffer: 字节缓冲区
+            buffer: El buffer de bytes
 
         Returns:
-            (remaining_buffer, message_dict) 元组
-            - remaining_buffer: 提取消息后的剩余缓冲区
-            - message_dict: 提取的消息字典，如果没有完整消息则为None
+            (remaining_buffer, message_dict) tupla donde:
+            - remaining_buffer: El buffer restante después de extraer el mensaje
+            - message_dict: El mensaje extraído como diccionario, o None si no hay mensaje completo
         """
         if MessageFormatter.STX not in buffer:
             return buffer, None
@@ -88,10 +90,10 @@ class MessageFormatter:
         try:
             etx_index = buffer.index(MessageFormatter.ETX, stx_index)
         except ValueError:
-            # ETX未找到，消息不完整
+            # no encontrado ETX, mensaje incompleto
             return buffer, None
 
-        # 检查是否有足够的数据包含LRC
+        # Comprobar si hay suficientes datos para incluir LRC
         if len(buffer) < etx_index + 2:  # +1 for ETX, +1 for LRC
             return buffer, None
 
@@ -102,22 +104,22 @@ class MessageFormatter:
             remaining_buffer = buffer[etx_index + 2 :]
             return remaining_buffer, message_dict
         except ValueError:
-            # 消息格式错误，跳过这个STX
+            # Error al desempaquetar mensaje, saltar este STX
             return buffer[stx_index + 1 :], None
 
     @staticmethod
     def create_response_message(cp_type, message_id, status, info="", session_id=None):
         """
-        创建响应消息字典。
+        Crear un diccionario de mensaje de respuesta.
 
         Args:
-            cp_type: 消息类型
-            message_id: 消息ID
-            status: 状态 (success/failure)
-            info: 信息
+            cp_type: Tipo de mensaje
+            message_id: ID del mensaje
+            status: Estado (success/failure)
+            info: Información
 
         Returns:
-            响应消息字典
+            Diccionario del mensaje de respuesta
         """
         return {
             "type": cp_type if cp_type else "",

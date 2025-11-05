@@ -397,7 +397,7 @@ class EV_CP_M:
             )
             return False
         failure_message = {
-            "type": "fault_notification",
+            "type": MessageTypes.FAULT_NOTIFICATION,
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
             "failure_info": failure_info,

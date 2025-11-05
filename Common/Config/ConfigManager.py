@@ -1,3 +1,6 @@
+"""
+Clase para obtener y manejar la configuración de la aplicación desde un archivo .env y variables de entorno.
+"""
 import os
 from dotenv import load_dotenv
 
@@ -39,10 +42,6 @@ class ConfigManager:
 
         return os.getenv(key, default)
 
-    @classmethod
-    def load_all(cls):
-        return cls._config_data.copy()
-
     def get_debug_mode(self):
         return self.get("DEBUG_MODE", "False").lower() in ("true", "1", "yes")
 
@@ -50,11 +49,6 @@ class ConfigManager:
     def get_broker(self):
         ip_port = self.get("BROKER_ADDRESS", "localhost:9092").split(":")
         return (ip_port[0], int(ip_port[1]))
-
-    def get_db(self):
-        ip_port = self.get("DB_ADDRESS", "localhost:5432").split(":")
-        return (ip_port[0], int(ip_port[1]))
-
     
     def get_listen_port(self):
         return int(self.get("LISTEN_PORT", "5000"))
@@ -69,10 +63,7 @@ class ConfigManager:
         ip_port = self.get("IP_PORT_EV_CP_CENTRAL", "localhost:5000").split(":")
         return (ip_port[0], int(ip_port[1]))
 
-    def get_ip_port_ev_m(self):
-        ip_port = self.get("IP_PORT_EV_M", "localhost:6000").split(":")
-        return (ip_port[0], int(ip_port[1]))
-    
+
 if __name__ == "__main__":
 
     config = ConfigManager()

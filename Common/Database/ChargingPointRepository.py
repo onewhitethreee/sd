@@ -2,14 +2,13 @@
 ChargingPointRepository - 负责 ChargingPoints 表的所有数据库操作
 """
 
-import logging
-from datetime import datetime, timezone
+
 from Common.Database.BaseRepository import BaseRepository
 
 
 class ChargingPointRepository(BaseRepository):
     """
-    充电桩数据访问层，封装所有与ChargingPoints表相关的数据库操作
+    clase que maneja las operaciones de la base de datos para la tabla ChargingPoints.
     """
 
     def get_table_name(self):
@@ -24,17 +23,17 @@ class ChargingPointRepository(BaseRepository):
         last_connection_time,
     ):
         """
-        插入或更新充电桩信息
+        Insertar o actualizar la información del punto de carga.
 
         Args:
-            cp_id: 充电桩ID
-            location: 位置
-            price_per_kwh: 每度电价格
-            status: 状态
-            last_connection_time: 最后连接时间
+            cp_id: ID del punto de carga
+            location: Ubicación
+            price_per_kwh: Precio por kWh
+            status: Estado
+            last_connection_time: Última hora de conexión
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             query = """
@@ -54,26 +53,26 @@ class ChargingPointRepository(BaseRepository):
             )
 
             self.logger.info(
-                f"充电桩 {cp_id} 注册/更新成功, 位置: {location}, 价格: {price_per_kwh}, "
-                f"状态: {status}"
+                f"El punto de carga {cp_id} se registró/actualizó correctamente, ubicación: {location}, precio: {price_per_kwh}, "
+                f"estado: {status}"
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"插入/更新充电桩 '{cp_id}' 失败: {e}")
+            self.logger.error(f"Error al insertar/actualizar el punto de carga '{cp_id}': {e}")
             return False
 
     def update_status(self, cp_id, status, last_connection_time=None):
         """
-        更新充电桩状态
+        Actualizar el estado del punto de carga
 
         Args:
-            cp_id: 充电桩ID
-            status: 新状态
-            last_connection_time: 最后连接时间（可选）
+            cp_id: ID del punto de carga
+            status: Nuevo estado
+            last_connection_time: Última hora de conexión (opcional)
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             if last_connection_time is not None:
@@ -85,37 +84,37 @@ class ChargingPointRepository(BaseRepository):
 
             return True
         except Exception as e:
-            self.logger.error(f"更新充电桩 {cp_id} 状态失败: {e}")
+            self.logger.error(f"Error al actualizar el estado del punto de carga {cp_id}: {e}")
             return False
 
     def update_last_connection_time(self, cp_id, last_connection_time):
         """
-        更新充电桩的最后连接时间
+        Actualizar la última hora de conexión del punto de carga
 
         Args:
-            cp_id: 充电桩ID
-            last_connection_time: 最后连接时间
+            cp_id: ID del punto de carga
+            last_connection_time: Última hora de conexión
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             query = "UPDATE ChargingPoints SET last_connection_time = ? WHERE cp_id = ?"
             self.execute_update(query, (last_connection_time, cp_id))
             return True
         except Exception as e:
-            self.logger.error(f"更新充电桩 {cp_id} 连接时间失败: {e}")
+            self.logger.error(f"Error al actualizar la última hora de conexión del punto de carga {cp_id}: {e}")
             return False
 
     def get_by_id(self, cp_id):
         """
-        根据ID获取充电桩信息
+        Obtener información del punto de carga por ID
 
         Args:
-            cp_id: 充电桩ID
+            cp_id: ID del punto de carga
 
         Returns:
-            dict: 充电桩信息，如果不存在返回None
+            dict: Información del punto de carga, si no existe devuelve None
         """
         try:
             query = """
@@ -136,51 +135,52 @@ class ChargingPointRepository(BaseRepository):
                 }
             return None
         except Exception as e:
-            self.logger.error(f"获取充电桩 {cp_id} 信息失败: {e}")
+            self.logger.error(f"Error al obtener información del punto de carga {cp_id}: {e}")
             return None
 
     def get_status(self, cp_id):
         """
-        获取充电桩状态
+        Obtener el estado del punto de carga
 
         Args:
-            cp_id: 充电桩ID
+            cp_id: ID del punto de carga
+
 
         Returns:
-            str: 充电桩状态，如果不存在返回None
+            str: Estado del punto de carga, si no existe devuelve None
         """
         try:
             query = "SELECT status FROM ChargingPoints WHERE cp_id = ?"
             rows = self.execute_query(query, (cp_id,))
             return rows[0][0] if rows else None
         except Exception as e:
-            self.logger.error(f"获取充电桩 {cp_id} 状态失败: {e}")
+            self.logger.error(f"Error al obtener el estado del punto de carga {cp_id}: {e}")
             return None
 
     def exists(self, cp_id):
         """
-        检查充电桩是否存在
+        Verificar si el punto de carga existe
 
         Args:
-            cp_id: 充电桩ID
+            cp_id: ID del punto de carga
 
         Returns:
-            bool: 是否存在
+            bool: Si existe
         """
         try:
             query = "SELECT 1 FROM ChargingPoints WHERE cp_id = ?"
             rows = self.execute_query(query, (cp_id,))
             return len(rows) > 0
         except Exception as e:
-            self.logger.error(f"检查充电桩 {cp_id} 是否存在失败: {e}")
+            self.logger.error(f"Error al verificar si el punto de carga {cp_id} existe: {e}")
             return False
 
     def get_all(self):
         """
-        获取所有充电桩
+        Obtener todos los puntos de carga
 
         Returns:
-            list: 充电桩列表
+            list: Lista de puntos de carga
         """
         try:
             query = """
@@ -200,15 +200,15 @@ class ChargingPointRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取所有充电桩失败: {e}")
+            self.logger.error(f"Error al obtener todos los puntos de carga: {e}")
             return []
 
     def get_available(self):
         """
-        获取所有可用的充电桩（状态为ACTIVE）
+        Obtener todos los puntos de carga disponibles (estado ACTIVE)
 
         Returns:
-            list: 可用充电桩列表
+            list: Lista de puntos de carga disponibles
         """
         try:
             query = """
@@ -229,23 +229,23 @@ class ChargingPointRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取可用充电桩失败: {e}")
+            self.logger.error(f"Error al obtener los puntos de carga disponibles: {e}")
             return []
 
     def set_all_status(self, status):
         """
-        设置所有充电桩的状态
+        Establecer el estado de todos los puntos de carga
 
         Args:
-            status: 新状态
+            status: Nuevo estado
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             query = "UPDATE ChargingPoints SET status = ?"
             self.execute_update(query, (status,))
             return True
         except Exception as e:
-            self.logger.error(f"设置所有充电桩状态失败: {e}")
+            self.logger.error(f"Error al establecer el estado de todos los puntos de carga: {e}")
             return False

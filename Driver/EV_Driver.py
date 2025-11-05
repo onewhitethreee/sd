@@ -15,7 +15,7 @@ from Common.Config.ConfigManager import ConfigManager
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Driver.DriverMessageDispatcher import DriverMessageDispatcher
 from Driver.DriverCLI import DriverCLI
-
+from Common.Message.MessageTypes import MessageTypes
 
 class Driver:
     def __init__(self, logger=None):
@@ -166,7 +166,7 @@ class Driver:
             bool: 请求是否成功发送
         """
         request_message = {
-            "type": "charging_history_request",
+            "type": MessageTypes.CHARGING_HISTORY_REQUEST,
             "message_id": str(uuid.uuid4()),
             "driver_id": self.args.id_client,
             "timestamp": int(time.time()),
@@ -341,12 +341,12 @@ class Driver:
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_STOP_REQUESTS,
-                    num_partitions=1,
+                    num_partitions=3,
                     replication_factor=1
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_CPS_REQUESTS,
-                    num_partitions=1,
+                    num_partitions=3,
                     replication_factor=1
                 )
                 # 创建统一的Driver响应主题（所有Driver共享一个主题）

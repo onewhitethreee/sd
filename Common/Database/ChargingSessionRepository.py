@@ -2,14 +2,12 @@
 ChargingSessionRepository - 负责 ChargingSessions 表的所有数据库操作
 """
 
-import logging
-from datetime import datetime
 from Common.Database.BaseRepository import BaseRepository
 
 
 class ChargingSessionRepository(BaseRepository):
     """
-    充电会话数据访问层，封装所有与ChargingSessions表相关的数据库操作
+    Clase que maneja las operaciones de la base de datos para la tabla ChargingSessions.
     """
 
     def get_table_name(self):
@@ -17,16 +15,16 @@ class ChargingSessionRepository(BaseRepository):
 
     def create(self, session_id, cp_id, driver_id, start_time):
         """
-        创建充电会话
+        Crear una sesión de carga
 
         Args:
-            session_id: 会话ID
-            cp_id: 充电桩ID
-            driver_id: 司机ID
-            start_time: 开始时间
+            session_id: ID de la sesión
+            cp_id: ID del punto de carga
+            driver_id: ID del conductor
+            start_time: Hora de inicio
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             query = """
@@ -36,10 +34,10 @@ class ChargingSessionRepository(BaseRepository):
             """
             self.execute_update(query, (session_id, cp_id, driver_id, start_time, "in_progress"))
 
-            self.logger.info(f"充电会话 {session_id} 创建成功")
+            self.logger.info(f"Sesión de carga {session_id} creada con éxito")
             return True
         except Exception as e:
-            self.logger.error(f"创建充电会话 {session_id} 失败: {e}")
+            self.logger.error(f"Error al crear la sesión de carga {session_id}: {e}")
             return False
 
     def update(
@@ -51,17 +49,17 @@ class ChargingSessionRepository(BaseRepository):
         status=None,
     ):
         """
-        更新充电会话
+        Actualizar la sesión de carga
 
         Args:
-            session_id: 会话ID
-            end_time: 结束时间（可选）
-            energy_consumed_kwh: 消耗电量（可选）
-            total_cost: 总费用（可选）
-            status: 状态（可选）
+            session_id: ID de la sesión
+            end_time: Hora de fin (opcional)
+            energy_consumed_kwh: Energía consumida (opcional)
+            total_cost: Costo total (opcional)
+            status: Estado (opcional)
 
         Returns:
-            bool: 是否成功
+            bool: Si fue exitoso
         """
         try:
             # 构建动态更新语句
@@ -85,28 +83,28 @@ class ChargingSessionRepository(BaseRepository):
                 params.append(status)
 
             if not updates:
-                self.logger.warning(f"更新会话 {session_id} 时没有提供任何字段")
+                self.logger.warning(f"Actualización de la sesión {session_id} sin campos proporcionados")
                 return False
 
             params.append(session_id)
             query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
 
             self.execute_update(query, params)
-            self.logger.info(f"充电会话 {session_id} 更新成功")
+            self.logger.info(f"Sesión de carga {session_id} actualizada con éxito")
             return True
         except Exception as e:
-            self.logger.error(f"更新充电会话 {session_id} 失败: {e}")
+            self.logger.error(f"Error al actualizar la sesión de carga {session_id}: {e}")
             return False
 
     def get_by_id(self, session_id):
         """
-        根据ID获取充电会话信息
+        Obtener información de la sesión de carga por ID
 
         Args:
-            session_id: 会话ID
+            session_id: ID de la sesión
 
         Returns:
-            dict: 会话信息，如果不存在返回None
+            dict: Información de la sesión o None
         """
         try:
             query = """
@@ -131,15 +129,15 @@ class ChargingSessionRepository(BaseRepository):
                 }
             return None
         except Exception as e:
-            self.logger.error(f"获取充电会话 {session_id} 失败: {e}")
+            self.logger.error(f"Error al obtener la sesión de carga {session_id}: {e}")
             return None
 
     def get_active_sessions(self):
         """
-        获取所有活跃的充电会话
+        Obtener todos los sesiones de carga activas
 
         Returns:
-            list: 活跃会话列表
+            list: Lista de sesiones activas
         """
         try:
             query = """
@@ -164,15 +162,15 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取活跃充电会话失败: {e}")
+            self.logger.error(f"Error al obtener las sesiones de carga activas: {e}")
             return []
 
     def get_all(self):
         """
-        获取所有充电会话（包括历史会话）
+        Obtener todos los puntos de carga (incluidas las sesiones históricas)
 
         Returns:
-            list: 所有会话列表
+            list: Lista de todas las sesiones
         """
         try:
             query = """
@@ -202,13 +200,13 @@ class ChargingSessionRepository(BaseRepository):
 
     def get_active_sessions_by_charging_point(self, cp_id):
         """
-        获取充电桩的所有活跃会话
+        Obtener todas las sesiones de carga activas por punto de carga
 
         Args:
-            cp_id: 充电桩ID
+            cp_id: ID del punto de carga
 
         Returns:
-            list: 活跃会话列表
+            list: Lista de sesiones activas
         """
         try:
             query = """
@@ -233,18 +231,18 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取充电桩 {cp_id} 的活跃会话失败: {e}")
+            self.logger.error(f"Error al obtener las sesiones de carga activas para el punto de carga {cp_id}: {e}")
             return []
 
     def get_active_sessions_by_driver(self, driver_id):
         """
-        获取司机的所有活跃会话
+        Obtener todas las sesiones de carga activas por conductor
 
         Args:
-            driver_id: 司机ID
+            driver_id: ID del conductor
 
         Returns:
-            list: 活跃会话列表
+            list: Lista de sesiones activas
         """
         try:
             query = """
@@ -269,18 +267,18 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取司机 {driver_id} 的活跃会话失败: {e}")
+            self.logger.error(f"Error al obtener las sesiones de carga activas para el conductor {driver_id}: {e}")
             return []
 
     def get_sessions_by_charging_point(self, cp_id):
         """
-        获取充电桩的所有会话（包括历史会话）
+        obtener todas las sesiones de un punto de carga (incluidas las históricas)
 
         Args:
-            cp_id: 充电桩ID
+            cp_id: ID del punto de carga
 
         Returns:
-            list: 会话列表
+            list: Lista de sesiones
         """
         try:
             query = """
@@ -306,18 +304,18 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取充电桩 {cp_id} 的会话失败: {e}")
+            self.logger.error(f"Error al obtener las sesiones para el punto de carga {cp_id}: {e}")
             return []
 
     def get_sessions_by_driver(self, driver_id):
         """
-        获取司机的所有会话（包括历史会话）
+        Obtener todas las sesiones de un conductor (incluidas las históricas)
 
         Args:
-            driver_id: 司机ID
+            driver_id: ID del conductor
 
         Returns:
-            list: 会话列表
+            list: Lista de sesiones
         """
         try:
             query = """
@@ -343,33 +341,33 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取司机 {driver_id} 的会话失败: {e}")
+            self.logger.error(f"Error al obtener las sesiones para el conductor {driver_id}: {e}")
             return []
 
     def exists(self, session_id):
         """
-        检查会话是否存在
+        Verificar si la sesión existe
 
         Args:
-            session_id: 会话ID
+            session_id: ID de la sesión
 
         Returns:
-            bool: 是否存在
+            bool: Si existe
         """
         try:
             query = "SELECT 1 FROM ChargingSessions WHERE session_id = ?"
             rows = self.execute_query(query, (session_id,))
             return len(rows) > 0
         except Exception as e:
-            self.logger.error(f"检查会话 {session_id} 是否存在失败: {e}")
+            self.logger.error(f"Error al verificar si la sesión {session_id} existe: {e}")
             return False
 
     def is_active(self, session_id):
         """
-        检查会话是否活跃
+        Verificar si la sesión está activa
 
         Args:
-            session_id: 会话ID
+            session_id: ID de la sesión
 
         Returns:
             bool: 是否活跃
@@ -378,5 +376,5 @@ class ChargingSessionRepository(BaseRepository):
             session = self.get_by_id(session_id)
             return session is not None and session["status"] == "in_progress"
         except Exception as e:
-            self.logger.error(f"检查会话 {session_id} 是否活跃失败: {e}")
+            self.logger.error(f"Error al verificar si la sesión {session_id} está activa: {e}")
             return False

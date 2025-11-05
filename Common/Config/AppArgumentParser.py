@@ -1,3 +1,6 @@
+"""
+Clase para manejar los argumentos de línea de comando de la aplicación
+"""
 import argparse
 
     
