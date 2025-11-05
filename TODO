@@ -6,3 +6,4 @@ Core
 Driver
 
 测试kafka掉线
+Core/Central 选项1设置状态有颜色的，而不是简单的文字
