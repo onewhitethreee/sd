@@ -67,8 +67,6 @@ class Driver:
             self.logger, self
         )  
 
-
-
     def _send_charge_request(self, cp_id):
         """
         Enviar solicitud de carga a queue que sera producido por central
@@ -98,7 +96,9 @@ class Driver:
             return False
 
     def _send_stop_charging_request(self):
-        """发送停止充电请求（纯Kafka模式）"""
+        """
+        Enviar solicitud de detención de carga a queue que sera producido por central
+        """
         with self.lock:
             if not self.current_charging_session:
                 self.logger.warning("No active charging session to stop")
@@ -108,7 +108,7 @@ class Driver:
             cp_id = self.current_charging_session["cp_id"]
 
         request_message = {
-            "type": "stop_charging_request",
+            "type": MessageTypes.STOP_CHARGING_REQUEST,
             "message_id": str(uuid.uuid4()),
             "session_id": session_id,
             "cp_id": cp_id,
@@ -133,9 +133,11 @@ class Driver:
             return False
 
     def _request_available_cps(self):
-        """请求可用充电点列表（纯Kafka模式）"""
+        """
+        Enviar solicitud de puntos de recarga disponibles
+        """
         request_message = {
-            "type": "available_cps_request",
+            "type": MessageTypes.AVAILABLE_CPS_REQUEST,
             "message_id": str(uuid.uuid4()),
             "driver_id": self.args.id_client,
             "timestamp": int(time.time()),
@@ -155,18 +157,12 @@ class Driver:
             self.logger.error("Kafka not connected, cannot request available CPs")
             return False
 
-    def _request_charging_history(self, limit=None):
+    def _request_charging_history(self):
         """
-        请求充电历史记录（查询模式 via Kafka）
-
-        这是一个查询请求，不是事件订阅。
-        Driver 发送查询请求到 Kafka，Central 从数据库查询后返回结果。
-
-        Args:
-            limit: 可选，限制返回的历史记录数量
+        Consultar el historial de carga
 
         Returns:
-            bool: 请求是否成功发送
+            bool: si la solicitud fue enviada con éxito
         """
         request_message = {
             "type": MessageTypes.CHARGING_HISTORY_REQUEST,
@@ -174,9 +170,6 @@ class Driver:
             "driver_id": self.args.id_client,
             "timestamp": int(time.time()),
         }
-
-        if limit:
-            request_message["limit"] = limit
 
         # 发送查询请求到 Kafka
         if self.kafka_manager and self.kafka_manager.is_connected():
@@ -193,51 +186,10 @@ class Driver:
             self.logger.error("Kafka not connected, cannot request charging history")
             return False
 
-    def _validate_charging_points_availability(self, cp_ids):
-        """
-        验证充电桩是否在系统中可用
-
-        Args:
-            cp_ids: 充电桩ID列表
-
-        Returns:
-            tuple: (available_cps, unavailable_cps)
-                - available_cps: 可用的充电桩ID列表
-                - unavailable_cps: 不可用的充电桩及原因列表 [(cp_id, reason), ...]
-        """
-        available_cps = []
-        unavailable_cps = []
-
-        with self.lock:
-            # 获取当前可用充电桩列表
-            available_cp_ids = {cp.get('id'): cp for cp in self.available_charging_points}
-
-        for cp_id in cp_ids:
-            if cp_id not in available_cp_ids:
-                # 充电桩不在可用列表中
-                unavailable_cps.append((cp_id, "Not registered or not connected to Central"))
-            else:
-                cp_info = available_cp_ids[cp_id]
-                status = cp_info.get('status', 'UNKNOWN')
-
-                # 检查状态
-                if status == 'FAULTY':
-                    unavailable_cps.append((cp_id, f"Status: FAULTY"))
-                elif status == 'CHARGING':
-                    unavailable_cps.append((cp_id, f"Status: CHARGING (already in use)"))
-                elif status == 'STOPPED':
-                    unavailable_cps.append((cp_id, f"Status: STOPPED (not available)"))
-                elif status == 'ACTIVE':
-                    # 状态正常，可以使用
-                    available_cps.append(cp_id)
-                else:
-                    # 未知状态
-                    unavailable_cps.append((cp_id, f"Status: {status} (unknown/unavailable)"))
-
-        return available_cps, unavailable_cps
-
     def _load_services_from_file(self, filename="test_services.txt"):
-        """从文件加载服务列表"""
+        """
+        Requisito que pidio por el enunciado: cargar servicios desde un archivo de texto
+        """
         try:
             if not os.path.exists(filename):
                 self.logger.warning(f"Service file {filename} not found")
@@ -252,8 +204,12 @@ class Driver:
             self.logger.error(f"Error loading services from file: {e}")
             return []
 
-
     def _formatter_charging_points(self, charging_points):
+        """
+        Formatear y mostrar la lista de puntos de carga disponibles
+        Args:
+            charging_points: Lista de puntos de carga
+        """
         for i, cp in enumerate(charging_points, 1):
             print(f"[{i}] charging point {cp['id']}")
             print(f"    ├─ Location: {cp['location']}")
@@ -263,10 +219,10 @@ class Driver:
 
     def _show_charging_history(self, history_data=None):
         """
-        显示充电历史（从远程查询获取）
+        Mostrar el historial de carga
 
         Args:
-            history_data: 可选，充电历史数据列表。如果不提供，将发起查询请求
+            history_data: lista de datos del historial de carga. Si no se proporciona, se iniciará una solicitud de consulta
         """
         if history_data is None:
             self.logger.info("Requesting charging history from Central...")
@@ -277,7 +233,14 @@ class Driver:
         if not history_data:
             self.logger.info("No charging history available")
             return
+        self._formatter_history_data(history_data)
 
+    def _formatter_history_data(self, history_data):
+        """
+        Formatear y mostrar los datos del historial de carga
+        Args:
+            history_data: lista de datos del historial de carga
+        """
         self.logger.info("\n" + "=" * 60)
         self.logger.info("Charging History")
         self.logger.info("=" * 60)
@@ -286,12 +249,16 @@ class Driver:
             self.logger.info(f"    CP ID: {record.get('cp_id', 'N/A')}")
             self.logger.info(f"    Start Time: {record.get('start_time', 'N/A')}")
             self.logger.info(f"    End Time: {record.get('end_time', 'N/A')}")
-            self.logger.info(f"    Energy: {record.get('energy_consumed_kwh', 0):.3f}kWh")
+            self.logger.info(
+                f"    Energy: {record.get('energy_consumed_kwh', 0):.3f}kWh"
+            )
             self.logger.info(f"    Cost: €{record.get('total_cost', 0):.2f}")
         self.logger.info("=" * 60 + "\n")
-
     def _process_next_service(self):
-        """处理下一个服务"""
+        """
+        procesar el siguiente servicio desde el fichero de prueba
+        """
+        
         if self.service_queue:
             cp_id = self.service_queue.pop(0)
             self.logger.info(f"Processing next service: {cp_id}")
@@ -302,15 +269,7 @@ class Driver:
             self._request_charging_history()
 
     def _auto_mode(self, services):
-        """
-        自动模式 - 自动处理充电服务队列
-
-        在自动模式下，CLI仍然可用，用户可以：
-        - 查看当前状态
-        - 查看充电历史
-        - 手动停止当前充电
-        - 切换到交互模式
-        """
+        
         self.logger.info(f"Entering auto mode with {len(services)} services")
         print(f"🤖 Auto mode: Processing {len(services)} charging point(s) automatically")
         print(f"    Type 'help' to see available commands during auto mode\n")
@@ -327,7 +286,9 @@ class Driver:
             time.sleep(1)
 
     def _init_kafka(self):
-        """初始化Kafka连接（改进版）"""
+        """
+        Inicializar Kafka
+        """
         broker_address = f"{self.args.broker[0]}:{self.args.broker[1]}"
 
         try:
@@ -356,7 +317,7 @@ class Driver:
                 driver_response_topic = KafkaTopics.get_driver_response_topic()
                 self.kafka_manager.create_topic_if_not_exists(
                     driver_response_topic,
-                    num_partitions=3,  # 多个分区支持更好的并发性能
+                    num_partitions=3,  
                     replication_factor=1
                 )
 
@@ -377,11 +338,15 @@ class Driver:
                 return False
 
         except Exception as e:
-            self.logger.error(f"Kafka初始化失败: {e}")
+            self.logger.error(f"Error initializing Kafka: {e}")
             return False
 
     def _handle_kafka_message(self, message):
-        """处理来自Kafka的消息（带driver_id过滤）"""
+        """
+        Maneja los mensajes recibidos desde Kafka
+        Args:
+            message: Mensaje recibido desde Kafka
+        """
         try:
             msg_type = message.get("type")
             message_driver_id = message.get("driver_id")
@@ -423,7 +388,6 @@ class Driver:
 
         self.running = True
 
-        # 初始化Kafka（唯一的通信方式）
         if not self._init_kafka():
             self.logger.error("Failed to initialize Kafka. Cannot start Driver.")
             print("\n❌ Failed to connect to Kafka Broker. Please ensure Kafka is running and try again.\n")
@@ -442,7 +406,6 @@ class Driver:
 
         try:
             if services:
-                # 自动模式（CLI已在后台运行）
                 self._auto_mode(services)
             else:
                 # 交互模式（CLI已在后台运行）
@@ -467,9 +430,7 @@ class Driver:
 
     def _init_cli(self):
         """
-        初始化Driver CLI
-
-        CLI会在后台运行，无论是自动模式还是交互模式都可以使用
+        Inicializar el CLI del Driver
         """
         try:
             self.driver_cli = DriverCLI(self)
