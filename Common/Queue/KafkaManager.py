@@ -7,7 +7,7 @@ from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
 
 # 禁用Kafka库的详细日志
-logging.getLogger("kafka").setLevel(logging.WARNING)
+logging.getLogger("kafka").setLevel(logging.ERROR)
 logging.getLogger("kafka.client").setLevel(logging.WARNING)
 logging.getLogger("kafka.conn").setLevel(logging.WARNING)
 logging.getLogger("kafka.protocol").setLevel(logging.WARNING)

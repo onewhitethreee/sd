@@ -19,6 +19,9 @@ from Common.Message.MessageTypes import MessageTypes
 
 class Driver:
     def __init__(self, logger=None):
+        """
+        Inicializa el Driver
+        """
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
@@ -46,32 +49,32 @@ class Driver:
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
-        self.kafka_manager = None  # Kafka管理器
-        self.driver_cli = None  # Driver命令行接口
+        self.kafka_manager = None 
+        self.driver_cli = None  
         self.running = False
 
-        # ========== 状态管理（遵循 CQRS 原则）==========
-        # 实时状态：从 Kafka 订阅实时更新
-        self.current_charging_session = None  # 当前充电会话的实时状态
+        # session info
+        self.current_charging_session = None  
 
-        # 缓存数据：短期缓存，用于减少查询
-        self.available_charging_points = []  # 可用充电桩列表（短期缓存）
-        self.available_cps_cache_time = None  # 缓存时间戳
+        # cache session info
+        self.available_charging_points = []  
+        self.available_cps_cache_time = None  
 
-        # 自动模式队列（仅用于自动模式的本地调度）
         self.service_queue = []
 
-        self.lock = threading.Lock()  # 线程锁，保护共享数据
+        self.lock = threading.Lock()  
         self.message_dispatcher = DriverMessageDispatcher(
             self.logger, self
-        )  # 消息分发器
+        )  
 
 
 
     def _send_charge_request(self, cp_id):
-        """发送充电请求（纯Kafka模式）"""
+        """
+        Enviar solicitud de carga a queue que sera producido por central
+        """
         request_message = {
-            "type": "charge_request",
+            "type": MessageTypes.CHARGE_REQUEST,
             "message_id": str(uuid.uuid4()),
             "cp_id": cp_id,
             "driver_id": self.args.id_client,
