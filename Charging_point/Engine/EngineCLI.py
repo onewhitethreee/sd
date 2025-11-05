@@ -314,11 +314,6 @@ class EngineCLI:
         else:
             print("  Monitor Server: Not initialized")
 
-        if self.engine.kafka_manager:
-            print(f"  Kafka Connected: {self.engine.kafka_manager.is_connected()}")
-        else:
-            print("  Kafka: Not initialized")
-
         if self.engine.is_charging and self.engine.current_session:
             print("\n  CURRENT CHARGING SESSION:")
             print(f"    Session ID: {self.engine.current_session['session_id']}")
