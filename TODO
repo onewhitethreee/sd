@@ -8,3 +8,5 @@ Driver
 测试kafka掉线
 Core/Central 选项1设置状态有颜色的，而不是简单的文字
 charging point 的状态为in_progreess, 这个说明在充电但是engine或者monitor断开了。需要解决。
+kafka掉线后，engine的状态里的kafka没有更新
+在engine和monitor启动后，monitor断开，换一个名字，这时候的engine还是旧的monitor名字
