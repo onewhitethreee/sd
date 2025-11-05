@@ -1,24 +1,23 @@
-"""
-Driver交互式命令行界面
-用于充电司机的操作命令
-"""
 
 import threading
 from typing import TYPE_CHECKING
+import time
 
 if TYPE_CHECKING:
     from Driver.EV_Driver import Driver
 
 
 class DriverCLI:
-    """Driver命令行接口"""
+    """
+    CLI para driver
+    """
 
     def __init__(self, driver: "Driver"):
         """
-        初始化Driver CLI
+        Inicializa el DriverCLI
 
         Args:
-            driver: Driver实例
+            driver: Instancia del Driver
         """
         self.driver = driver
         self.running = False
@@ -26,37 +25,38 @@ class DriverCLI:
         self.logger = driver.logger
 
     def start(self):
-        """启动交互式命令行界面"""
+        """
+        Inicia el CLI interactivo en un hilo separado
+        """
         if self.running:
-            self.logger.warning("Driver CLI已经在运行中")
+            self.logger.warning("Driver CLI ya está en ejecución")
             return
 
         self.running = True
         self.cli_thread = threading.Thread(target=self._run_cli, daemon=True)
         self.cli_thread.start()
-        self.logger.info("Driver CLI已启动")
+        self.logger.info("Driver CLI iniciado")
 
     def stop(self):
-        """停止交互式命令行界面"""
+        """Detiene el CLI interactivo"""
         if not self.running:
-            # 已经停止，避免重复日志
             return
 
         self.running = False
         if self.cli_thread:
             self.cli_thread.join(timeout=2)
-        self.logger.info("Driver CLI已停止")
+        self.logger.info("Driver CLI detenido")
 
     def _run_cli(self):
-        """运行交互式命令循环"""
+        """
+        Ejecuta el loop principal del CLI
+        """
         self.logger.info("Driver CLI ready. Press ENTER to show menu...")
 
         while self.running and self.driver.running:
             try:
-                # 等待用户输入
                 user_input = input().strip()
 
-                # 如果按 ENTER 不输入任何内容，显示菜单
                 if not user_input:
                     self._show_menu()
                     continue
@@ -64,16 +64,16 @@ class DriverCLI:
                 self._process_command(user_input)
 
             except KeyboardInterrupt:
-                print("\n检测到中断，使用 '0' 退出")
                 continue
             except EOFError:
                 break
             except Exception as e:
-                self.logger.error(f"处理命令时出错: {e}")
-                print(f"错误: {e}")
+                self.logger.error(f"Error: {e}")
 
     def _show_menu(self):
-        """显示菜单"""
+        """
+        Muestra el menú
+        """
         print("\n" + "=" * 60)
         print("  EV_DRIVER - DRIVER CONTROL MENU")
         print("=" * 60)
@@ -113,7 +113,6 @@ class DriverCLI:
         """
         try:
             if command == "0":
-                print("退出Driver应用...")
                 self.driver.running = False
                 self.running = False
 
@@ -121,11 +120,11 @@ class DriverCLI:
                 self._handle_list_command()
 
             elif command == "2":
-                cp_id = input("请输入充电桩ID: ").strip()
+                cp_id = input("Introduce el ID del punto de carga: ").strip()
                 if cp_id:
                     self._handle_charge_command(cp_id)
                 else:
-                    print("错误: 充电桩ID不能为空")
+                    print("Error: El ID del punto de carga no puede estar vacío")
 
             elif command == "3":
                 self._handle_stop_command()
@@ -137,150 +136,135 @@ class DriverCLI:
                 self._handle_history_command()
 
             else:
-                print(f"未知选项: {command}")
-                print("按 ENTER 显示菜单")
+                print("Por favor, introduce un número válido del menú.")
 
         except Exception as e:
-            self.logger.error(f"执行命令时出错: {e}")
-            print(f"错误: {e}")
+            self.logger.error(f"Error al procesar el comando: {e}")
 
     def _handle_list_command(self):
-        """处理list命令 - 请求可用充电桩列表"""
+        """
+        Muestra la lista de puntos de carga disponibles
+        """
         try:
             self.driver._request_available_cps()
-            # 显示可用充电桩
             with self.driver.lock:
                 if self.driver.available_charging_points:
-                    print(f"\n可用充电桩列表:")
+                    print(f"\nLista de puntos de carga disponibles:")
                     print("-" * 80)
                     self.driver._formatter_charging_points(
                         self.driver.available_charging_points
                     )
                 else:
-                    print("当前没有可用的充电桩")
+                    print("No hay puntos de carga disponibles actualmente.")
 
         except Exception as e:
-            self.logger.error(f"获取充电桩列表失败: {e}")
-            print(f"错误: 无法获取充电桩列表 - {e}")
+            self.logger.error(f"Error al obtener la lista de puntos de carga: {e}")
 
     def _handle_charge_command(self, cp_id: str):
-        """处理charge命令 - 发起充电请求"""
+        """
+        Muestra la información del punto de carga seleccionado y envía la solicitud de carga
+        """
         try:
-            # 检查是否已经在充电
             with self.driver.lock:
                 if self.driver.current_charging_session:
                     session = self.driver.current_charging_session
-                    print(f"错误: 已有活跃的充电会话")
-                    print(f"  会话ID: {session.get('session_id')}")
-                    print(f"  充电桩: {session.get('cp_id')}")
-                    print(f"请先停止当前充电会话")
+                    print(f"Error: Ya hay una sesión de carga activa")
+                    print(f"  ID de sesión: {session.get('session_id')}")
+                    print(f"  Punto de carga: {session.get('cp_id')}")
                     return
 
-            # 检查充电桩是否在可用列表中
             with self.driver.lock:
                 available_ids = [
                     cp.get("id") for cp in self.driver.available_charging_points
                 ]
                 if cp_id not in available_ids:
-                    print(f"警告: 充电桩 {cp_id} 可能不在可用列表中")
-                    confirm = input("是否继续? (y/n): ").strip().lower()
-                    if confirm != "y":
-                        print("已取消充电请求")
-                        return
+                    print(f"Advertencia: El punto de carga {cp_id} puede no estar en la lista de disponibles")
+                    return
 
-            # 发送充电请求
-            print(f"正在向充电桩 {cp_id} 发送充电请求...")
+            # Enviar solicitud de carga
+            print(f"Enviando solicitud de carga al punto de carga {cp_id}...")
             success = self.driver._send_charge_request(cp_id)
 
             if success:
-                print(f"✓ 充电请求已发送")
-                print("等待Central系统响应...")
+                print(f"✓ Solicitud de carga enviada")
+                print("Esperando respuesta del sistema Central...")
             else:
-                print(f"✗ 充电请求发送失败")
+                print(f"✗ Solicitud de carga fallida")
 
         except Exception as e:
-            self.logger.error(f"发送充电请求失败: {e}")
-            print(f"错误: 无法发送充电请求 - {e}")
+            self.logger.error(f"Error al enviar solicitud de carga: {e}")
 
     def _handle_stop_command(self):
-        """处理stop命令 - 停止充电"""
+        """
+        Maneja el comando de detener la carga
+        """
         try:
             with self.driver.lock:
                 if not self.driver.current_charging_session:
-                    print("当前没有活跃的充电会话")
+                    print("No hay ninguna sesión de carga activa")
                     return
 
                 session = self.driver.current_charging_session
-                print(f"正在停止充电会话...")
-                print(f"  会话ID: {session.get('session_id')}")
-                print(f"  充电桩: {session.get('cp_id')}")
+                print(f"Deteniendo sesión de carga...")
+                print(f"  ID de sesión: {session.get('session_id')}")
+                print(f"  ID de punto de carga: {session.get('cp_id')}")
 
-            # 发送停止请求
+            # Enviar solicitud de detener carga
             success = self.driver._send_stop_charging_request()
 
             if success:
-                print(f"✓ 停止充电请求已发送")
-                print("等待充电会话结束...")
+                print(f"✓ Solicitud de detener carga enviada")
+                print("Esperando que la sesión de carga finalice...")
             else:
-                print(f"✗ 停止充电请求发送失败")
+                print(f"✗ Solicitud de detener carga fallida")
 
         except Exception as e:
-            self.logger.error(f"停止充电失败: {e}")
-            print(f"错误: 无法停止充电 - {e}")
+            self.logger.error(f"Error al detener carga: {e}")
 
     def _handle_status_command(self):
-        """处理status命令 - 显示当前充电状态"""
+        """Maneja el comando de estado - Muestra el estado actual de carga"""
         try:
             with self.driver.lock:
                 if not self.driver.current_charging_session:
-                    print("\n当前充电状态: 空闲")
-                    print("没有活跃的充电会话")
+                    print("\nEstado de carga actual: Libre")
+                    print("No hay ninguna sesión de carga activa.")
                     return
 
                 session = self.driver.current_charging_session
 
-                print("\n当前充电状态:")
+                print("\nEstado de carga actual:")
                 print("=" * 60)
-                print(f"  会话ID:         {session.get('session_id', 'N/A')}")
-                print(f"  充电桩ID:       {session.get('cp_id', 'N/A')}")
-                print(f"  状态:           充电中")
+                print(f"  ID de sesión:         {session.get('session_id', 'N/A')}")
+                print(f"  ID de punto de carga:       {session.get('cp_id', 'N/A')}")
+                print(f"  Estado:           Charging")
                 print(
-                    f"  已消耗电量:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh"
+                    f"  Energía consumida:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh"
                 )
-                print(f"  当前费用:       {session.get('total_cost', 0.0):.2f} 元")
+                print(f"  Costo total:       {session.get('total_cost', 0.0):.2f} €")
 
-                # 计算充电时长（如果有开始时间）
+                # Calcular duración de carga (si hay tiempo de inicio)
                 if "start_time" in session:
-                    import time
 
                     elapsed = time.time() - session.get("start_time", time.time())
                     minutes = int(elapsed // 60)
                     seconds = int(elapsed % 60)
-                    print(f"  充电时长:       {minutes}分{seconds}秒")
+                    print(f"  Duración de carga:       {minutes} min {seconds} seg")
 
                 print("=" * 60)
 
         except Exception as e:
-            self.logger.error(f"获取充电状态失败: {e}")
-            print(f"错误: 无法获取充电状态 - {e}")
+            self.logger.error(f"Error al obtener estado de carga: {e}")
 
     def _handle_history_command(self):
         """
-        处理history命令 - 查询并显示充电历史
-
-        使用 CQRS 查询模式：
-        1. 发送查询请求到 Central (via Kafka)
-        2. Central 查询数据库
-        3. 响应异步返回并由 DriverMessageDispatcher 处理和显示
+        Maneja el comando de historial - Consulta y muestra el historial de carga
         """
         try:
-            print("\n正在查询充电历史记录...")
-            print("（请稍候，响应将异步到达）\n")
+            print("\nConsultando historial de carga...")
 
-            # 发送查询请求（异步）
             self.driver._request_charging_history()
 
-            # 注意：响应会异步到达，由 DriverMessageDispatcher._handle_charging_history_response 处理
+            # Nota: La respuesta llegará de forma asíncrona y será manejada por DriverMessageDispatcher._handle_charging_history_response
 
         except Exception as e:
-            print(f"\n❌ 查询历史记录失败: {e}")
+            print(f"\n❌ Error al consultar historial de carga: {e}")

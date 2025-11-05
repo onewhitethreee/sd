@@ -86,9 +86,7 @@ class EngineCLI:
         print("  [0] Exit menu (Engine continues running)")
         print("=" * 60)
         print()
-        print("  NOTE: Option [1] simulates manual charging from the CP itself")
-        print("        (as specified in PDF page 6). Central will handle the")
-        print("        session creation and use the CP's configured price.")
+        
 
     def _run_cli(self):
         """Ejecuta el loop principal del CLI"""

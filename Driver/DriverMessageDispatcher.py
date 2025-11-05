@@ -1,80 +1,51 @@
-"""
-Driver消息分发器
-
-负责处理来自Central的所有消息，包括：
-
-来自 Central 的响应和通知：
-- charge_request_response: 充电请求响应
-- stop_charging_response: 停止充电响应
-- available_cps_response: 可用充电点列表
-- charging_status_update: 充电状态更新
-- charging_data: 实时充电数据（来自Engine）
-- charge_completion: 充电完成通知
-
-系统事件：
-- CONNECTION_LOST: 连接丢失
-- CONNECTION_ERROR: 连接错误
-
-Driver作为用户端，主要职责是：
-1. 接收充电请求的响应
-2. 实时显示充电进度
-3. 处理充电完成并保存历史
-4. 管理连接状态
-"""
-
 import time
 import sys
 import os
 
-# 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
 
 
 class DriverMessageDispatcher:
-    """
-    Driver消息分发器
-    统一处理来自Central的消息，提供清晰的消息处理接口
-    """
 
     def __init__(self, logger, driver):
         """
-        初始化DriverMessageDispatcher
+        Initializa el despachador de mensajes del Driver
 
         Args:
-            logger: 日志记录器
-            driver: Driver实例，用于访问Driver的业务逻辑
+            logger: Custom logger para el Driver
+            driver: Instancia del Driver
         """
         self.logger = logger
         self.driver = driver
 
-        # 来自Central的消息处理器（使用消息类型常量）
+        # Mensaje viene de kafka Consumer en EV_Driver
         self.handlers = {
-            # 响应消息
+            # Respuestas
             MessageTypes.CHARGE_REQUEST_RESPONSE: self._handle_charge_response,
             MessageTypes.STOP_CHARGING_RESPONSE: self._handle_stop_charging_response,
             MessageTypes.AVAILABLE_CPS_RESPONSE: self._handle_available_cps,
             MessageTypes.CHARGING_HISTORY_RESPONSE: self._handle_charging_history_response,
 
-            # 通知消息
+            # Notificaciones
             MessageTypes.CHARGING_STATUS_UPDATE: self._handle_charging_status,
             MessageTypes.CHARGING_DATA: self._handle_charging_data,
             MessageTypes.CHARGE_COMPLETION: self._handle_charge_completion,
 
-            # 系统事件
+            # Eventos del sistema
             MessageTypes.CONNECTION_LOST: self._handle_connection_lost,
             MessageTypes.CONNECTION_ERROR: self._handle_connection_error,
         }
 
     def dispatch_message(self, message):
         """
-        分发消息到对应的处理器
+        Despacha el mensaje entrante al manejador correspondiente
 
         Args:
-            message: 消息字典
+            message: Diccionario del mensaje
 
         Returns:
-            bool: 处理是否成功
+            bool: Indica si el procesamiento fue exitoso
         """
         try:
             msg_type = message.get(MessageFields.TYPE)
@@ -98,26 +69,24 @@ class DriverMessageDispatcher:
             )
             return False
 
-    # ==================== 消息处理器 ====================
 
     def _handle_charge_response(self, message):
         """
-        处理充电请求响应
+        maneja la respuesta a la solicitud de carga
 
         Args:
-            message: 响应消息，包含：
-                - status: "success" 或 "failure"
-                - message/info: 响应描述
-                - session_id: 会话ID（成功时）
-                - cp_id: 充电点ID（成功时）
+            message: Mensaje de respuesta, que contiene:
+                - status: "success" o "failure"
+                - message/info: Descripción de la respuesta
+                - session_id: ID de sesión (en caso de éxito)
+                - cp_id: ID de punto de carga (en caso de éxito)
         """
         status = message.get(MessageFields.STATUS)
         info = message.get("info", message.get(MessageFields.MESSAGE, ""))
-        self.logger.debug(f"处理充电请求响应: status={status}, info={info}")
         self.logger.debug(f"message: {message}")
 
         if status == ResponseStatus.SUCCESS:
-            self.logger.info(f"✅ Charging request approved: {info}")
+            self.logger.info(f"✅ charging requests approved: {info}")
             session_id = message.get(MessageFields.SESSION_ID)
             cp_id = message.get(MessageFields.CP_ID)
 
@@ -126,7 +95,7 @@ class DriverMessageDispatcher:
                     self.driver.current_charging_session = {
                         "session_id": session_id,
                         "cp_id": cp_id,
-                        "start_time": time.time(),  # 使用Unix时间戳而不是datetime对象
+                        "start_time": time.time(), 
                         "status": "authorized",
                         "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
@@ -142,13 +111,13 @@ class DriverMessageDispatcher:
 
     def _handle_charging_status(self, message):
         """
-        处理充电状态更新
+        maneja la actualización de estado de carga
 
         Args:
-            message: 状态更新消息，包含：
-                - session_id: 会话ID
-                - energy_consumed_kwh: 已消耗电量
-                - total_cost: 总费用
+            message: Mensaje de actualización de estado, que contiene:
+                - session_id: ID de sesión
+                - energy_consumed_kwh: Energía consumida
+                - total_cost: Costo total
         """
         session_id = message.get(MessageFields.SESSION_ID)
         energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
@@ -159,38 +128,35 @@ class DriverMessageDispatcher:
                 current_session_id = self.driver.current_charging_session.get(
                     "session_id"
                 )
-                # 验证会话ID匹配
                 if current_session_id == session_id:
-                    # 更新会话数据
                     self.driver.current_charging_session["energy_consumed_kwh"] = (
                         energy_consumed_kwh
                     )
                     self.driver.current_charging_session["total_cost"] = total_cost
 
-                    # Usar DEBUG para no interrumpir input del usuario en modo interactivo
                     self.logger.debug(
-                        f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}kW"
+                        f"🔋 Charging progress - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}"
                     )
                 else:
                     self.logger.warning(
-                        f"会话ID不匹配: 期望 {current_session_id}, 收到 {session_id}"
+                        f"ID de sesión no coincide: se esperaba {current_session_id}, se recibió {session_id}"
                     )
             else:
                 self.logger.warning(
-                    f"没有活跃的充电会话，无法更新状态。收到的会话ID: {session_id}"
+                    f"No hay sesiones de carga activas, no se puede actualizar el estado. ID de sesión recibido: {session_id}"
                 )
 
         return True
 
     def _handle_charging_data(self, message):
         """
-        处理实时充电数据（来自Engine通过Monitor和Central转发）
+        maneja los datos de carga en tiempo real. Origen viene de kafka Consumer
 
         Args:
-            message: 充电数据消息，包含：
-                - session_id: 会话ID
-                - energy_consumed_kwh: 已消耗电量
-                - total_cost: 总费用
+            message: Mensaje de datos de carga, que contiene:
+                - session_id: ID de sesión
+                - energy_consumed_kwh: Energía consumida
+                - total_cost: Costo total
         """
         session_id = message.get(MessageFields.SESSION_ID)
         with self.driver.lock:
@@ -206,7 +172,6 @@ class DriverMessageDispatcher:
                 )
                 self.driver.current_charging_session["total_cost"] = total_cost
 
-                # Usar DEBUG para no interrumpir input del usuario en modo interactivo
                 self.logger.debug(
                     f"🔋 Real-time charging data - Energy: {energy_consumed_kwh:.3f}kWh, Cost: €{total_cost:.2f}"
                 )
@@ -215,13 +180,13 @@ class DriverMessageDispatcher:
 
     def _handle_charge_completion(self, message):
         """
-        处理充电完成通知
+        maneja la notificación de finalización de carga
 
         Args:
-            message: 完成通知消息，包含：
-                - session_id: 会话ID
-                - energy_consumed_kwh: 总消耗电量
-                - total_cost: 总费用
+            message: Mensaje de notificación de finalización, que contiene:
+                - session_id: ID de sesión
+                - energy_consumed_kwh: Energía consumida total
+                - total_cost: Costo total
         """
         with self.driver.lock:
             if self.driver.current_charging_session:
@@ -234,12 +199,8 @@ class DriverMessageDispatcher:
                 self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
                 self.logger.info(f"Total Cost: €{total_cost:.2f}")
 
-                # ✅ 不再保存到内存：历史记录已经在 Central 的数据库中
-                # 充电完成后，数据已经持久化在 Central，Driver 可以通过查询 API 获取
-
                 self.driver.current_charging_session = None
 
-        # 等待4秒后处理下一个服务
         self.logger.info("Waiting 4 seconds before next service...")
         time.sleep(4)
         self.driver._process_next_service()
@@ -248,15 +209,14 @@ class DriverMessageDispatcher:
 
     def _handle_available_cps(self, message):
         """
-        处理可用充电点列表
+        Maneja la respuesta de puntos de carga disponibles
 
         Args:
-            message: 列表消息，包含：
-                - charging_points: 充电点列表
+            message: Mensaje de lista, que contiene:
+                - charging_points: Lista de puntos de carga disponibles
         """
-        import time
         self.driver.available_charging_points = message.get(MessageFields.CHARGING_POINTS, [])
-        self.driver.available_cps_cache_time = time.time()  # 更新缓存时间
+        self.driver.available_cps_cache_time = time.time()  # Actualizar tiempo de caché
 
         self.logger.info(
             f"Available charging points: {len(self.driver.available_charging_points)}"
@@ -268,15 +228,13 @@ class DriverMessageDispatcher:
 
     def _handle_charging_history_response(self, message):
         """
-        处理充电历史查询响应（CQRS Query Response）
-
-        这是对 charging_history_request 的响应，包含从数据库查询的历史记录。
+        Maneja la respuesta de historial de carga
 
         Args:
-            message: 历史记录响应，包含：
-                - status: 响应状态
-                - history: 历史记录列表
-                - count: 记录数量
+            message: Mensaje de respuesta de historial, que contiene:
+                - status: Estado de la respuesta
+                - history: Lista de historial de carga
+                - count: Número de registros
         """
         status = message.get(MessageFields.STATUS)
 
@@ -286,7 +244,6 @@ class DriverMessageDispatcher:
 
             self.logger.info(f"✅ Received {count} charging history records from Central")
 
-            # 调用 Driver 的显示方法（传入查询到的数据）
             self.driver._show_charging_history(history)
         else:
             error = message.get("error", "Unknown error")
@@ -295,13 +252,22 @@ class DriverMessageDispatcher:
         return True
 
     def _handle_connection_lost(self, message):
-        """处理连接丢失"""
+        """
+        Maneja la pérdida de conexión
+        
+        Args:
+            message: Mensaje de notificación de pérdida de conexión
+        """
         self.logger.warning(f"Connection to Central lost: {message}")
         self.driver._handle_connection_lost()
         return True
 
     def _handle_connection_error(self, message):
-        """处理连接错误"""
+        """
+        Maneja los errores de conexión
+        Args:
+            message: Mensaje de notificación de error de conexión
+        """
         error = message.get("error", "Unknown error")
         self.logger.error(f"Connection error: {error}")
         self.driver._handle_connection_error(message)
@@ -309,17 +275,17 @@ class DriverMessageDispatcher:
 
     def _handle_stop_charging_response(self, message):
         """
-        处理停止充电响应
+        Maneja la respuesta de detención de carga
 
         Args:
-            message: 响应消息，包含：
-                - status: 响应状态 (success/failure)
-                - message/info: 响应信息
-                - session_id: 会话ID
-                - cp_id: 充电点ID
+            message: Mensaje de respuesta, que contiene:
+                - status: Estado de la respuesta (success/failure)
+                - message/info: Información de la respuesta
+                - session_id: ID de sesión
+                - cp_id: ID de punto de carga
 
         Returns:
-            bool: 处理是否成功
+            bool: Indica si el procesamiento fue exitoso
         """
         status = message.get(MessageFields.STATUS)
         info = message.get("info", message.get(MessageFields.MESSAGE, ""))
@@ -333,15 +299,11 @@ class DriverMessageDispatcher:
             self.logger.info(f"   Charging point: {cp_id}")
             self.logger.info(f"   Waiting for final charge completion notification...")
 
-            # 注意：不要在这里清理 current_charging_session
-            # charge_completion 消息会随后到达并完成会话清理和历史记录保存
 
         else:
             self.logger.error(f"❌ Failed to stop charging: {info}")
             self.logger.error(f"   Session ID: {session_id}")
 
-            # 如果停止失败，可能是会话已经不存在或其他错误
-            # 建议检查本地会话状态
             with self.driver.lock:
                 if self.driver.current_charging_session:
                     local_session_id = self.driver.current_charging_session.get("session_id")
