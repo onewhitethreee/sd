@@ -350,6 +350,14 @@ class EV_Central:
 
     def shutdown_systems(self):
         self.logger.debug("Shutting down systems...")
+        
+        # 在停止Kafka之前，向所有Driver发送connection_error消息
+        if self.message_dispatcher:
+            try:
+                self.message_dispatcher.notify_all_drivers_connection_error()
+            except Exception as e:
+                self.logger.error(f"Error notifying drivers about shutdown: {e}")
+        
         if self.admin_cli:
             self.admin_cli.stop()
         if self.socket_server:

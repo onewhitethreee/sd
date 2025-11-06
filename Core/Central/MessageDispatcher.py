@@ -1458,6 +1458,60 @@ class MessageDispatcher:
             f"Charging point {cp_id} resumed, status set to 'ACTIVE'",
         )
 
+    def notify_all_drivers_connection_error(self):
+        """
+        向所有已连接的Driver发送connection_error消息
+        
+        当Central停止时，通知所有Driver无法连接到Central
+        """
+        if not self.kafka_manager:
+            self.logger.warning(
+                "Kafka manager not initialized, cannot send connection_error to Drivers"
+            )
+            return
+
+        # 获取所有已连接的Driver列表
+        connected_drivers = self.driver_manager.get_all_connected_drivers()
+        
+        if not connected_drivers:
+            self.logger.debug("No connected drivers to notify")
+            return
+
+        self.logger.info(
+            f"Notifying {len(connected_drivers)} drivers about Central shutdown..."
+        )
+
+        # 向每个Driver发送connection_error消息
+        driver_topic = KafkaTopics.get_driver_response_topic()
+        for driver_id in connected_drivers:
+            try:
+                connection_error_message = self._build_notification_message(
+                    MessageTypes.CONNECTION_ERROR,
+                    driver_id=driver_id,
+                    reason="Central is shutting down",
+                    info="Cannot connect to Central. Please try again later.",
+                )
+                
+                success = self.kafka_manager.produce_message(
+                    driver_topic, connection_error_message
+                )
+                if success:
+                    self.logger.debug(
+                        f"Connection error notification sent to Driver {driver_id}"
+                    )
+                else:
+                    self.logger.warning(
+                        f"Failed to send connection error notification to Driver {driver_id}"
+                    )
+            except Exception as e:
+                self.logger.error(
+                    f"Error sending connection_error to Driver {driver_id}: {e}"
+                )
+
+        self.logger.info(
+            f"Connection error notifications sent to {len(connected_drivers)} drivers"
+        )
+
 
 if __name__ == "__main__":
     logger = CustomLogger.get_logger()

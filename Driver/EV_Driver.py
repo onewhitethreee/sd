@@ -471,6 +471,35 @@ class Driver:
             self.logger.error(f"Failed to initialize Driver CLI: {e}")
             self.driver_cli = None
 
+    def _handle_connection_error(self, message):
+        """
+        处理来自Central的connection_error消息
+        
+        当Central停止时，会发送此消息通知Driver无法连接
+        
+        Args:
+            message: 包含错误信息的消息字典
+        """
+        reason = message.get("reason", "Unknown reason")
+        info = message.get("info", "Cannot connect to Central")
+        
+        self.logger.error(f"❌ Connection error from Central: {reason}")
+        self.logger.error(f"   {info}")
+        
+        # 显示给用户
+        self.printer.print_error("Connection Error")
+        self.printer.print_key_value("Reason", reason)
+        self.printer.print_key_value("Info", info)
+        self.printer.print_warning("Central is shutting down. Please try again later.")
+        
+        # 如果有正在进行的充电会话，可能需要清理
+        with self.lock:
+            if self.current_charging_session:
+                self.logger.warning(
+                    f"Active charging session {self.current_charging_session.get('session_id')} "
+                    "may be affected by Central shutdown"
+                )
+
 
 if __name__ == "__main__":
     import logging

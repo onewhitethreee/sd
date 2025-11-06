@@ -287,7 +287,7 @@ class DriverMessageDispatcher:
             message: Mensaje de notificación de error de conexión
         """
         error = message.get("error", "Unknown error")
-        self.logger.error(f"Connection error: {error}")
+        # self.logger.error(f"Connection error: {error}")
         self.driver._handle_connection_error(message)
         return True
 
