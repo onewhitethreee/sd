@@ -125,7 +125,7 @@ class EV_CP_M:
         }
         success = self.central_conn_mgr.send(register_message)
         if success:
-            self.logger.info(
+            self.logger.debug(
                 "Registration request sent to Central, waiting for confirmation..."
             )
         return success
@@ -169,7 +169,7 @@ class EV_CP_M:
                 self.logger.warning(f"Unknown status '{status}' for Central")
         elif source_name == "Engine":
             if status == "CONNECTED":
-                self.logger.info("Engine is now connected. Initializing CP_ID...")
+                self.logger.debug("Engine is now connected. Initializing CP_ID...")
                 self._send_cp_id_to_engine()
 
                 # 然后启动健康检查线程
@@ -246,7 +246,7 @@ class EV_CP_M:
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""
         if self._engine_health_thread and self._engine_health_thread.is_alive():
-            self.logger.info("Stopping Engine health check thread.")
+            self.logger.debug("Stopping Engine health check thread.")
             # 通过设置 running 标志让线程自然退出
             # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
             # 因为我们没有单独的停止事件，所以只能依赖这些条件
@@ -257,7 +257,7 @@ class EV_CP_M:
     def _stop_heartbeat_thread(self):
         """停止发送心跳的线程"""
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
-            self.logger.info("Stopping heartbeat thread for Central.")
+            self.logger.debug("Stopping heartbeat thread for Central.")
             # 通过设置 running 标志让线程自然退出
             # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
             # 因为我们没有单独的停止事件，所以只能依赖这些条件
@@ -270,7 +270,7 @@ class EV_CP_M:
         if self._engine_health_thread and self._engine_health_thread.is_alive():
             self.logger.debug("Engine health check thread already running.")
             return
-        self.logger.info("Starting Engine health check thread.")
+        self.logger.debug("Starting Engine health check thread.")
         self._engine_health_thread = threading.Thread(
             target=self._check_engine_health,
             daemon=True,
@@ -299,7 +299,7 @@ class EV_CP_M:
                     "Failed to send heartbeat to Central (might be disconnected internally)."
                 )
             time.sleep(self.HEARTBEAT_INTERVAL)
-        self.logger.info("Heartbeat thread for Central has stopped.")
+        self.logger.debug("Heartbeat thread for Central has stopped.")
 
     def _start_heartbeat_thread(self):
         """
@@ -308,7 +308,7 @@ class EV_CP_M:
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
             self.logger.debug("Heartbeat thread for Central already running.")
             return
-        self.logger.info("Starting heartbeat thread for Central.")
+        self.logger.debug("Starting heartbeat thread for Central.")
         self._heartbeat_thread = threading.Thread(
             target=self._send_heartbeat, daemon=True, name="CentralHeartbeatThread"
         )
@@ -320,7 +320,7 @@ class EV_CP_M:
 
 
         """
-        self.logger.info(f"Authenticating charging point {self.args.id_cp}")
+        self.logger.debug(f"Authenticating charging point {self.args.id_cp}")
         if not self.central_conn_mgr.is_connected:
             self.logger.error("Cannot authenticate: not connected to Central.")
             return False
@@ -343,7 +343,7 @@ class EV_CP_M:
         """
         检查EV_CP_E的健康状态。
         """
-        self.logger.info("Starting health check thread for EV_CP_E")
+        self.logger.debug("Starting health check thread for EV_CP_E")
         # 初始化为当前时间，这样不会立即超时
         self._last_health_response_time = time.time()
         while (
@@ -378,7 +378,7 @@ class EV_CP_M:
                 )
 
             time.sleep(self.ENGINE_HEALTH_CHECK_INTERVAL)
-        self.logger.info("Health check thread for EV_CP_E has stopped.")
+        self.logger.debug("Health check thread for EV_CP_E has stopped.")
 
     def _report_failure(self, failure_info):
         """
@@ -396,7 +396,7 @@ class EV_CP_M:
             "failure_info": failure_info,
         }
         if self.central_conn_mgr.send(failure_message):
-            self.logger.info("Reported failure to Central.")
+            self.logger.debug("Reported failure to Central.")
             return True
         else:
             self.logger.error(
@@ -411,7 +411,7 @@ class EV_CP_M:
         if self._current_status == status:
             self.logger.debug(f"CP status already {status}, no update needed.")
             return
-        self.logger.info(f"Updating charging point status to: {status}")
+        self.logger.debug(f"Updating charging point status to: {status}")
         self._current_status = status
         self.report_status_to_central(status)
         if status == "FAULTY":
@@ -433,7 +433,7 @@ class EV_CP_M:
             "status": status,
         }
         if self.central_conn_mgr.send(status_message):
-            self.logger.info(f"Status update sent to Central: {status}")
+            self.logger.debug(f"Status update sent to Central: {status}")
             return True
         else:
             self.logger.error(
@@ -781,8 +781,9 @@ class EV_CP_M:
 
 if __name__ == "__main__":
     import logging
-
-    if os.getenv("DEBUG_MODE") == False:
+    config = ConfigManager()
+    debug_mode = config.get_debug_mode()
+    if not debug_mode:
         logger = CustomLogger.get_logger(level=logging.INFO)
     else:
         logger = CustomLogger.get_logger(level=logging.DEBUG)

@@ -52,11 +52,11 @@ class EV_CP_E:
 
             if listen_port:
                 self.engine_listen_address = (listen_host, int(listen_port))
-                self.logger.info(f"Using ENGINE_LISTEN_PORT from environment: {listen_port}")
+                self.logger.debug(f"Using ENGINE_LISTEN_PORT from environment: {listen_port}")
             else:
                 # 端口 0 表示让操作系统自动分配可用端口
                 self.engine_listen_address = (listen_host, 0)
-                self.logger.info("No ENGINE_LISTEN_PORT specified, will use automatic port assignment")
+                self.logger.debug("No ENGINE_LISTEN_PORT specified, will use automatic port assignment")
         else:
 
             class Args:
@@ -105,11 +105,11 @@ class EV_CP_E:
 
         # 如果之前有旧的CP_ID（Monitor断开重连的情况），记录变化
         if self.cp_id is not None and self.cp_id != cp_id:
-            self.logger.info(f"CP_ID changed from {self.cp_id} to {cp_id}")
+            self.logger.debug(f"CP_ID changed from {self.cp_id} to {cp_id}")
 
         self.cp_id = cp_id
         self._id_initialized = True
-        self.logger.info(f"CP_ID initialized: {self.cp_id}")
+        self.logger.debug(f"CP_ID initialized: {self.cp_id}")
         return True
 
     def get_current_status(self):
@@ -489,11 +489,11 @@ class EV_CP_E:
 
 if __name__ == "__main__":
     import logging
-
-    if os.getenv("DEBUG_MODE") == False:
+    config = ConfigManager()
+    debug_mode = config.get_debug_mode()
+    if not debug_mode:
         logger = CustomLogger.get_logger(level=logging.INFO)
     else:
         logger = CustomLogger.get_logger(level=logging.DEBUG)
-
     ev_cp_e = EV_CP_E(logger=logger)
     ev_cp_e.start()

@@ -152,7 +152,7 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing start charging command")
+        self.logger.debug("Processing start charging command")
 
         # 获取会话ID（由Central通过Monitor提供）
         session_id = message.get(MessageFields.SESSION_ID)
@@ -210,7 +210,7 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing stop charging command")
+        self.logger.debug("Processing stop charging command")
 
         session_id = message.get(MessageFields.SESSION_ID)
 
@@ -277,7 +277,7 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing resume CP command from Central (via Monitor)")
+        self.logger.debug("Processing resume CP command from Central (via Monitor)")
 
         cp_id = message.get(MessageFields.CP_ID)
 

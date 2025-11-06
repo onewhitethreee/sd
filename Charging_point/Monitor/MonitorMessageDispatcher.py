@@ -120,7 +120,7 @@ class MonitorMessageDispatcher:
                 - message: 响应描述
                 - cp_id: 充电点ID
         """
-        self.logger.info(f"Received authentication response from Central: {message}")
+        self.logger.debug(f"Received authentication response from Central: {message}")
 
         status = message.get(MessageFields.STATUS)
         if status == ResponseStatus.SUCCESS:
@@ -161,7 +161,7 @@ class MonitorMessageDispatcher:
                 - message: 响应描述
                 - reason: 失败原因（如果失败）
         """
-        self.logger.info(f"Received registration response from Central: {message}")
+        self.logger.debug(f"Received registration response from Central: {message}")
 
         status = message.get(MessageFields.STATUS)
         if status == ResponseStatus.SUCCESS:
@@ -212,7 +212,7 @@ class MonitorMessageDispatcher:
 
     def _handle_start_charging_command(self, message):
         """处理来自Central的启动充电命令"""
-        self.logger.info("Received start charging command from Central.")
+        self.logger.debug("Received start charging command from Central.")
         return self.monitor._handle_start_charging_command(message)
 
     def _handle_stop_charging_command(self, message):
@@ -227,7 +227,7 @@ class MonitorMessageDispatcher:
         重要：Monitor在转发停止命令后应立即更新状态为ACTIVE，
         表示充电桩已停止充电并恢复到可用状态。
         """
-        self.logger.info("Received stop charging command from Central.")
+        self.logger.debug("Received stop charging command from Central.")
 
         cp_id = message.get(MessageFields.CP_ID)
         session_id = message.get(MessageFields.SESSION_ID)
@@ -269,7 +269,7 @@ class MonitorMessageDispatcher:
             message: 恢复命令，包含：
                 - cp_id: 充电点ID
         """
-        self.logger.info("Received resume CP command from Central.")
+        self.logger.debug("Received resume CP command from Central.")
 
         cp_id = message.get(MessageFields.CP_ID)
 
@@ -308,7 +308,7 @@ class MonitorMessageDispatcher:
                 - message: 响应描述
                 - reason: 失败原因（如果失败）
         """
-        self.logger.info(f"Received status update response from Central: {message}")
+        self.logger.debug(f"Received status update response from Central: {message}")
         return True
 
     def _handle_charging_data_response(self, message):
@@ -322,7 +322,7 @@ class MonitorMessageDispatcher:
                 - reason: 失败原因（如果失败）
                 - charging_data: 充电数据
         """
-        self.logger.info(f"Received charging data response from Central: {message}")
+        self.logger.debug(f"Received charging data response from Central: {message}")
         return True
 
     def _handle_charge_completion_response(self, message):
@@ -336,7 +336,7 @@ class MonitorMessageDispatcher:
                 - reason: 失败原因（如果失败）
                 - charge_completion: 充电完成数据
         """
-        self.logger.info(f"Received charge completion response from Central: {message}")
+        self.logger.debug(f"Received charge completion response from Central: {message}")
         return True
 
     # ==================== Engine消息处理器 ====================
@@ -406,7 +406,7 @@ class MonitorMessageDispatcher:
 
     def _handle_charging_completion_from_engine(self, message):
         """处理来自Engine的充电完成通知"""
-        self.logger.info("Received charging completion from Engine.")
+        self.logger.debug("Received charging completion from Engine.")
         return self.monitor._handle_charging_completion_from_engine(message)
 
     def _handle_command_response(self, message):

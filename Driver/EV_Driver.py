@@ -454,6 +454,12 @@ class Driver:
 
 
 if __name__ == "__main__":
-    logger = CustomLogger.get_logger()
+    import logging
+    config = ConfigManager()
+    debug_mode = config.get_debug_mode()
+    if not debug_mode:
+        logger = CustomLogger.get_logger(level=logging.INFO)
+    else:
+        logger = CustomLogger.get_logger(level=logging.DEBUG)
     driver = Driver(logger=logger)
     driver.start()

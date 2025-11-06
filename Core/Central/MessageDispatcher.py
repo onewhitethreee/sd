@@ -309,7 +309,7 @@ class MessageDispatcher:
                 return False
 
             self._send_message_to_client(monitor_client_id, command_message)
-            self.logger.info(
+            self.logger.debug(
                 f"{command_message.get('type')} sent to Monitor: CP {cp_id}"
             )
             return True
@@ -328,7 +328,7 @@ class MessageDispatcher:
         特殊情况：如果充电点已经在数据库中注册过（重新连接场景），
         直接返回认证成功，无需重新授权。
         """
-        self.logger.info(f"Received authentication request from {client_id}...")
+        self.logger.debug(f"Received authentication request from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -423,7 +423,7 @@ class MessageDispatcher:
         }
 
         self._send_message_to_client(auth_info["client_id"], auth_response)
-        self.logger.info(f"Authorization response sent to charging point {cp_id}")
+        self.logger.debug(f"Authorization response sent to charging point {cp_id}")
 
         return True
 
@@ -452,7 +452,7 @@ class MessageDispatcher:
         1. 首次注册：新的充电点注册到系统
         2. 重新注册：已注册的充电点重新连接，更新其信息
         """
-        self.logger.info(f"Processing registration request from {client_id}...")
+        self.logger.debug(f"Processing registration request from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -562,7 +562,7 @@ class MessageDispatcher:
 
     def _handle_charge_request_message(self, client_id, message):
         """处理来自司机应用程序或充电点本身的充电请求"""
-        self.logger.info(f"Processing charge request from {client_id}...")
+        self.logger.debug(f"Processing charge request from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -598,7 +598,7 @@ class MessageDispatcher:
             return response
 
         # 授权充电请求
-        self.logger.info(f"Authorizing charge request: CP {cp_id}, Driver {driver_id}")
+        self.logger.debug(f"Authorizing charge request: CP {cp_id}, Driver {driver_id}")
 
         try:
             # 创建充电会话
@@ -641,7 +641,7 @@ class MessageDispatcher:
 
     def _handle_stop_charging_request(self, client_id, message):
         """处理停止充电请求"""
-        self.logger.info(f"Processing stop charging request from {client_id}...")
+        self.logger.debug(f"Processing stop charging request from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -690,7 +690,7 @@ class MessageDispatcher:
 
     def _handle_charging_data_message(self, client_id, message):
         """处理充电点在充电过程中实时发送的电量消耗和费用信息（改进版：支持幂等性）"""
-        self.logger.info(f"Processing charging data from {client_id}...")
+        self.logger.debug(f"Processing charging data from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -763,7 +763,7 @@ class MessageDispatcher:
 
     def _handle_charge_completion_message(self, client_id, message):
         """处理充电完成的通知（改进版：支持幂等性）"""
-        self.logger.info(
+        self.logger.debug(
             f"Processing charge completion notification from {client_id}..."
         )
 
@@ -934,7 +934,7 @@ class MessageDispatcher:
                 cp_id=cp_id, status=new_status
             )
 
-            self.logger.info(f"Charging point {cp_id} status updated to: {new_status}")
+            self.logger.debug(f"Charging point {cp_id} status updated to: {new_status}")
 
             # 如果状态为故障，记录故障信息
             if new_status == Status.FAULTY.value:
@@ -953,7 +953,7 @@ class MessageDispatcher:
 
     def _handle_available_cps_request(self, client_id, message):
         """处理可用充电点请求"""
-        self.logger.info(
+        self.logger.debug(
             f"Received available charging points request from {client_id}..."
         )
 
@@ -1010,7 +1010,7 @@ class MessageDispatcher:
 
     def _handle_charging_history_request(self, client_id, message):
         """处理充电历史查询请求"""
-        self.logger.info(f"Received charging history query request from {client_id}...")
+        self.logger.debug(f"Received charging history query request from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -1070,7 +1070,7 @@ class MessageDispatcher:
 
     def _handle_recovery_message(self, client_id, message):
         """处理充电点在故障修复后发送的恢复通知"""
-        self.logger.info(f"Received recovery notification from {client_id}...")
+        self.logger.debug(f"Received recovery notification from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(
@@ -1143,7 +1143,7 @@ class MessageDispatcher:
             driver_topic = KafkaTopics.get_driver_response_topic()
             success = self.kafka_manager.produce_message(driver_topic, message)
             if success:
-                self.logger.info(
+                self.logger.debug(
                     f"Charge completion notification sent to unified topic {driver_topic} for Driver {driver_id}"
                 )
             return success
@@ -1169,7 +1169,7 @@ class MessageDispatcher:
 
         success = self._send_command_to_monitor(cp_id, message)
         if success:
-            self.logger.info(
+            self.logger.debug(
                 f"Start charging command details: CP {cp_id}, Session {session_id}, Price: €{price_per_kwh}/kWh"
             )
         return success
@@ -1281,7 +1281,7 @@ class MessageDispatcher:
         - "stop": 停止指定的CP或所有CPs
         - "resume": 恢复指定的CP或所有CPs
         """
-        self.logger.info(f"Processing manual command from {client_id}...")
+        self.logger.debug(f"Processing manual command from {client_id}...")
 
         # 验证并提取字段
         success, data = self._validate_and_extract_fields(

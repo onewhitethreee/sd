@@ -80,7 +80,7 @@ class DriverMessageDispatcher:
         """
         status = message.get(MessageFields.STATUS)
         info = message.get("info", message.get(MessageFields.MESSAGE, ""))
-        self.logger.debug(f"message: {message}")
+        self.logger.debug(f"Charge response message: {message}")
 
         if status == ResponseStatus.SUCCESS:
             self.logger.info(f"✓  charging requests approved: {info}")
@@ -98,7 +98,7 @@ class DriverMessageDispatcher:
                         "total_cost": 0.0,
                     }
                 self.logger.info(f"✓  Charging session created: {session_id}")
-                self.logger.debug(f"会话数据: {self.driver.current_charging_session}")
+                self.logger.debug(f"Session data: {self.driver.current_charging_session}")
             else:
                 self.logger.error("Session ID not provided in charge response")
         else:
@@ -293,7 +293,7 @@ class DriverMessageDispatcher:
         session_id = message.get(MessageFields.SESSION_ID)
         cp_id = message.get(MessageFields.CP_ID)
 
-        self.logger.debug(f"处理停止充电响应: status={status}, info={info}")
+        self.logger.debug(f"Processing stop charging response: status={status}, info={info}")
 
         if status == ResponseStatus.SUCCESS:
             self.logger.info(

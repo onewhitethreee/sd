@@ -108,7 +108,7 @@ class MySocketServer:
             client_address: Dirección del cliente
         """
         client_id = f"{client_address[0]}:{client_address[1]}"
-        self.logger.info(f"Handling client {client_id}")
+        self.logger.debug(f"Handling client {client_id}")
         with self.clients_lock:
             self.clients[client_id] = client_socket
 
@@ -293,7 +293,7 @@ class MySocketServer:
         if self.server_socket:
             self.server_socket.close()
             self.server_socket = None  
-            self.logger.info("Server listening socket closed.")
+            self.logger.debug("Server listening socket closed.")
 
         self.logger.info("Socket server stopped.")
 
