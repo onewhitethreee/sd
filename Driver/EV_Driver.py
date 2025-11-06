@@ -16,6 +16,7 @@ from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Driver.DriverMessageDispatcher import DriverMessageDispatcher
 from Driver.DriverCLI import DriverCLI
 from Common.Message.MessageTypes import MessageTypes
+from Common.Config.ConsolePrinter import get_printer
 
 
 class Driver:
@@ -26,6 +27,7 @@ class Driver:
         self.logger = logger
         self.config = ConfigManager()
         self.debug_mode = self.config.get_debug_mode()
+        self.printer = get_printer()  
 
         if not self.debug_mode:
             self.tools = AppArgumentParser(
@@ -229,13 +231,13 @@ class Driver:
             history_data: lista de datos del historial de carga. Si no se proporciona, se iniciará una solicitud de consulta
         """
         if history_data is None:
-            self.logger.info("Requesting charging history from Central...")
+            self.printer.print_info("Requesting charging history from Central...")
             # Initiate query request, response will arrive asynchronously and be handled by DriverMessageDispatcher
             self._request_charging_history()
             return
 
         if not history_data:
-            self.logger.info("No charging history available")
+            self.printer.print_warning("No charging history available")
             return
         self._formatter_history_data(history_data)
 
@@ -245,19 +247,39 @@ class Driver:
         Args:
             history_data: lista de datos del historial de carga
         """
-        self.logger.info("\n" + "=" * 60)
-        self.logger.info("Charging History")
-        self.logger.info("=" * 60)
+        if not history_data:
+            self.printer.print_warning("No charging history available")
+            return
+        
+        # 准备表格数据
+        headers = ["#", "Session ID", "CP ID", "Start Time", "End Time", "Energy (kWh)", "Cost (€)"]
+        rows = []
+        
         for i, record in enumerate(history_data, 1):
-            self.logger.info(f"\n[{i}] Session: {record.get('session_id', 'N/A')}")
-            self.logger.info(f"    CP ID: {record.get('cp_id', 'N/A')}")
-            self.logger.info(f"    Start Time: {record.get('start_time', 'N/A')}")
-            self.logger.info(f"    End Time: {record.get('end_time', 'N/A')}")
-            self.logger.info(
-                f"    Energy: {record.get('energy_consumed_kwh', 0):.3f}kWh"
-            )
-            self.logger.info(f"    Cost: €{record.get('total_cost', 0):.2f}")
-        self.logger.info("=" * 60 + "\n")
+            session_id = record.get('session_id', 'N/A')
+            # 截断过长的session_id以便显示
+            if len(session_id) > 20:
+                session_id = session_id[:17] + "..."
+            
+            cp_id = record.get('cp_id', 'N/A')
+            start_time = record.get('start_time', 'N/A')
+            end_time = record.get('end_time', 'N/A')
+            energy = record.get('energy_consumed_kwh', 0)
+            cost = record.get('total_cost', 0)
+            
+            rows.append([
+                str(i),
+                session_id,
+                cp_id,
+                start_time,
+                end_time,
+                f"{energy:.3f}",
+                f"€{cost:.2f}"
+            ])
+        
+        # 使用美化表格显示
+        title = f"Charging History (Total: {len(history_data)} records)"
+        self.printer.print_table(title, headers, rows)
 
     def _process_next_service(self):
         """

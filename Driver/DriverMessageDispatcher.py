@@ -193,7 +193,7 @@ class DriverMessageDispatcher:
                 session_id = message.get(MessageFields.SESSION_ID)
                 energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
                 total_cost = message.get(MessageFields.TOTAL_COST, 0)
-                
+
                 # 获取当前会话的完整信息
                 current_session = self.driver.current_charging_session
                 cp_id = current_session.get("cp_id", "N/A")
@@ -259,14 +259,12 @@ class DriverMessageDispatcher:
             history = message.get("history", [])
             count = message.get("count", 0)
 
-            self.logger.info(
-                f"✓  Received {count} charging history records from Central"
-            )
+            self.printer.print_success(f"Received {count} charging history records from Central")
 
             self.driver._show_charging_history(history)
         else:
             error = message.get("error", "Unknown error")
-            self.logger.error(f"✗  Failed to retrieve charging history: {error}")
+            self.printer.print_error(f"Failed to retrieve charging history: {error}")
 
         return True
 
