@@ -54,7 +54,7 @@ class ChargingSession:
 
             # 确保充电桩存在于数据库（使用Repository）
             if not self.cp_repository.exists(cp_id):
-                self.logger.warning(f"充电桩 {cp_id} 不存在于数据库，创建默认记录...")
+                self.logger.warning(f"Charging point {cp_id} does not exist in database, creating default record...")
                 # 创建一个默认的充电桩记录
                 if not self.cp_repository.insert_or_update(
                     cp_id=cp_id,
@@ -74,11 +74,11 @@ class ChargingSession:
             if not self.repository.create(session_id, cp_id, driver_id, start_time):
                 raise Exception("创建充电会话失败")
 
-            self.logger.info(f"充电会话 {session_id} 创建成功")
+            self.logger.info(f"Charging session {session_id} created successfully")
             return session_id, None
 
         except Exception as e:
-            self.logger.error(f"创建充电会话失败: {e}")
+            self.logger.error(f"Failed to create charging session: {e}")
             return None, str(e)
 
     def update_charging_session(
@@ -100,7 +100,7 @@ class ChargingSession:
             # 检查会话是否存在（使用Repository）
             db_session = self.repository.get_by_id(session_id)
             if not db_session:
-                self.logger.warning(f"充电会话 {session_id} 不存在")
+                self.logger.warning(f"Charging session {session_id} does not exist")
                 return False
 
             # 更新数据库（使用Repository）
@@ -112,12 +112,12 @@ class ChargingSession:
             )
 
             self.logger.debug(
-                f"会话 {session_id} 已更新: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
+                f"Session {session_id} updated: Energy={energy_consumed_kwh}kWh, Cost=€{total_cost}"
             )
             return True
 
         except Exception as e:
-            self.logger.error(f"更新充电会话 {session_id} 失败: {e}")
+            self.logger.error(f"Failed to update charging session {session_id}: {e}")
             return False
 
     def complete_charging_session(self, session_id, energy_consumed_kwh, total_cost):
@@ -136,7 +136,7 @@ class ChargingSession:
             # 检查会话是否存在（使用Repository）
             db_session = self.repository.get_by_id(session_id)
             if not db_session:
-                self.logger.warning(f"充电会话 {session_id} 不存在")
+                self.logger.warning(f"Charging session {session_id} does not exist")
                 return False, None
 
             end_time = datetime.now().isoformat()
@@ -154,12 +154,12 @@ class ChargingSession:
             session_data = self.repository.get_by_id(session_id)
 
             self.logger.info(
-                f"充电会话 {session_id} 已完成: 电量={energy_consumed_kwh}kWh, 费用=€{total_cost}"
+                f"Charging session {session_id} completed: Energy={energy_consumed_kwh}kWh, Cost=€{total_cost}"
             )
             return True, session_data
 
         except Exception as e:
-            self.logger.error(f"完成充电会话 {session_id} 失败: {e}")
+            self.logger.error(f"Failed to complete charging session {session_id}: {e}")
             return False, None
 
     def get_charging_session(self, session_id):
@@ -235,7 +235,7 @@ class ChargingSession:
         try:
             return self.repository.get_all()
         except Exception as e:
-            self.logger.error(f"获取所有会话失败: {e}")
+            self.logger.error(f"Failed to get all sessions: {e}")
             return []
 
     def get_session(self, session_id):

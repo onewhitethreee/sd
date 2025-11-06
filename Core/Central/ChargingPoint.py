@@ -79,7 +79,7 @@ class ChargingPoint:
 
             
 
-            self.logger.debug(f"尝试将充电桩 {cp_id} 注册到数据库...")
+            self.logger.debug(f"Attempting to register charging point {cp_id} to database...")
 
             # 保存到数据库（使用Repository）
             success = self.repository.insert_or_update(
@@ -92,14 +92,14 @@ class ChargingPoint:
 
             if success:
                 self.logger.info(
-                    f"充电桩 {cp_id} 注册成功！(价格: €{price_per_kwh}/kWh)"
+                    f"Charging point {cp_id} registered successfully! (Price: €{price_per_kwh}/kWh)"
                 )
                 return True, None
             else:
-                return False, "数据库操作失败"
+                return False, "Database operation failed"
 
         except Exception as e:
-            self.logger.error(f"注册充电桩 {cp_id} 失败: {e}")
+            self.logger.error(f"Failed to register charging point {cp_id}: {e}")
             return False, str(e)
 
     def update_charging_point_connection(self, cp_id, client_id):
@@ -119,7 +119,7 @@ class ChargingPoint:
         try:
             # 检查充电桩是否已注册（使用Repository）
             if not self.repository.exists(cp_id):
-                self.logger.warning(f"充电桩 {cp_id} 未注册")
+                self.logger.warning(f"Charging point {cp_id} not registered")
                 return False
 
             current_time = datetime.now(timezone.utc).isoformat()
@@ -135,11 +135,11 @@ class ChargingPoint:
             self._cp_connections[cp_id] = client_id
             self._client_to_cp[client_id] = cp_id
 
-            self.logger.debug(f"充电桩 {cp_id} 连接时间已更新，客户端: {client_id}")
+            self.logger.debug(f"Charging point {cp_id} connection time updated, client: {client_id}")
             return True
 
         except Exception as e:
-            self.logger.error(f"更新充电桩 {cp_id} 连接失败: {e}")
+            self.logger.error(f"Failed to update charging point {cp_id} connection: {e}")
             return False
 
     def update_charging_point_status(self, cp_id, status):
@@ -156,7 +156,7 @@ class ChargingPoint:
         try:
             # 检查充电桩是否已注册（使用Repository）
             if not self.repository.exists(cp_id):
-                self.logger.warning(f"充电桩 {cp_id} 未注册")
+                self.logger.warning(f"Charging point {cp_id} not registered")
                 return False
 
             # 更新数据库（使用Repository）
@@ -166,7 +166,7 @@ class ChargingPoint:
             return True
 
         except Exception as e:
-            self.logger.error(f"更新充电桩 {cp_id} 状态失败: {e}")
+            self.logger.error(f"Failed to update charging point {cp_id} status: {e}")
             return False
 
     def get_charging_point(self, cp_id):
@@ -255,11 +255,11 @@ class ChargingPoint:
             del self._cp_connections[cp_id]
             del self._client_to_cp[client_id]
 
-            self.logger.warning(f"充电桩 {cp_id} 已断开连接")
+            self.logger.warning(f"Charging point {cp_id} disconnected")
             return cp_id
 
         except Exception as e:
-            self.logger.error(f"处理充电桩 {cp_id} 断开连接失败: {e}")
+            self.logger.error(f"Failed to handle charging point {cp_id} disconnect: {e}")
             return cp_id
 
     def get_all_charging_points(self):

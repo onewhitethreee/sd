@@ -196,10 +196,10 @@ class MonitorMessageDispatcher:
         info = message.get(MessageFields.MESSAGE, "")
 
         if status == ResponseStatus.SUCCESS:
-            self.logger.debug("Monitor成功接收心跳响应")
+            self.logger.debug("Monitor successfully received heartbeat response")
         elif status == "pending":
             # 充电点正在等待授权，这是正常的
-            self.logger.debug(f"心跳已收到，等待授权: {info}")
+            self.logger.debug(f"Heartbeat received, waiting for authorization: {info}")
         else:
             # 只有在status为failure时才警告
             self.logger.warning(
@@ -243,7 +243,7 @@ class MonitorMessageDispatcher:
         if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
             self.monitor.engine_conn_mgr.send(stop_message)
             self.logger.info(
-                f"停止充电命令已转发给Engine: CP {cp_id}, Session {session_id}"
+                f"Stop charging command forwarded to Engine: CP {cp_id}, Session {session_id}"
             )
             # ✓  立即更新Monitor状态为ACTIVE（停止充电，恢复可用状态）
             # 注意：如果Engine或Central断开连接，update_cp_status会自动处理为FAULTY状态
@@ -255,7 +255,7 @@ class MonitorMessageDispatcher:
             )
             return True
         else:
-            self.logger.error("Engine连接不可用，无法转发停止充电命令")
+            self.logger.error("Engine connection unavailable, cannot forward stop charging command")
             return False
 
     def _handle_resume_cp_command(self, message):
@@ -283,7 +283,7 @@ class MonitorMessageDispatcher:
 
         if self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected:
             self.monitor.engine_conn_mgr.send(resume_message)
-            self.logger.info(f"恢复命令已转发给Engine: CP {cp_id}")
+            self.logger.info(f"Resume command forwarded to Engine: CP {cp_id}")
 
             # Monitor立即更新状态为ACTIVE（如果Engine和Central都连接正常）
             if (
@@ -291,11 +291,11 @@ class MonitorMessageDispatcher:
                 and self.monitor.central_conn_mgr.is_connected
             ):
                 self.monitor.update_cp_status("ACTIVE")
-                self.logger.info(f"Monitor状态已更新为ACTIVE (Central resume command)")
+                self.logger.info(f"Monitor status updated to ACTIVE (Central resume command)")
 
             return True
         else:
-            self.logger.error("Engine连接不可用，无法转发恢复命令")
+            self.logger.error("Engine connection unavailable, cannot forward resume command")
             return False
 
     def _handle_status_update_response(self, message):
@@ -447,7 +447,7 @@ class MonitorMessageDispatcher:
                 + (f" (session: {session_id})" if session_id else "")
             )
         else:
-            self.logger.error(f"Engine返回未知状态: {status}, 消息: {msg}")
+            self.logger.error(f"Engine returned unknown status: {status}, message: {msg}")
 
         return True
 

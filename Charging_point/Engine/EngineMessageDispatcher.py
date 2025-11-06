@@ -220,7 +220,7 @@ class EngineMessageDispatcher:
                 stopped_session_id = self.engine.current_session["session_id"]
                 self.engine._stop_charging_session()
                 self.logger.info(
-                    f"紧急停止充电会话: {stopped_session_id} (session_id=None)"
+                    f"Emergency stop charging session: {stopped_session_id} (session_id=None)"
                 )
                 return {
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
@@ -230,7 +230,7 @@ class EngineMessageDispatcher:
                     MessageFields.SESSION_ID: stopped_session_id,
                 }
             else:
-                self.logger.debug("紧急停止命令收到，但没有活跃会话")
+                self.logger.debug("Emergency stop command received, but no active session")
                 return {
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -245,7 +245,7 @@ class EngineMessageDispatcher:
             and self.engine.current_session["session_id"] == session_id
         ):
             self.engine._stop_charging_session()
-            self.logger.info(f"充电会话 {session_id} 已停止")
+            self.logger.info(f"Charging session {session_id} stopped")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -254,7 +254,7 @@ class EngineMessageDispatcher:
                 MessageFields.SESSION_ID: session_id,
             }
         else:
-            self.logger.warning(f"会话ID不匹配或无活跃会话: {session_id}")
+            self.logger.warning(f"Session ID mismatch or no active session: {session_id}")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -283,7 +283,7 @@ class EngineMessageDispatcher:
 
         # 验证CP_ID匹配
         if self.engine.cp_id != cp_id:
-            self.logger.warning(f"CP_ID不匹配: 期望 {self.engine.cp_id}, 收到 {cp_id}")
+            self.logger.warning(f"CP_ID mismatch: expected {self.engine.cp_id}, received {cp_id}")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
