@@ -74,11 +74,6 @@ EV-Charging-System/
 ├── 📄 .env                     # Archivo de configuración de entorno
 ├── 📄 docker-compose.yml       # Configuración de orquestación Docker
 ├── 📄 requirements.txt         # Lista de dependencias Python
-├── 📄 ev_central.db           # Archivo de base de datos SQLite
-├── 📄 readme.md               # Descripción del proyecto
-├── 📄 memoria.docx            # Documento de memoria del proyecto
-├── 📄 TESTING_GUIDE.md        # Guía de pruebas
-└── 📄 TAREAS_PENDIENTES.md    # Lista de tareas pendientes
 
 ```
 
@@ -178,10 +173,10 @@ Orden de inicio:
 Common/tools/start_services_production.bat
 ```
 
-### Usando Docker
+### Usando Docker para inicializar kafka
 
 ```bash
-docker-compose up
+docker-compose up -d
 ```
 
 ---
