@@ -1,12 +1,3 @@
-"""
-Engine消息分发器
-
-负责处理来自Monitor的所有消息，包括：
-- 健康检查请求
-- 启动/停止充电命令
-
-所有处理器方法返回响应字典，通过MySocketServer自动发送回Monitor。
-"""
 
 import sys
 import os
