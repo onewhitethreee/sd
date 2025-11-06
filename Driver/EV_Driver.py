@@ -65,6 +65,7 @@ class Driver:
         self.available_cps_cache_time = None
 
         self.service_queue = []
+        self.loaded_services = [] 
 
         self.lock = threading.Lock()
         self.message_dispatcher = DriverMessageDispatcher(self.logger, self)
@@ -432,21 +433,20 @@ class Driver:
         # Key change: Start CLI early so it is available in any mode
         self._init_cli()
 
-        # Check if service file exists
-        services = self._load_services_from_file()
+        # Check if service file exists and store it for later use
+        self.loaded_services = self._load_services_from_file()
+        if self.loaded_services:
+            self.logger.info(f"Loaded {len(self.loaded_services)} services from file (not auto-starting)")
 
         try:
-            if services:
-                self._auto_mode(services)
-            else:
-                # Interactive mode (CLI already running in background)
-                # Just need to wait for CLI to run
-                self.logger.info("Entering interactive mode...")
-                print("💬 Interactive mode: Enter commands to control charging")
-                print("    Type 'help' to see available commands\n")
+            # Always start in interactive mode
+            # Users can manually trigger service file processing via menu option
+            self.logger.info("Entering interactive mode...")
+            print("💬 Interactive mode: Enter commands to control charging")
+            print("    Type 'help' to see available commands\n")
 
-                while self.running and self.driver_cli and self.driver_cli.running:
-                    time.sleep(0.1)
+            while self.running and self.driver_cli and self.driver_cli.running:
+                time.sleep(0.1)
 
         except KeyboardInterrupt:
             self.logger.info("Shutting down Driver")

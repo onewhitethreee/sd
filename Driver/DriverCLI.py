@@ -107,6 +107,9 @@ class DriverCLI:
                 "[4] Show current charging status",
                 "[5] Show charging history"
             ],
+            "AUTO MODE": [
+                "[6] Start auto-charging from service file"
+            ],
             "EXIT": [
                 "[0] Exit Driver Application"
             ]
@@ -144,6 +147,9 @@ class DriverCLI:
             elif command == "5":
                 self._handle_history_command()
 
+            elif command == "6":
+                self._handle_auto_mode_command()
+
             else:
                 self.printer.print_warning("Please enter a valid menu option number.")
 
@@ -156,6 +162,8 @@ class DriverCLI:
         """
         try:
             self.driver._request_available_cps()
+            # Wait for response from Kafka 
+            time.sleep(1.5)
             with self.driver.lock:
                 if self.driver.available_charging_points:
                     # 准备表格数据
@@ -281,3 +289,42 @@ class DriverCLI:
 
         except Exception as e:
             self.printer.print_error(f"Failed to request charging history: {e}")
+
+    def _handle_auto_mode_command(self):
+        """
+        Maneja el comando de modo automático - Procesa el archivo de servicios
+        """
+        try:
+            # Check if there's an active charging session
+            with self.driver.lock:
+                if self.driver.current_charging_session:
+                    self.printer.print_warning("Cannot start auto-mode while a charging session is active")
+                    return
+
+                # Check if services are loaded
+                if not self.driver.loaded_services:
+                    self.printer.print_warning("No service file found or file is empty")
+                    self.printer.print_info("Please create a 'test_services.txt' file with charging point IDs (one per line)")
+                    return
+
+                # Check if service queue is already being processed
+                if self.driver.service_queue:
+                    self.printer.print_warning("Auto-mode is already running")
+                    self.printer.print_info(f"Remaining services: {len(self.driver.service_queue)}")
+                    return
+
+            # Start auto mode
+            self.printer.print_success(f"Starting auto-mode with {len(self.driver.loaded_services)} charging point(s)")
+            self.printer.print_info("Auto-mode will process services automatically")
+
+            # Start processing services in a separate thread to not block CLI
+            auto_thread = threading.Thread(
+                target=self.driver._auto_mode,
+                args=(self.driver.loaded_services,),
+                daemon=True
+            )
+            auto_thread.start()
+
+        except Exception as e:
+            self.logger.error(f"Error starting auto-mode: {e}")
+            self.printer.print_error(f"Failed to start auto-mode: {e}")
