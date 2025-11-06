@@ -139,7 +139,7 @@ class EV_CP_M:
         self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
             if status == "CONNECTED":
-                self.logger.info(
+                self.logger.debug(
                     "Central is now connected. Attempting to authenticate..."
                 )
                 # 先发送认证请求，只有认证成功后才能注册
@@ -230,7 +230,7 @@ class EV_CP_M:
         ):
             # 只有在当前状态不是ACTIVE时才更新
             if self._current_status != Status.ACTIVE.value:
-                self.logger.info(
+                self.logger.debug(
                     "Central registered, both Central and Engine connected, setting CP status to ACTIVE"
                 )
                 self.update_cp_status(Status.ACTIVE.value)
@@ -457,7 +457,7 @@ class EV_CP_M:
         }
 
         if self.engine_conn_mgr.send(init_message):
-            self.logger.info(
+            self.logger.debug(
                 f"✓  CP_ID '{self.args.id_cp}' sent to Engine for initialization."
             )
             return True
@@ -638,7 +638,7 @@ class EV_CP_M:
         """
         执行有序的系统关闭。
         """
-        self.logger.info("Initiating graceful shutdown.")
+        self.logger.debug("Initiating graceful shutdown.")
         self.running = False  # 首先，通知所有应用层循环停止
 
         # 停止CLI
@@ -658,19 +658,19 @@ class EV_CP_M:
         # 这里可以加入适当的 `join` 来确保它们真的退出了，或者依赖 `daemon=True` 的性质。
         # 如果是 daemon=True，在主线程退出后，它们会被强制终止，这在大多数情况下是接受的。
         # 为了更明确的控制，可以在 `_send_heartbeat` 和 `_check_engine_health` 中加一个事件标志来立即停止。
-        self.logger.info("All connection managers stopped. Main loop will now exit.")
+        self.logger.debug("All connection managers stopped. Main loop will now exit.")
 
-        self.logger.info("Shutdown complete")
+        self.logger.debug("Shutdown complete")
 
     def _start_cli(self):
         """启动Monitor CLI"""
         try:
             from Charging_point.Monitor.MonitorCLI import MonitorCLI
 
-            self.logger.info("Starting Monitor CLI...")
+            self.logger.debug("Starting Monitor CLI...")
             self.cli = MonitorCLI(self, self.logger)
             self.cli.start()
-            self.logger.info("Monitor CLI started")
+            self.logger.debug("Monitor CLI started")
 
         except ImportError as e:
             self.logger.error(f"Unable to import MonitorCLI: {e}")
@@ -681,14 +681,14 @@ class EV_CP_M:
     def _stop_cli(self):
         """停止Monitor CLI"""
         if self.cli:
-            self.logger.info("Stopping Monitor CLI...")
+            self.logger.debug("Stopping Monitor CLI...")
             self.cli.stop()
             self.cli = None
 
     def _start_status_panel(self):
         """启动状态监控面板"""
         if not self._auto_start_panel:
-            self.logger.info("Panel can be manually started via CLI commands")
+            self.logger.debug("Panel can be manually started via CLI commands")
             return
 
         try:
@@ -722,7 +722,7 @@ class EV_CP_M:
         """
         初始化系统，创建 ConnectionManager 实例并启动它们。
         """
-        self.logger.info("Initializing connection managers...")
+        self.logger.debug("Initializing connection managers...")
 
         # 创建 Central 的 ConnectionManager
         self.central_conn_mgr = ConnectionManager(
@@ -744,7 +744,7 @@ class EV_CP_M:
             self._handle_connection_status_change,  # 连接状态回调
         )
         self.engine_conn_mgr.start()
-        self.logger.info("Connection managers started. Waiting for connections...")
+        self.logger.debug("Connection managers started. Waiting for connections...")
 
         # 启动CLI (总是启动，用于控制面板)
         self._start_cli()
@@ -754,11 +754,11 @@ class EV_CP_M:
 
     def start(self):
         self.running = True
-        self.logger.info(f"Starting EV_CP_M module (ID: {self.args.id_cp})")
-        self.logger.info(
+        self.logger.debug(f"Starting EV_CP_M module (ID: {self.args.id_cp})")
+        self.logger.debug(
             f"Configured for EV_CP_E at {self.args.ip_port_ev_cp_e[0]}:{self.args.ip_port_ev_cp_e[1]}"
         )
-        self.logger.info(
+        self.logger.debug(
             f"Configured for EV_Central at {self.args.ip_port_ev_central[0]}:{self.args.ip_port_ev_central[1]}"
         )
         self.initialize_systems()
@@ -766,17 +766,17 @@ class EV_CP_M:
             while self.running:
                 time.sleep(0.1)  # 主循环，等待管理器和回调函数处理事件
         except KeyboardInterrupt:
-            self.logger.info("Keyboard interrupt detected. Shutting down EV_CP_M.")
+            self.logger.debug("Keyboard interrupt detected. Shutting down EV_CP_M.")
         except Exception as e:
             self.logger.error(
                 f"Unexpected error in EV_CP_M main loop: {e}", exc_info=True
             )
         finally:
-            self.logger.info(
+            self.logger.debug(
                 "EV_CP_M main loop terminated. Performing graceful shutdown."
             )
             self._graceful_shutdown()
-            self.logger.info("EV_CP_M has completely stopped.")
+            self.logger.debug("EV_CP_M has completely stopped.")
 
 
 if __name__ == "__main__":

@@ -205,7 +205,7 @@ class Driver:
             with open(filename, "r") as f:
                 services = [line.strip() for line in f if line.strip()]
 
-            self.logger.info(f"Loaded {len(services)} services from {filename}")
+            self.logger.debug(f"Loaded {len(services)} services from {filename}")
             return services
         except Exception as e:
             self.logger.error(f"Error loading services from file: {e}")
@@ -335,8 +335,8 @@ class Driver:
                     self._handle_kafka_message,
                 )
 
-                self.logger.info("Kafka producer initialized successfully")
-                self.logger.info(
+                self.logger.debug("Kafka producer initialized successfully")
+                self.logger.debug(
                     f"Subscribed to unified response topic: {driver_response_topic} with driver_id filter: {self.args.id_client}"
                 )
                 return True
@@ -387,8 +387,8 @@ class Driver:
 
     def start(self):
         """Start Driver application"""
-        self.logger.info(f"Starting Driver module")
-        self.logger.info(
+        self.logger.debug(f"Starting Driver module")
+        self.logger.debug(
             f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
         )
         self.logger.info(f"Driver ID: {self.args.id_client}")
@@ -444,7 +444,7 @@ class Driver:
         try:
             self.driver_cli = DriverCLI(self)
             self.driver_cli.start()
-            self.logger.info("Driver CLI initialized and started")
+            self.logger.debug("Driver CLI initialized and started")
         except Exception as e:
             self.logger.error(f"Failed to initialize Driver CLI: {e}")
             self.driver_cli = None

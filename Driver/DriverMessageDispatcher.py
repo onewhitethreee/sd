@@ -235,7 +235,7 @@ class DriverMessageDispatcher:
         )
         self.driver.available_cps_cache_time = time.time()  # Actualizar tiempo de caché
 
-        self.logger.info(
+        self.logger.debug(
             f"Available charging points: {len(self.driver.available_charging_points)}"
         )
 

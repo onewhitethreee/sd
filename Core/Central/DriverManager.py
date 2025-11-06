@@ -68,7 +68,7 @@ class DriverManager:
             # 注册新连接
             self._driver_connections[driver_id] = client_id
             self._client_to_driver[client_id] = driver_id
-            self.logger.info(f"Driver {driver_id} connected (client: {client_id})")
+            self.logger.debug(f"Driver {driver_id} connected (client: {client_id})")
             return True
 
         except Exception as e:

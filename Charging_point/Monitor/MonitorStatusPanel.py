@@ -93,10 +93,10 @@ class MonitorStatusPanel:
         try:
             if self.use_rich:
                 self.console.print("[bold blue]Starting Monitor status panel...[/bold blue]")
-                self.console.print("[dim]Press Ctrl+C to exit the panel[/dim]\n")
+                self.console.print("[dim]Press 1 to exit the panel[/dim]\n")
             else:
                 print("\nStarting Monitor status panel...")
-                print("Press Ctrl+C to exit the panel\n")
+                print("Press 1 to exit the panel\n")
             time.sleep(1)
 
             if self.use_rich:
@@ -267,7 +267,7 @@ class MonitorStatusPanel:
         content_parts.append(f"  Active Threads: {threading.active_count()}")
         content_parts.append("")
         separator_style = theme.get("separator", "dim")
-        content_parts.append(f"[{separator_style}]Tip: Press Ctrl+C to exit the panel[/{separator_style}]")
+        content_parts.append(f"[{separator_style}]Tip: Press 1 to exit the panel[/{separator_style}]")
         
         # 创建面板
         panel_content = "\n".join(content_parts)
@@ -307,7 +307,7 @@ class MonitorStatusPanel:
         print(f"Engine Connection: {'Connected' if engine_connected else 'Disconnected'}")
         print()
         print("=" * 60)
-        print(" Press Ctrl+C to exit")
+        print(" Press 1 to exit")
         print("=" * 60)
 
 
@@ -352,7 +352,7 @@ def test_panel():
     panel = MonitorStatusPanel(mock_monitor)
 
     try:
-        print("Starting panel... (Press Ctrl+C to exit)")
+        print("Starting panel... (Press 1 to exit)")
         time.sleep(2)
         panel.start()
 

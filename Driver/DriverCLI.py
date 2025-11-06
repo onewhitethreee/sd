@@ -40,7 +40,7 @@ class DriverCLI:
         self.running = True
         self.cli_thread = threading.Thread(target=self._run_cli, daemon=True)
         self.cli_thread.start()
-        self.logger.info("Driver CLI iniciado")
+        self.logger.debug("Driver CLI iniciado")
 
     def stop(self):
         """Detiene el CLI interactivo"""

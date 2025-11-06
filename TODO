@@ -1,9 +1,0 @@
-把代码都打上注释
-
-Common 1
-Charging point
-Core
-Driver
-
-Core/Central 选项1设置状态有颜色的，而不是简单的文字
-charging point 的状态为in_progreess, 这个说明在充电但是engine或者monitor断开了。需要解决。

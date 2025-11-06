@@ -129,7 +129,7 @@ class ConnectionManager:
         """
         while self._running:
             if not self.is_connected:
-                self.logger.info(
+                self.logger.debug(
                     f"[{self.name}] Attempting to connect to {self.host}:{self.port}..."
                 )
                 if self._client.connect(self.host, self.port):

@@ -52,7 +52,7 @@ class MySocketClient:
             with self._lock:
                 self.is_connected = True
 
-            self.logger.info(f"Connected to {host}:{port}")
+            self.logger.debug(f"Connected to {host}:{port}")
 
             # Iniciar thread de recepción
             self.receive_thread = threading.Thread(
@@ -211,4 +211,4 @@ class MySocketClient:
             if self.receive_thread.is_alive():
                 self.logger.warning("Receive thread did not terminate in time")
 
-        self.logger.info("Disconnected from server")
+        self.logger.debug("Disconnected from server")

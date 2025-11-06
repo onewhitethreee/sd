@@ -46,7 +46,7 @@ class KafkaManager:
                 retries=3,
                 max_in_flight_requests_per_connection=1,
             )
-            self.logger.info(f"Kafka producer initialized successfully: {self.broker_address}")
+            self.logger.debug(f"Kafka producer initialized successfully: {self.broker_address}")
             return True
         except Exception as e:
             self.logger.error(f"Failed to initialize Kafka producer: {e}")
@@ -165,7 +165,7 @@ class KafkaManager:
         Start the Kafka manager
         """
         self.running = True
-        self.logger.info("Kafka manager started")
+        self.logger.debug("Kafka manager started")
 
     def stop(self):
         """
@@ -189,7 +189,7 @@ class KafkaManager:
             except Exception as e:
                 self.logger.error(f"Failed to close producer: {e}")
 
-        self.logger.info("Kafka manager stopped")
+        self.logger.debug("Kafka manager stopped")
 
     def is_connected(self):
         """
