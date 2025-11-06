@@ -6,4 +6,3 @@ Common/__pycache__/*.pyc
 __pycache__/
 *.pyc
 ev_central.db
-.serena
