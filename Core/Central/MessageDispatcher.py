@@ -748,9 +748,9 @@ class MessageDispatcher:
                     },
                 )
 
-                self.logger.info(
-                    f"Charging data updated: Session {session_id}, Energy: {energy_consumed_kwh}kWh, Cost: €{total_cost}"
-                )
+                # self.logger.info(
+                #     f"Charging data updated: Session {session_id}, Energy: {energy_consumed_kwh}kWh, Cost: €{total_cost}"
+                # )
 
             return self._create_success_response(
                 "charging_data", message_id, "Charging data processed"

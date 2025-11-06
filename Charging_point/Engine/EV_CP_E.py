@@ -387,6 +387,7 @@ class EV_CP_E:
             "message_id": str(uuid.uuid4()),  
             "cp_id": self.cp_id,  
             "session_id": self.current_session["session_id"],
+            "driver_id": self.current_session.get("driver_id", "unknown"),  # 添加driver_id用于Monitor显示
             "energy_consumed_kwh": round(
                 self.current_session["energy_consumed_kwh"], 3
             ),

@@ -254,6 +254,8 @@ class MonitorMessageDispatcher:
             from Common.Config.Status import Status
 
             self.monitor.update_cp_status(Status.ACTIVE.value)
+            # 清除充电数据（充电停止）
+            self.monitor._current_charging_data = None
             self.logger.info(
                 f"Monitor status updated to ACTIVE after stop charging for session {session_id}"
             )

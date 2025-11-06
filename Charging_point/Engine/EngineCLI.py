@@ -310,12 +310,26 @@ class EngineCLI:
             status_details.append("Monitor Server: Not initialized")
 
         if self.engine.is_charging and self.engine.current_session:
-            status_details.append("\nCURRENT CHARGING SESSION:")
-            status_details.append(f"  Session ID: {self.engine.current_session['session_id']}")
-            status_details.append(f"  Driver ID: {self.engine.current_session['driver_id']}")
-            status_details.append(f"  Duration: {time.time() - self.engine.current_session['start_time']:.1f}s")
-            status_details.append(f"  Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
-            status_details.append(f"  Cost: €{self.engine.current_session['total_cost']:.2f}")
-            status_details.append(f"  Price: €{self.engine.current_session['price_per_kwh']}/kWh")
+            session = self.engine.current_session
+            duration = time.time() - session['start_time']
+            energy = session['energy_consumed_kwh']
+            cost = session['total_cost']
+            price = session['price_per_kwh']
+            
+            status_details.append("\n🔋 CURRENT CHARGING SESSION:")
+            status_details.append(f"  Session ID: {session['session_id']}")
+            status_details.append(f"  Driver ID: {session['driver_id']}")
+            status_details.append(f"  Duration: {duration:.1f}s")
+            status_details.append(f"  Energy Consumed: {energy:.3f} kWh")
+            status_details.append(f"  Total Cost: €{cost:.2f}")
+            status_details.append(f"  Price: €{price}/kWh")
+            
+           
+            
+            # 显示实时进度（如果设置了最大充电时长）
+            max_duration = int(os.getenv("MAX_CHARGING_DURATION", 30))
+            if max_duration > 0:
+                progress = min(100, (duration / max_duration) * 100)
+                status_details.append(f"  Progress: {progress:.1f}% ({duration:.0f}s / {max_duration}s)")
 
         self.printer.print_panel("\n".join(status_details), title="CURRENT ENGINE STATUS", style="blue")

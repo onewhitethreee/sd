@@ -90,6 +90,9 @@ class EV_CP_M:
         # 认证标志：是否已通过认证
         self._authorized = False
 
+        # 当前充电会话数据（用于状态面板显示）
+        self._current_charging_data = None  # {session_id, driver_id, energy_consumed_kwh, total_cost, start_time}
+
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
@@ -538,7 +541,7 @@ class EV_CP_M:
 
     def _handle_charging_data_from_engine(self, message):
         """
-        处理来自Engine的充电数据（转发）。
+        处理来自Engine的充电数据（转发并存储用于显示）。
         """
         self.logger.debug("Received charging data from Engine.")
         if not self.central_conn_mgr.is_connected:
@@ -561,13 +564,33 @@ class EV_CP_M:
                 f"Charging data from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
+        
+        # 存储充电数据用于状态面板显示
+        session_id = message.get("session_id")
+        energy_consumed_kwh = message.get("energy_consumed_kwh")
+        total_cost = message.get("total_cost")
+        
+        # 更新或创建充电数据记录
+        if not self._current_charging_data or self._current_charging_data.get("session_id") != session_id:
+            # 新会话，初始化数据
+            self._current_charging_data = {
+                "session_id": session_id,
+                "driver_id": message.get("driver_id", "unknown"),
+                "start_time": time.time(),
+            }
+        
+        # 更新实时数据
+        self._current_charging_data["energy_consumed_kwh"] = energy_consumed_kwh
+        self._current_charging_data["total_cost"] = total_cost
+        self._current_charging_data["last_update"] = time.time()
+        
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
-            "session_id": message.get("session_id"),
-            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
-            "total_cost": message.get("total_cost"),
+            "session_id": session_id,
+            "energy_consumed_kwh": energy_consumed_kwh,
+            "total_cost": total_cost,
         }
         if self.central_conn_mgr.send(charging_data_message):
             self.logger.debug("Charging data forwarded to Central.")
@@ -616,6 +639,8 @@ class EV_CP_M:
             # 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
             # 这样监控面板能够实时显示正确的状态
             self.update_cp_status(Status.ACTIVE.value)
+            # 清除充电数据（充电完成）
+            self._current_charging_data = None
             self.logger.info(
                 f"Monitor status updated to ACTIVE after charging completion for session {session_id}"
             )
