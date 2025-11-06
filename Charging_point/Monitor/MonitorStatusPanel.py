@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 try:
     from colorama import Fore, Back, Style, init
+
     # 初始化colorama以支持Windows
     init(autoreset=True)
     COLORAMA_AVAILABLE = True
@@ -64,7 +65,7 @@ class MonitorStatusPanel:
 
     def _clear_screen(self):
         """清屏 - Windows/Linux兼容"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        os.system("cls" if os.name == "nt" else "clear")
 
     def _get_color(self, status: str) -> str:
         """根据状态返回颜色代码"""
@@ -120,8 +121,16 @@ class MonitorStatusPanel:
         current_status = self.monitor._current_status
 
         # 连接状态
-        central_connected = self.monitor.central_conn_mgr.is_connected if self.monitor.central_conn_mgr else False
-        engine_connected = self.monitor.engine_conn_mgr.is_connected if self.monitor.engine_conn_mgr else False
+        central_connected = (
+            self.monitor.central_conn_mgr.is_connected
+            if self.monitor.central_conn_mgr
+            else False
+        )
+        engine_connected = (
+            self.monitor.engine_conn_mgr.is_connected
+            if self.monitor.engine_conn_mgr
+            else False
+        )
 
         # 认证和注册状态
         authorized = self.monitor._authorized
@@ -131,7 +140,11 @@ class MonitorStatusPanel:
         last_health_time = self.monitor._last_health_response_time
         if last_health_time:
             time_since_health = time.time() - last_health_time
-            health_status = f"{time_since_health:.1f}秒前" if time_since_health < 90 else f"超时 ({time_since_health:.1f}秒前)"
+            health_status = (
+                f"{time_since_health:.1f}秒前"
+                if time_since_health < 90
+                else f"超时 ({time_since_health:.1f}秒前)"
+            )
         else:
             health_status = "未收到响应"
 
@@ -150,7 +163,7 @@ class MonitorStatusPanel:
         print(f"  当前状态: {status_color}{current_status}{self._reset_color()}")
         print()
 
-        # ✅ 绘制组件状态（Central和Engine）
+        # ✓  绘制组件状态（Central和Engine）
         print(f"【组件状态】")
 
         # Central状态判断
@@ -168,7 +181,9 @@ class MonitorStatusPanel:
         # Engine状态判断
         if engine_connected:
             # 根据健康检查判断Engine状态
-            if last_health_time and (time.time() - last_health_time < self.monitor.ENGINE_HEALTH_TIMEOUT):
+            if last_health_time and (
+                time.time() - last_health_time < self.monitor.ENGINE_HEALTH_TIMEOUT
+            ):
                 engine_component_status = "ACTIVE"
                 engine_status_color = self._get_color("ACTIVE")
             else:
@@ -178,19 +193,43 @@ class MonitorStatusPanel:
             engine_component_status = "DISCONNECTED"
             engine_status_color = self._get_color("DISCONNECTED")
 
-        print(f"  Central:  {central_status_color}{central_component_status}{self._reset_color()}")
+        print(
+            f"  Central:  {central_status_color}{central_component_status}{self._reset_color()}"
+        )
         if self.monitor.central_conn_mgr:
-            print(f"            地址: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}")
+            print(
+                f"            地址: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}"
+            )
 
-        print(f"  Engine:   {engine_status_color}{engine_component_status}{self._reset_color()}")
+        print(
+            f"  Engine:   {engine_status_color}{engine_component_status}{self._reset_color()}"
+        )
         if self.monitor.engine_conn_mgr:
-            print(f"            地址: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}")
+            print(
+                f"            地址: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}"
+            )
         print()
 
         # 绘制认证和注册状态
         print(f"【认证与注册】")
-        auth_status = f"{Fore.GREEN}已认证{self._reset_color()}" if authorized else f"{Fore.RED}未认证{self._reset_color()}" if self.use_colors else ("已认证" if authorized else "未认证")
-        reg_status = f"{Fore.GREEN}已注册{self._reset_color()}" if registered else f"{Fore.RED}未注册{self._reset_color()}" if self.use_colors else ("已注册" if registered else "未注册")
+        auth_status = (
+            f"{Fore.GREEN}已认证{self._reset_color()}"
+            if authorized
+            else (
+                f"{Fore.RED}未认证{self._reset_color()}"
+                if self.use_colors
+                else ("已认证" if authorized else "未认证")
+            )
+        )
+        reg_status = (
+            f"{Fore.GREEN}已注册{self._reset_color()}"
+            if registered
+            else (
+                f"{Fore.RED}未注册{self._reset_color()}"
+                if self.use_colors
+                else ("已注册" if registered else "未注册")
+            )
+        )
 
         print(f"  认证状态: {auth_status}")
         print(f"  注册状态: {reg_status}")
@@ -198,7 +237,11 @@ class MonitorStatusPanel:
 
         # 绘制健康检查状态
         print(f"【Engine健康检查】")
-        health_color = Fore.GREEN if (last_health_time and time_since_health < 90) and self.use_colors else (Fore.RED if self.use_colors else "")
+        health_color = (
+            Fore.GREEN
+            if (last_health_time and time_since_health < 90) and self.use_colors
+            else (Fore.RED if self.use_colors else "")
+        )
         print(f"  最后响应: {health_color}{health_status}{self._reset_color()}")
         print(f"  检查间隔: {self.monitor.ENGINE_HEALTH_CHECK_INTERVAL}秒")
         print(f"  超时阈值: {self.monitor.ENGINE_HEALTH_TIMEOUT}秒")
@@ -206,8 +249,14 @@ class MonitorStatusPanel:
 
         # 绘制心跳状态
         print(f"【Central心跳】")
-        heartbeat_running = self.monitor._heartbeat_thread and self.monitor._heartbeat_thread.is_alive()
-        heartbeat_status = f"{Fore.GREEN}运行中{self._reset_color()}" if heartbeat_running and self.use_colors else ("运行中" if heartbeat_running else "已停止")
+        heartbeat_running = (
+            self.monitor._heartbeat_thread and self.monitor._heartbeat_thread.is_alive()
+        )
+        heartbeat_status = (
+            f"{Fore.GREEN}运行中{self._reset_color()}"
+            if heartbeat_running and self.use_colors
+            else ("运行中" if heartbeat_running else "已停止")
+        )
         print(f"  心跳状态: {heartbeat_status}")
         print(f"  心跳间隔: {self.monitor.HEARTBEAT_INTERVAL}秒")
         print()
@@ -230,8 +279,16 @@ class MonitorStatusPanel:
 
         cp_id = self.monitor.args.id_cp
         current_status = self.monitor._current_status
-        central_connected = self.monitor.central_conn_mgr.is_connected if self.monitor.central_conn_mgr else False
-        engine_connected = self.monitor.engine_conn_mgr.is_connected if self.monitor.engine_conn_mgr else False
+        central_connected = (
+            self.monitor.central_conn_mgr.is_connected
+            if self.monitor.central_conn_mgr
+            else False
+        )
+        engine_connected = (
+            self.monitor.engine_conn_mgr.is_connected
+            if self.monitor.engine_conn_mgr
+            else False
+        )
 
         print("=" * 60)
         print(f" Monitor 状态监控面板")

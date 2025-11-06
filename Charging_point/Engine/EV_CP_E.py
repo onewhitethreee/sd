@@ -70,7 +70,7 @@ class EV_CP_E:
 
         self.running = False
         self.monitor_server: MySocketServer = None
-        self.kafka_manager: KafkaManager = None  # Kafka管理器
+        self.kafka_manager: KafkaManager = None  # Kafka manager
 
         self.current_session = None
 
@@ -109,7 +109,7 @@ class EV_CP_E:
 
         self.cp_id = cp_id
         self._id_initialized = True
-        self.logger.info(f"✅ CP_ID initialized: {self.cp_id}")
+        self.logger.info(f"CP_ID initialized: {self.cp_id}")
         return True
 
     def get_current_status(self):
@@ -134,14 +134,12 @@ class EV_CP_E:
     def _handle_monitor_disconnect(self, client_id):
         """处理Monitor断开连接"""
         self.logger.warning(f"Monitor {client_id} disconnected")
-        # 进入安全模式：停止当前充电会话
         if self.is_charging:
             self.logger.warning(
                 "Monitor disconnected during charging - stopping charging for safety"
             )
             self._stop_charging_session()
 
-        # 重置CP_ID初始化标志，允许新的Monitor重新初始化
         self._id_initialized = False
         self.logger.debug("CP_ID reset - new Monitor can now initialize with a different ID")
 
@@ -161,18 +159,15 @@ class EV_CP_E:
 
             self.monitor_server.start()
 
-            # 获取实际绑定的端口（当使用端口 0 时会自动分配）
             actual_port = self.monitor_server.get_actual_port()
             actual_host = self.engine_listen_address[0]
 
-            # 更新实际的监听地址
             self.engine_listen_address = (actual_host, actual_port)
 
             self.logger.info(
                 f"Monitor server started on {actual_host}:{actual_port}"
             )
 
-            # 如果端口是自动分配的，用醒目的方式显示
             if self.monitor_server.port == 0:
                 print("\n" + "="*60)
                 print(f"  ENGINE LISTENING ON: {actual_host}:{actual_port}")
@@ -192,7 +187,6 @@ class EV_CP_E:
             if not self._start_monitor_server():
                 raise Exception("Failed to start monitor server")
 
-            # 初始化Kafka客户端
             self._init_kafka()  
 
             self.running = True
@@ -242,7 +236,7 @@ class EV_CP_E:
 
         if self.is_charging:
             self._stop_charging_session()
-            # 不需要设置 self.is_charging = False，因为 _stop_charging_session() 会设置 current_session = None
+
 
         if self.engine_cli:
             self.engine_cli.stop()
@@ -280,15 +274,15 @@ class EV_CP_E:
             "session_id": session_id,
             "driver_id": driver_id,
             "start_time": time.time(),
-            "energy_consumed_kwh": 0.0,  # 初始能量
-            "total_cost": 0.0,  # 初始费用
-            "price_per_kwh": price_per_kwh,  # 每度电价格
+            "energy_consumed_kwh": 0.0,  
+            "total_cost": 0.0,  
+            "price_per_kwh": price_per_kwh,  
         }
-        # 启动充电线程
+        # Start charging thread
         charging_thread = threading.Thread(
             target=self._charging_process,
             args=(session_id,),
-            daemon=True,  # 传递 session_id 以确保操作的是正确会话
+            daemon=True, 
         )
         charging_thread.start()
         self.logger.info(
@@ -306,36 +300,32 @@ class EV_CP_E:
         session_id = self.current_session["session_id"]
         driver_id = self.current_session["driver_id"]
         self.logger.info(f"Stopping charging session '{session_id}' for Driver: {driver_id}")
-        # 设置 current_session 为 None，这将导致 _charging_process 停止
-        # 这是通过 is_charging property 来实现终止的简洁方式
-        # --- 重点：设置 current_session 为 None 即可退出充电状态 ---
-
-        # 确保在清除 current_session 之前保存最终数据
+        
         final_session_data = self.current_session.copy()
         final_session_data["end_time"] = time.time()
         final_session_data["duration"] = (
             final_session_data["end_time"] - final_session_data["start_time"]
         )
 
-        self.current_session = None  # 停止充电循环的信号
+        self.current_session = None  
         self.logger.info(f"Charging session {session_id} completed:")
         self.logger.info(f"  Duration: {final_session_data['duration']:.1f} seconds")
         self.logger.info(
             f"  Energy consumed: {final_session_data['energy_consumed_kwh']:.2f} kWh"
         )
         self.logger.info(f"  Total cost: €{final_session_data['total_cost']:.2f}")
-        self._send_charging_completion(final_session_data)  # 发送完成通知
+        self._send_charging_completion(final_session_data)  # Send completion notification
         return True
 
     def _charging_process(self, session_id_to_track: str):
         """充电过程模拟（30秒后自动停止）"""
         self.logger.info(f"Charging process started for session {session_id_to_track}.")
 
-        # 记录充电开始时间用于30秒自动停止
-        charging_start_time = time.time()
-        MAX_CHARGING_DURATION = 30  # 30秒后自动停止
 
-        # 确保线程仅针对其启动的会话运行
+        charging_start_time = time.time()
+        MAX_CHARGING_DURATION = os.getenv("MAX_CHARGING_DURATION", 30)  
+
+ 
         while (
             self.is_charging
             and self.running
@@ -347,7 +337,7 @@ class EV_CP_E:
                 if not self.is_charging or not self.current_session:
                     break
 
-                # 检查是否已经充电30秒
+                # Check if 30 seconds of charging have elapsed
                 elapsed_time = time.time() - charging_start_time
                 if elapsed_time >= MAX_CHARGING_DURATION:
                     self.logger.info(
@@ -361,7 +351,7 @@ class EV_CP_E:
                     self.current_session["energy_consumed_kwh"]
                     * self.current_session["price_per_kwh"]
                 )
-                self._send_charging_data()  # 发送充电数据到Monitor和Kafka
+                self._send_charging_data()  # Send charging data to Monitor and Kafka
                 self.logger.debug(
                     f"Session {session_id_to_track} progress: {self.current_session['energy_consumed_kwh']:.3f} kWh, €{self.current_session['total_cost']:.2f}, elapsed: {elapsed_time:.1f}s/{MAX_CHARGING_DURATION}s"
                 )
@@ -373,14 +363,14 @@ class EV_CP_E:
         self.logger.info(f"Charging process ended for session {session_id_to_track}.")
 
     def _send_charging_data(self):
-        """发送充电数据到Monitor和Kafka（改进版）"""
+        """发送充电数据到Monitor和Kafka"""
         if not self.current_session:  # 如果没有活跃会话，直接返回
             return
 
         charging_data_message = {
             "type": "charging_data",
-            "message_id": str(uuid.uuid4()),  # 用于幂等性
-            "cp_id": self.cp_id,  # ✅ 使用从Monitor接收的cp_id
+            "message_id": str(uuid.uuid4()),  
+            "cp_id": self.cp_id,  
             "session_id": self.current_session["session_id"],
             "energy_consumed_kwh": round(
                 self.current_session["energy_consumed_kwh"], 3
@@ -389,7 +379,6 @@ class EV_CP_E:
             "timestamp": int(time.time()),
         }
 
-        # 发送到 Monitor（Socket，保持向后兼容）
         if self.monitor_server and self.monitor_server.has_active_clients():
             self.monitor_server.send_broadcast_message(charging_data_message)
             self.logger.debug(
@@ -398,7 +387,6 @@ class EV_CP_E:
         else:
             self.logger.debug("No active monitor clients to send charging data.")
 
-        # ✅ 发送到 Kafka（改进版）
         if self.kafka_manager and self.kafka_manager.is_connected():
             success = self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_DATA, charging_data_message
@@ -421,15 +409,14 @@ class EV_CP_E:
 
         completion_message = {
             "type": "charge_completion",
-            "message_id": str(uuid.uuid4()),  # 用于幂等性
-            "cp_id": self.cp_id,  # ✅ 使用从Monitor接收的cp_id
+            "message_id": str(uuid.uuid4()),  
+            "cp_id": self.cp_id,  
             "session_id": final_session_data["session_id"],
             "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
-            "timestamp": int(time.time()),  # 添加时间戳
+            "timestamp": int(time.time()),  
         }
 
-        # 1. 发送到 Monitor（Socket，向后兼容）
         if self.monitor_server and self.monitor_server.has_active_clients():
             self.monitor_server.send_broadcast_message(completion_message)
             self.logger.info(
@@ -440,7 +427,6 @@ class EV_CP_E:
                 "No active monitor clients to send charging completion."
             )
 
-        # 2. 发送到 Kafka（改进版）
         if self.kafka_manager and self.kafka_manager.is_connected():
             success = self.kafka_manager.produce_message(
                 KafkaTopics.CHARGING_SESSION_COMPLETE, completion_message
@@ -457,7 +443,7 @@ class EV_CP_E:
             )
 
     def _init_cli(self):
-        """初始化Engine CLI（según PDF página 7 y 11）"""
+        """初始化Engine CLI"""
         try:
             self.engine_cli = EngineCLI(self, self.logger)
             self.engine_cli.start()
@@ -484,14 +470,14 @@ class EV_CP_E:
             self.logger.error("Failed to initialize system")
             sys.exit(1)
 
-        # Iniciar CLI para simular acciones del usuario (según PDF página 7 y 11)
+        
         self._init_cli()
 
         try:
 
             self.running = True
             while self.running:
-                time.sleep(0.1)  # 保持运行
+                time.sleep(0.1)  # Keep running
 
         except KeyboardInterrupt:
             self.logger.info("Shutting down EV_CP_E")
@@ -503,6 +489,11 @@ class EV_CP_E:
 
 if __name__ == "__main__":
     import logging
-    logger = CustomLogger.get_logger(level=logging.DEBUG)
+
+    if os.getenv("DEBUG_MODE") == False:
+        logger = CustomLogger.get_logger(level=logging.INFO)
+    else:
+        logger = CustomLogger.get_logger(level=logging.DEBUG)
+
     ev_cp_e = EV_CP_E(logger=logger)
     ev_cp_e.start()

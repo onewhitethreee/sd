@@ -139,7 +139,7 @@ class MonitorCLI:
     def _show_panel(self):
         """Muestra el panel de estado"""
         if not self.monitor.enable_panel:
-            print("❌ Panel is disabled. Cannot show panel.")
+            print("✗  Panel is disabled. Cannot show panel.")
             print("   Start Monitor with --panel flag to enable panel.")
             return
 
@@ -161,10 +161,10 @@ class MonitorCLI:
             print("  Press Ctrl+C in the panel to return to CLI menu")
 
         except ImportError as e:
-            print(f"❌ Cannot import MonitorStatusPanel: {e}")
+            print(f"✗  Cannot import MonitorStatusPanel: {e}")
             print("   Make sure MonitorStatusPanel.py exists")
         except Exception as e:
-            print(f"❌ Failed to show panel: {e}")
+            print(f"✗  Failed to show panel: {e}")
 
     def _hide_panel(self):
         """Oculta el panel de estado"""
@@ -178,7 +178,7 @@ class MonitorCLI:
                 self.panel_active = False
                 print("✓ Status panel is now HIDDEN")
         except Exception as e:
-            print(f"❌ Failed to hide panel: {e}")
+            print(f"✗  Failed to hide panel: {e}")
 
     def _show_status_summary(self):
         """Muestra un resumen del estado actual"""
@@ -290,5 +290,3 @@ class MonitorCLI:
             print("    Connection Manager: Not initialized")
 
         print("=" * 60)
-
-

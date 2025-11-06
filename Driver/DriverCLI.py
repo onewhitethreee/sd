@@ -1,4 +1,3 @@
-
 import threading
 from typing import TYPE_CHECKING
 import time
@@ -178,7 +177,9 @@ class DriverCLI:
                     cp.get("id") for cp in self.driver.available_charging_points
                 ]
                 if cp_id not in available_ids:
-                    print(f"Advertencia: El punto de carga {cp_id} puede no estar en la lista de disponibles")
+                    print(
+                        f"Advertencia: El punto de carga {cp_id} puede no estar en la lista de disponibles"
+                    )
                     return
 
             # Enviar solicitud de carga
@@ -267,4 +268,4 @@ class DriverCLI:
             # Nota: La respuesta llegará de forma asíncrona y será manejada por DriverMessageDispatcher._handle_charging_history_response
 
         except Exception as e:
-            print(f"\n❌ Error al consultar historial de carga: {e}")
+            print(f"\n✗  Error al consultar historial de carga: {e}")

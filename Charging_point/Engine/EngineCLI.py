@@ -37,9 +37,7 @@ class EngineCLI:
 
         self.running = True
         self.cli_thread = threading.Thread(
-            target=self._run_cli,
-            daemon=True,
-            name="EngineCLI"
+            target=self._run_cli, daemon=True, name="EngineCLI"
         )
         self.cli_thread.start()
         self.logger.info("Engine CLI started")
@@ -55,7 +53,9 @@ class EngineCLI:
         print("\n" + "=" * 60)
         print("  EV_CP_E - ENGINE CONTROL MENU")
         print("=" * 60)
-        print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
+        print(
+            f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}"
+        )
 
         status = self.engine.get_current_status()
         status_indicator = f"  Status: {status}"
@@ -68,7 +68,9 @@ class EngineCLI:
         if self.engine.is_charging and self.engine.current_session:
             print(f"  Session ID: {self.engine.current_session['session_id']}")
             print(f"  Driver ID: {self.engine.current_session['driver_id']}")
-            print(f"  Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
+            print(
+                f"  Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh"
+            )
             print(f"  Cost: €{self.engine.current_session['total_cost']:.2f}")
 
         print("-" * 60)
@@ -86,7 +88,6 @@ class EngineCLI:
         print("  [0] Exit menu (Engine continues running)")
         print("=" * 60)
         print()
-        
 
     def _run_cli(self):
         """Ejecuta el loop principal del CLI"""
@@ -117,7 +118,9 @@ class EngineCLI:
                     print("\n✓ Exiting menu. Engine continues running in background.")
                     print("  (Press ENTER anytime to show menu again)\n")
                 else:
-                    print(f"\n⚠ Invalid option: '{user_input}'. Press ENTER to show menu.\n")
+                    print(
+                        f"\n⚠ Invalid option: '{user_input}'. Press ENTER to show menu.\n"
+                    )
 
             except EOFError:
                 # Si se cierra stdin, salir del CLI
@@ -142,12 +145,12 @@ class EngineCLI:
         print("\n" + "-" * 60)
 
         if not self.engine.cp_id:
-            print("❌ Cannot start charging: CP_ID not initialized yet")
+            print("✗  Cannot start charging: CP_ID not initialized yet")
             print("   Wait for Monitor to provide CP_ID")
             print("-" * 60)
             return
         if self.engine._manual_faulty_mode:
-            print("❌ Cannot start charging: Engine in MANUAL FAULTY mode")
+            print("✗  Cannot start charging: Engine in MANUAL FAULTY mode")
             print("   Simulate recovery first (option [4])")
             print("-" * 60)
             return
@@ -163,7 +166,9 @@ class EngineCLI:
         print("   (Sends charge_request to Central, like a Driver would)")
         print()
 
-        driver_id = input("   Enter Driver ID (or press ENTER for 'manual_driver'): ").strip()
+        driver_id = input(
+            "   Enter Driver ID (or press ENTER for 'manual_driver'): "
+        ).strip()
         if not driver_id:
             driver_id = "manual_driver"
 
@@ -174,8 +179,11 @@ class EngineCLI:
         print("   Sending charge_request to Central via Kafka...")
 
         # Enviar charge_request a Central (como lo haría un Driver)
-        if not self.engine.kafka_manager or not self.engine.kafka_manager.is_connected():
-            print("❌ Kafka not connected - cannot send request to Central")
+        if (
+            not self.engine.kafka_manager
+            or not self.engine.kafka_manager.is_connected()
+        ):
+            print("✗  Kafka not connected - cannot send request to Central")
             print("-" * 60)
             return
 
@@ -188,8 +196,7 @@ class EngineCLI:
         }
 
         success = self.engine.kafka_manager.produce_message(
-            KafkaTopics.DRIVER_CHARGE_REQUESTS,
-            charge_request
+            KafkaTopics.DRIVER_CHARGE_REQUESTS, charge_request
         )
 
         if success:
@@ -204,7 +211,7 @@ class EngineCLI:
             print()
             print("   Wait for Central's response...")
         else:
-            print("❌ Failed to send charge request to Kafka")
+            print("✗  Failed to send charge request to Kafka")
 
         print("-" * 60)
 
@@ -218,7 +225,9 @@ class EngineCLI:
             return
 
         print("🔌 SIMULATING: Driver unplugs vehicle from CP")
-        print(f"   Stopping charging session: {self.engine.current_session['session_id']}")
+        print(
+            f"   Stopping charging session: {self.engine.current_session['session_id']}"
+        )
 
         # Detener la carga
         success = self.engine._stop_charging_session()
@@ -227,7 +236,7 @@ class EngineCLI:
             print("✓ Charging stopped successfully")
             print("   Final charging data sent to Central (via Kafka)")
         else:
-            print("❌ Failed to stop charging")
+            print("✗  Failed to stop charging")
 
         print("-" * 60)
 
@@ -242,10 +251,13 @@ class EngineCLI:
         print("   ✓ Engine set to MANUAL FAULTY mode (persists until manual recovery)")
 
         # Enviar mensaje de fallo al Monitor
-        if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
+        if (
+            self.engine.monitor_server
+            and self.engine.monitor_server.has_active_clients()
+        ):
             failure_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
-                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "FAULTY",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
@@ -262,7 +274,9 @@ class EngineCLI:
 
         print()
         print("   NOTE: Engine will remain in FAULTY mode until you use option [4]")
-        print("         to simulate recovery. Health checks will continue to report FAULTY.")
+        print(
+            "         to simulate recovery. Health checks will continue to report FAULTY."
+        )
         print("-" * 60)
 
     def _handle_simulate_recovery(self):
@@ -276,10 +290,13 @@ class EngineCLI:
         print("   ✓ Engine MANUAL FAULTY mode deactivated")
 
         # Enviar mensaje de recuperación al Monitor
-        if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
+        if (
+            self.engine.monitor_server
+            and self.engine.monitor_server.has_active_clients()
+        ):
             recovery_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
-                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "ACTIVE",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
@@ -298,7 +315,9 @@ class EngineCLI:
         print("\n" + "=" * 60)
         print("  CURRENT ENGINE STATUS")
         print("=" * 60)
-        print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
+        print(
+            f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}"
+        )
 
         status = self.engine.get_current_status()
         print(f"  Engine Status: {status}")
@@ -309,8 +328,12 @@ class EngineCLI:
         print(f"  Charging: {self.engine.is_charging}")
 
         if self.engine.monitor_server:
-            print(f"  Monitor Server: Running on {self.engine.engine_listen_address[0]}:{self.engine.engine_listen_address[1]}")
-            print(f"  Monitor Connected: {self.engine.monitor_server.has_active_clients()}")
+            print(
+                f"  Monitor Server: Running on {self.engine.engine_listen_address[0]}:{self.engine.engine_listen_address[1]}"
+            )
+            print(
+                f"  Monitor Connected: {self.engine.monitor_server.has_active_clients()}"
+            )
         else:
             print("  Monitor Server: Not initialized")
 
@@ -318,8 +341,12 @@ class EngineCLI:
             print("\n  CURRENT CHARGING SESSION:")
             print(f"    Session ID: {self.engine.current_session['session_id']}")
             print(f"    Driver ID: {self.engine.current_session['driver_id']}")
-            print(f"    Duration: {time.time() - self.engine.current_session['start_time']:.1f}s")
-            print(f"    Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
+            print(
+                f"    Duration: {time.time() - self.engine.current_session['start_time']:.1f}s"
+            )
+            print(
+                f"    Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh"
+            )
             print(f"    Cost: €{self.engine.current_session['total_cost']:.2f}")
             print(f"    Price: €{self.engine.current_session['price_per_kwh']}/kWh")
 

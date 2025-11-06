@@ -26,12 +26,10 @@ class DriverMessageDispatcher:
             MessageTypes.STOP_CHARGING_RESPONSE: self._handle_stop_charging_response,
             MessageTypes.AVAILABLE_CPS_RESPONSE: self._handle_available_cps,
             MessageTypes.CHARGING_HISTORY_RESPONSE: self._handle_charging_history_response,
-
             # Notificaciones
             MessageTypes.CHARGING_STATUS_UPDATE: self._handle_charging_status,
             MessageTypes.CHARGING_DATA: self._handle_charging_data,
             MessageTypes.CHARGE_COMPLETION: self._handle_charge_completion,
-
             # Eventos del sistema
             MessageTypes.CONNECTION_LOST: self._handle_connection_lost,
             MessageTypes.CONNECTION_ERROR: self._handle_connection_error,
@@ -65,10 +63,9 @@ class DriverMessageDispatcher:
             self.logger.error(
                 f"Error dispatching message {message.get(MessageFields.TYPE)}: {e}. "
                 f"Message: {message}",
-                exc_info=True
+                exc_info=True,
             )
             return False
-
 
     def _handle_charge_response(self, message):
         """
@@ -86,7 +83,7 @@ class DriverMessageDispatcher:
         self.logger.debug(f"message: {message}")
 
         if status == ResponseStatus.SUCCESS:
-            self.logger.info(f"✅ charging requests approved: {info}")
+            self.logger.info(f"✓  charging requests approved: {info}")
             session_id = message.get(MessageFields.SESSION_ID)
             cp_id = message.get(MessageFields.CP_ID)
 
@@ -95,17 +92,17 @@ class DriverMessageDispatcher:
                     self.driver.current_charging_session = {
                         "session_id": session_id,
                         "cp_id": cp_id,
-                        "start_time": time.time(), 
+                        "start_time": time.time(),
                         "status": "authorized",
                         "energy_consumed_kwh": 0.0,
                         "total_cost": 0.0,
                     }
-                self.logger.info(f"✅ Charging session created: {session_id}")
+                self.logger.info(f"✓  Charging session created: {session_id}")
                 self.logger.debug(f"会话数据: {self.driver.current_charging_session}")
             else:
                 self.logger.error("Session ID not provided in charge response")
         else:
-            self.logger.error(f"❌ Charging request denied: {info}")
+            self.logger.error(f"✗  Charging request denied: {info}")
 
         return True
 
@@ -194,7 +191,7 @@ class DriverMessageDispatcher:
                 energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
                 total_cost = message.get(MessageFields.TOTAL_COST, 0)
 
-                self.logger.info(f"✅ Charging completed!")
+                self.logger.info(f"✓  Charging completed!")
                 self.logger.info(f"Session ID: {session_id}")
                 self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
                 self.logger.info(f"Total Cost: €{total_cost:.2f}")
@@ -215,7 +212,9 @@ class DriverMessageDispatcher:
             message: Mensaje de lista, que contiene:
                 - charging_points: Lista de puntos de carga disponibles
         """
-        self.driver.available_charging_points = message.get(MessageFields.CHARGING_POINTS, [])
+        self.driver.available_charging_points = message.get(
+            MessageFields.CHARGING_POINTS, []
+        )
         self.driver.available_cps_cache_time = time.time()  # Actualizar tiempo de caché
 
         self.logger.info(
@@ -242,19 +241,21 @@ class DriverMessageDispatcher:
             history = message.get("history", [])
             count = message.get("count", 0)
 
-            self.logger.info(f"✅ Received {count} charging history records from Central")
+            self.logger.info(
+                f"✓  Received {count} charging history records from Central"
+            )
 
             self.driver._show_charging_history(history)
         else:
             error = message.get("error", "Unknown error")
-            self.logger.error(f"❌ Failed to retrieve charging history: {error}")
+            self.logger.error(f"✗  Failed to retrieve charging history: {error}")
 
         return True
 
     def _handle_connection_lost(self, message):
         """
         Maneja la pérdida de conexión
-        
+
         Args:
             message: Mensaje de notificación de pérdida de conexión
         """
@@ -295,18 +296,21 @@ class DriverMessageDispatcher:
         self.logger.debug(f"处理停止充电响应: status={status}, info={info}")
 
         if status == ResponseStatus.SUCCESS:
-            self.logger.info(f"🛑 Stop charging request accepted for session {session_id}")
+            self.logger.info(
+                f"🛑 Stop charging request accepted for session {session_id}"
+            )
             self.logger.info(f"   Charging point: {cp_id}")
             self.logger.info(f"   Waiting for final charge completion notification...")
 
-
         else:
-            self.logger.error(f"❌ Failed to stop charging: {info}")
+            self.logger.error(f"✗  Failed to stop charging: {info}")
             self.logger.error(f"   Session ID: {session_id}")
 
             with self.driver.lock:
                 if self.driver.current_charging_session:
-                    local_session_id = self.driver.current_charging_session.get("session_id")
+                    local_session_id = self.driver.current_charging_session.get(
+                        "session_id"
+                    )
                     if local_session_id != session_id:
                         self.logger.warning(
                             f"   Local session ID ({local_session_id}) differs from requested ({session_id})"

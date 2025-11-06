@@ -30,7 +30,7 @@ class EngineMessageDispatcher:
             engine: EV_CP_E实例，用于访问Engine的业务逻辑
         """
         self.logger = logger
-        self.engine = engine  
+        self.engine = engine
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
@@ -62,14 +62,13 @@ class EngineMessageDispatcher:
                 self.logger.warning(f"Unknown message type: {msg_type}")
                 return self._create_error_response(
                     message.get(MessageFields.MESSAGE_ID),
-                    f"Unknown message type: {msg_type}"
+                    f"Unknown message type: {msg_type}",
                 )
 
         except Exception as e:
             self.logger.error(f"Error dispatching message: {e}")
             return self._create_error_response(
-                message.get(MessageFields.MESSAGE_ID),
-                str(e)
+                message.get(MessageFields.MESSAGE_ID), str(e)
             )
 
     def _create_error_response(self, message_id, error_msg):
@@ -118,8 +117,12 @@ class EngineMessageDispatcher:
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
-            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
-            MessageFields.MESSAGE: f"CP_ID set to {cp_id}" if success else "CP_ID already initialized",
+            MessageFields.STATUS: (
+                ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE
+            ),
+            MessageFields.MESSAGE: (
+                f"CP_ID set to {cp_id}" if success else "CP_ID already initialized"
+            ),
             MessageFields.CP_ID: cp_id,
         }
 
@@ -144,7 +147,6 @@ class EngineMessageDispatcher:
 
         self.logger.debug(f"Health check response prepared: {response}")
         return response
-
 
     def _handle_start_charging_command(self, message):
         """
@@ -192,8 +194,12 @@ class EngineMessageDispatcher:
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
-            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
-            MessageFields.MESSAGE: "Charging started" if success else "Failed to start charging",
+            MessageFields.STATUS: (
+                ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE
+            ),
+            MessageFields.MESSAGE: (
+                "Charging started" if success else "Failed to start charging"
+            ),
             MessageFields.SESSION_ID: session_id if success else None,
         }
 
@@ -222,7 +228,9 @@ class EngineMessageDispatcher:
             if self.engine.current_session:
                 stopped_session_id = self.engine.current_session["session_id"]
                 self.engine._stop_charging_session()
-                self.logger.info(f"紧急停止充电会话: {stopped_session_id} (session_id=None)")
+                self.logger.info(
+                    f"紧急停止充电会话: {stopped_session_id} (session_id=None)"
+                )
                 return {
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -297,13 +305,16 @@ class EngineMessageDispatcher:
         self.engine._manual_faulty_mode = False
 
         if was_faulty:
-            self.logger.info("✅ Central resume command: Cleared manual FAULTY mode")
+            self.logger.info("✓  Central resume command: Cleared manual FAULTY mode")
 
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
             MessageFields.STATUS: ResponseStatus.SUCCESS,
-            MessageFields.MESSAGE: f"CP {cp_id} resumed, manual FAULTY mode cleared" if was_faulty else f"CP {cp_id} resumed",
+            MessageFields.MESSAGE: (
+                f"CP {cp_id} resumed, manual FAULTY mode cleared"
+                if was_faulty
+                else f"CP {cp_id} resumed"
+            ),
             MessageFields.CP_ID: cp_id,
         }
-

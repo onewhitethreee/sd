@@ -17,6 +17,7 @@ from Driver.DriverMessageDispatcher import DriverMessageDispatcher
 from Driver.DriverCLI import DriverCLI
 from Common.Message.MessageTypes import MessageTypes
 
+
 class Driver:
     def __init__(self, logger=None):
         """
@@ -44,28 +45,27 @@ class Driver:
             class Args:
                 broker = self.config.get_broker()
                 import random
+
                 id_client = f"driver_{random.randint(0,99999)}"
 
             self.args = Args()
             self.logger.debug("Debug mode is ON. Using default arguments.")
 
-        self.kafka_manager = None 
-        self.driver_cli = None  
+        self.kafka_manager = None
+        self.driver_cli = None
         self.running = False
 
         # session info
-        self.current_charging_session = None  
+        self.current_charging_session = None
 
         # cache session info
-        self.available_charging_points = []  
-        self.available_cps_cache_time = None  
+        self.available_charging_points = []
+        self.available_cps_cache_time = None
 
         self.service_queue = []
 
-        self.lock = threading.Lock()  
-        self.message_dispatcher = DriverMessageDispatcher(
-            self.logger, self
-        )  
+        self.lock = threading.Lock()
+        self.message_dispatcher = DriverMessageDispatcher(self.logger, self)
 
     def _send_charge_request(self, cp_id):
         """
@@ -81,13 +81,15 @@ class Driver:
 
         self.logger.info(f"🚗 Sending charging request for CP: {cp_id}")
 
-        # 发送到 Kafka
+        # Send to Kafka
         if self.kafka_manager and self.kafka_manager.is_connected():
             kafka_success = self.kafka_manager.produce_message(
                 KafkaTopics.DRIVER_CHARGE_REQUESTS, request_message
             )
             if kafka_success:
-                self.logger.debug(f"Charge request sent to Kafka: {request_message['message_id']}")
+                self.logger.debug(
+                    f"Charge request sent to Kafka: {request_message['message_id']}"
+                )
             else:
                 self.logger.error("Failed to send charge request to Kafka")
             return kafka_success
@@ -118,13 +120,15 @@ class Driver:
 
         self.logger.info(f"🛑 Sending stop charging request for session: {session_id}")
 
-        # 发送到 Kafka
+        # Send to Kafka
         if self.kafka_manager and self.kafka_manager.is_connected():
             kafka_success = self.kafka_manager.produce_message(
                 KafkaTopics.DRIVER_STOP_REQUESTS, request_message
             )
             if kafka_success:
-                self.logger.debug(f"Stop request sent to Kafka: {request_message['message_id']}")
+                self.logger.debug(
+                    f"Stop request sent to Kafka: {request_message['message_id']}"
+                )
             else:
                 self.logger.error("Failed to send stop request to Kafka")
             return kafka_success
@@ -143,13 +147,15 @@ class Driver:
             "timestamp": int(time.time()),
         }
 
-        # 发送到 Kafka
+        # Send to Kafka
         if self.kafka_manager and self.kafka_manager.is_connected():
             kafka_success = self.kafka_manager.produce_message(
                 KafkaTopics.DRIVER_CPS_REQUESTS, request_message
             )
             if kafka_success:
-                self.logger.debug(f"Available CPs request sent to Kafka: {request_message['message_id']}")
+                self.logger.debug(
+                    f"Available CPs request sent to Kafka: {request_message['message_id']}"
+                )
             else:
                 self.logger.error("Failed to send available CPs request to Kafka")
             return kafka_success
@@ -171,14 +177,15 @@ class Driver:
             "timestamp": int(time.time()),
         }
 
-        # 发送查询请求到 Kafka
+        # Send query request to Kafka
         if self.kafka_manager and self.kafka_manager.is_connected():
             kafka_success = self.kafka_manager.produce_message(
-                KafkaTopics.DRIVER_CPS_REQUESTS,  # 使用请求主题
-                request_message
+                KafkaTopics.DRIVER_CPS_REQUESTS, request_message  # Use request topic
             )
             if kafka_success:
-                self.logger.debug(f"Charging history request sent to Kafka: {request_message['message_id']}")
+                self.logger.debug(
+                    f"Charging history request sent to Kafka: {request_message['message_id']}"
+                )
             else:
                 self.logger.error("Failed to send charging history request to Kafka")
             return kafka_success
@@ -226,7 +233,7 @@ class Driver:
         """
         if history_data is None:
             self.logger.info("Requesting charging history from Central...")
-            # 发起查询请求，响应会异步到达并由 DriverMessageDispatcher 处理
+            # Initiate query request, response will arrive asynchronously and be handled by DriverMessageDispatcher
             self._request_charging_history()
             return
 
@@ -254,34 +261,37 @@ class Driver:
             )
             self.logger.info(f"    Cost: €{record.get('total_cost', 0):.2f}")
         self.logger.info("=" * 60 + "\n")
+
     def _process_next_service(self):
         """
         procesar el siguiente servicio desde el fichero de prueba
         """
-        
+
         if self.service_queue:
             cp_id = self.service_queue.pop(0)
             self.logger.info(f"Processing next service: {cp_id}")
             self._send_charge_request(cp_id)
         else:
             self.logger.info("No more services to process")
-            # 查询并显示充电历史（异步，响应会通过 Kafka 返回）
+            # Query and display charging history (asynchronous, response will be returned via Kafka)
             self._request_charging_history()
 
     def _auto_mode(self, services):
-        
+
         self.logger.info(f"Entering auto mode with {len(services)} services")
-        print(f"🤖 Auto mode: Processing {len(services)} charging point(s) automatically")
+        print(
+            f"🤖 Auto mode: Processing {len(services)} charging point(s) automatically"
+        )
         print(f"    Type 'help' to see available commands during auto mode\n")
 
         self.service_queue = services.copy()
 
-        # 处理第一个服务
+        # Process the first service
         if self.service_queue:
             self._process_next_service()
 
-        # 等待所有服务完成
-        # CLI在后台运行，用户可以随时输入命令
+        # Wait for all services to complete
+        # CLI runs in the background, users can enter commands at any time
         while self.running and (self.service_queue or self.current_charging_session):
             time.sleep(1)
 
@@ -297,41 +307,41 @@ class Driver:
             if self.kafka_manager.init_producer():
                 self.kafka_manager.start()
 
-                # 创建Driver相关的topics
+                # Create Driver-related topics
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_CHARGE_REQUESTS,
                     num_partitions=3,
-                    replication_factor=1
+                    replication_factor=1,
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_STOP_REQUESTS,
                     num_partitions=3,
-                    replication_factor=1
+                    replication_factor=1,
                 )
                 self.kafka_manager.create_topic_if_not_exists(
                     KafkaTopics.DRIVER_CPS_REQUESTS,
                     num_partitions=3,
-                    replication_factor=1
+                    replication_factor=1,
                 )
-                # 创建统一的Driver响应主题（所有Driver共享一个主题）
+                # Create unified Driver response topic (all Drivers share one topic)
                 driver_response_topic = KafkaTopics.get_driver_response_topic()
                 self.kafka_manager.create_topic_if_not_exists(
-                    driver_response_topic,
-                    num_partitions=3,  
-                    replication_factor=1
+                    driver_response_topic, num_partitions=3, replication_factor=1
                 )
 
-                # 订阅统一的Driver响应主题
-                # 重要：每个Driver使用独立的consumer group，确保每个Driver都能收到属于自己的消息
-                # 应用层通过 driver_id 字段过滤消息
+                # Subscribe to unified Driver response topic
+                # Important: Each Driver uses an independent consumer group, ensuring each Driver receives its own messages
+                # Application layer filters messages by driver_id field
                 self.kafka_manager.init_consumer(
                     driver_response_topic,
-                    f"driver_{self.args.id_client}_consumer_group",  # 每个Driver独立的consumer group
+                    f"driver_{self.args.id_client}_consumer_group",  # Each Driver has an independent consumer group
                     self._handle_kafka_message,
                 )
 
                 self.logger.info("Kafka producer initialized successfully")
-                self.logger.info(f"Subscribed to unified response topic: {driver_response_topic} with driver_id filter: {self.args.id_client}")
+                self.logger.info(
+                    f"Subscribed to unified response topic: {driver_response_topic} with driver_id filter: {self.args.id_client}"
+                )
                 return True
             else:
                 self.logger.error("Failed to initialize Kafka producer")
@@ -351,10 +361,10 @@ class Driver:
             msg_type = message.get("type")
             message_driver_id = message.get("driver_id")
 
-            # 应用层过滤：只处理属于当前Driver的消息
-            # 由于使用统一的响应主题，需要检查消息中的driver_id字段
+            # Application layer filtering: Only process messages belonging to the current Driver
+            # Since using a unified response topic, need to check the driver_id field in the message
             if message_driver_id != self.args.id_client:
-                # 消息不属于当前Driver，忽略（这在正常情况下不应该发生，因为consumer group机制）
+                # Message does not belong to current Driver, ignore (this should not happen normally due to consumer group mechanism)
                 self.logger.debug(
                     f"Ignoring message for different driver: message_driver_id={message_driver_id}, "
                     f"current_driver_id={self.args.id_client}"
@@ -365,21 +375,21 @@ class Driver:
                 f"Received Kafka message from unified topic: type={msg_type}, driver_id={message_driver_id}"
             )
 
-            # 使用消息分发器处理Kafka消息
-            # DriverMessageDispatcher 会处理以下类型：
-            # - charge_request_response: 充电请求响应
-            # - stop_charging_response: 停止充电响应
-            # - available_cps_response: 可用充电桩列表响应
-            # - charging_status_update: 充电状态更新
-            # - charging_data: 实时充电数据
-            # - charge_completion: 充电完成通知
+            # Use message dispatcher to handle Kafka messages
+            # DriverMessageDispatcher handles the following types:
+            # - charge_request_response: charge request response
+            # - stop_charging_response: stop charging response
+            # - available_cps_response: available charging point list response
+            # - charging_status_update: charging status update
+            # - charging_data: real-time charging data
+            # - charge_completion: charging completion notification
             self.message_dispatcher.dispatch_message(message)
 
         except Exception as e:
             self.logger.error(f"Error handling Kafka message: {e}", exc_info=True)
 
     def start(self):
-        """启动Driver应用"""
+        """Start Driver application"""
         self.logger.info(f"Starting Driver module")
         self.logger.info(
             f"Connecting to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
@@ -390,26 +400,28 @@ class Driver:
 
         if not self._init_kafka():
             self.logger.error("Failed to initialize Kafka. Cannot start Driver.")
-            print("\n❌ Failed to connect to Kafka Broker. Please ensure Kafka is running and try again.\n")
+            print(
+                "\n✗  Failed to connect to Kafka Broker. Please ensure Kafka is running and try again.\n"
+            )
             self.running = False
             return
 
-        # 请求可用充电点列表
+        # Request available charging point list
         self._request_available_cps()
         time.sleep(2)
 
-        # 🔧 关键改动：提前启动CLI，使其在任何模式下都可用
+        # Key change: Start CLI early so it is available in any mode
         self._init_cli()
 
-        # 检查是否有服务文件
+        # Check if service file exists
         services = self._load_services_from_file()
 
         try:
             if services:
                 self._auto_mode(services)
             else:
-                # 交互模式（CLI已在后台运行）
-                # 只需要等待CLI运行即可
+                # Interactive mode (CLI already running in background)
+                # Just need to wait for CLI to run
                 self.logger.info("Entering interactive mode...")
                 print("💬 Interactive mode: Enter commands to control charging")
                 print("    Type 'help' to see available commands\n")
