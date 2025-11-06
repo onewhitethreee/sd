@@ -217,12 +217,9 @@ class Driver:
         Args:
             charging_points: Lista de puntos de carga
         """
-        for i, cp in enumerate(charging_points, 1):
-            print(f"[{i}] charging point {cp['id']}")
-            print(f"    ├─ Location: {cp['location']}")
-            print(f"    ├─ Price/kWh: €{cp['price_per_kwh']}/kWh")
-            print(f"    ├─ Status: {cp['status']}")
-            print()
+        # 这个方法现在由DriverCLI使用美化表格显示
+        # 保留这个方法以保持向后兼容，但实际显示由DriverCLI处理
+        pass
 
     def _show_charging_history(self, history_data=None):
         """

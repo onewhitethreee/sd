@@ -2,6 +2,11 @@ import threading
 import time
 import uuid
 from typing import TYPE_CHECKING
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Config.ConsolePrinter import get_printer
 
 if TYPE_CHECKING:
     from Core.Central.EV_Central import EV_Central
@@ -21,6 +26,7 @@ class AdminCLI:
         self.running = False
         self.cli_thread = None
         self.logger = central.logger
+        self.printer = get_printer()  # 使用美化输出工具
 
     def start(self):
         """启动交互式命令行界面"""
@@ -66,11 +72,8 @@ class AdminCLI:
 
     def _show_menu(self):
         """显示菜单"""
-        print("\n" + "=" * 60)
-        print("  EV_CENTRAL - ADMIN CONTROL MENU")
-        print("=" * 60)
-
         # 获取基本统计信息
+        stats = {}
         try:
             all_cps = (
                 self.central.message_dispatcher.charging_point_manager.get_all_charging_points()
@@ -80,36 +83,49 @@ class AdminCLI:
             )
             pending = self.central.message_dispatcher.get_pending_authorizations()
 
-            print(f"  Total Charging Points: {len(all_cps)}")
-            print(f"  Total Sessions: {len(all_sessions)}")
-            print(f"  Pending Authorizations: {len(pending)}")
+            stats["Total Charging Points"] = len(all_cps)
+            stats["Total Sessions"] = len(all_sessions)
+            stats["Pending Authorizations"] = len(pending)
         except:
             pass
 
-        print("-" * 60)
-        print("  CHARGING POINT MANAGEMENT:")
-        print("  [1] List all charging points")
-        print("  [2] List available charging points")
-        print("  [3] List active charging points")
-        print("  [4] Show charging point status (requires CP ID)")
-        print()
-        print("  SESSION MANAGEMENT:")
-        print("  [5] List all charging sessions")
-        print("  [6] Show session details (requires Session ID)")
-        print()
-        print("  AUTHORIZATION:")
-        print("  [7] List pending authorizations")
-        print("  [8] Authorize charging point (requires CP ID or 'all')")
-        print()
-        print("  CONTROL:")
-        print("  [9] Stop charging point (requires CP ID or 'all')")
-        print("  [10] Resume charging point (requires CP ID or 'all')")
-        print()
-        print("  SYSTEM:")
-        print("  [11] Show system statistics")
-        print()
-        print("  [0] Exit Admin Console")
-        print("=" * 60)
+        # 构建菜单内容
+        menu_items = {
+            "CHARGING POINT MANAGEMENT": [
+                "[1] List all charging points",
+                "[2] List available charging points",
+                "[3] List active charging points",
+                "[4] Show charging point status (requires CP ID)"
+            ],
+            "SESSION MANAGEMENT": [
+                "[5] List all charging sessions",
+                "[6] Show session details (requires Session ID)"
+            ],
+            "AUTHORIZATION": [
+                "[7] List pending authorizations",
+                "[8] Authorize charging point (requires CP ID or 'all')"
+            ],
+            "CONTROL": [
+                "[9] Stop charging point (requires CP ID or 'all')",
+                "[10] Resume charging point (requires CP ID or 'all')"
+            ],
+            "SYSTEM": [
+                "[11] Show system statistics"
+            ],
+            "EXIT": [
+                "[0] Exit Admin Console"
+            ]
+        }
+        
+        # 使用美化工具显示菜单
+        self.printer.print_menu("EV_CENTRAL - ADMIN CONTROL MENU", menu_items)
+        
+        # 显示统计信息
+        if stats:
+            print()
+            for key, value in stats.items():
+                self.printer.print_key_value(key, str(value), indent=2)
+            print()
 
     def _process_command(self, command: str):
         """
@@ -217,39 +233,35 @@ class AdminCLI:
 
             # 检查是否为空
             if not charging_points:
-                print(empty_message)
+                self.printer.print_warning(empty_message)
                 return
 
             # Decide table header format based on whether to show status column
             show_status = filter_type is None
 
+            # 准备表格数据
+            headers = ["CP ID", "Location", "Price (€/kWh)"]
             if show_status:
-                # Include status column when showing all charging points
-                print(
-                    f"\n{'CP ID':<20} {'Location':<30} {'Status':<15} {'Price(€/kWh)':<15}"
-                )
-                print("-" * 85)
-            else:
+                headers.insert(2, "Status")
 
-                print(f"\n{'CP ID':<20} {'Location':<30} {'Price(€/kWh)':<15}")
-                print("-" * 70)
-
+            rows = []
             for cp in charging_points:
                 cp_id = cp.get("cp_id", "N/A")
                 location = cp.get("location", "N/A")
-                price = cp.get("price_per_kwh", 0.0)
-
+                price = f"€{cp.get('price_per_kwh', 0.0):.4f}"
+                
                 if show_status:
                     status = cp.get("status", "N/A")
-                    print(f"{cp_id:<20} {location:<30} {status:<15} {price:<15.4f}")
+                    rows.append([cp_id, location, status, price])
                 else:
-                    print(f"{cp_id:<20} {location:<30} {price:<15.4f}")
+                    rows.append([cp_id, location, price])
 
-            # Print total
+            # 使用美化表格显示
             count_text = (
                 f"{list_title} Charging Points" if list_title else "Charging Points"
             )
-            print(f"\nTotal: {len(charging_points)} {count_text}")
+            title = f"{count_text} (Total: {len(charging_points)})"
+            self.printer.print_table(title, headers, rows)
 
         except Exception as e:
             error_type = (
@@ -268,23 +280,22 @@ class AdminCLI:
             )
 
             if not sessions:
-                print("No charging session records currently")
+                self.printer.print_warning("No charging session records currently")
                 return
 
-            print(
-                f"\n{'Session ID':<38} {'CP ID':<20} {'Driver ID':<20} {'Status':<15}"
-            )
-            print("-" * 100)
-
+            # 准备表格数据
+            headers = ["Session ID", "CP ID", "Driver ID", "Status"]
+            rows = []
             for session in sessions:
                 session_id = session.get("session_id", "N/A")
                 cp_id = session.get("cp_id", "N/A")
                 driver_id = session.get("driver_id", "N/A")
                 status = session.get("status", "N/A")
+                rows.append([session_id, cp_id, driver_id, status])
 
-                print(f"{session_id:<38} {cp_id:<20} {driver_id:<20} {status:<15}")
-
-            print(f"\nTotal: {len(sessions)} charging sessions")
+            # 使用美化表格显示
+            title = f"Charging Sessions (Total: {len(sessions)})"
+            self.printer.print_table(title, headers, rows)
 
         except Exception as e:
             self.logger.error(f"Failed to get charging sessions list: {e}")
@@ -310,14 +321,14 @@ class AdminCLI:
 
             if response.get("status") == "success":
                 if cp_id == "all":
-                    print(f"✓ Successfully stopped all charging points")
+                    self.printer.print_success("Successfully stopped all charging points")
                 else:
-                    print(f"✓ Successfully stopped charging point: {cp_id}")
+                    self.printer.print_success(f"Successfully stopped charging point: {cp_id}")
 
                 if "message" in response:
-                    print(f"  {response['message']}")
+                    self.printer.print_info(response['message'])
             else:
-                print(f"✗ Operation failed: {response.get('message', 'Unknown error')}")
+                self.printer.print_error(f"Operation failed: {response.get('message', 'Unknown error')}")
 
         except Exception as e:
             self.logger.error(f"Failed to stop charging point: {e}")
@@ -342,14 +353,14 @@ class AdminCLI:
 
             if response.get("status") == "success":
                 if cp_id == "all":
-                    print(f"✓ Successfully resumed all charging points")
+                    self.printer.print_success("Successfully resumed all charging points")
                 else:
-                    print(f"✓ Successfully resumed charging point: {cp_id}")
+                    self.printer.print_success(f"Successfully resumed charging point: {cp_id}")
 
                 if "message" in response:
-                    print(f"  {response['message']}")
+                    self.printer.print_info(response['message'])
             else:
-                print(f"✗ Operation failed: {response.get('message', 'Unknown error')}")
+                self.printer.print_error(f"Operation failed: {response.get('message', 'Unknown error')}")
 
         except Exception as e:
             self.logger.error(f"Failed to resume charging point: {e}")
@@ -363,23 +374,23 @@ class AdminCLI:
             )
 
             if not cp_info:
-                print(f"Error: Cannot find charging point {cp_id}")
+                self.printer.print_error(f"Cannot find charging point {cp_id}")
                 return
 
-            print(f"\nCharging Point Details:")
-            print("-" * 60)
-            print(f"  CP ID:          {cp_info.get('cp_id', 'N/A')}")
-            print(f"  Location:       {cp_info.get('location', 'N/A')}")
-            print(f"  Status:         {cp_info.get('status', 'N/A')}")
-            print(f"  Price:          {cp_info.get('price_per_kwh', 0.0):.4f} €/kWh")
-
+            # 构建详细信息面板
+            details = []
+            details.append(f"CP ID:          {cp_info.get('cp_id', 'N/A')}")
+            details.append(f"Location:       {cp_info.get('location', 'N/A')}")
+            details.append(f"Status:         {cp_info.get('status', 'N/A')}")
+            details.append(f"Price:          {cp_info.get('price_per_kwh', 0.0):.4f} €/kWh")
+            
             last_connection = cp_info.get("last_connection_time")
             if last_connection:
-                print(f"  Last Connection: {last_connection}")
+                details.append(f"Last Connection: {last_connection}")
             else:
-                print(f"  Last Connection: Never connected")
-
-            print("-" * 60)
+                details.append("Last Connection: Never connected")
+            
+            self.printer.print_panel("\n".join(details), title="Charging Point Details", style="blue")
 
         except Exception as e:
             self.logger.error(f"Failed to get charging point status: {e}")
@@ -394,26 +405,27 @@ class AdminCLI:
             )
 
             if not session_info:
-                print(f"Error: Cannot find charging session {session_id}")
+                self.printer.print_error(f"Cannot find charging session {session_id}")
                 return
 
-            print(f"\nCharging Session Details:")
-            print("-" * 60)
-            print(f"  Session ID:     {session_info.get('session_id', 'N/A')}")
-            print(f"  CP ID:          {session_info.get('cp_id', 'N/A')}")
-            print(f"  Driver ID:      {session_info.get('driver_id', 'N/A')}")
-            print(f"  Status:         {session_info.get('status', 'N/A')}")
-            print(f"  Start Time:     {session_info.get('start_time', 'N/A')}")
-
+            # 构建详细信息面板
+            details = []
+            details.append(f"Session ID:     {session_info.get('session_id', 'N/A')}")
+            details.append(f"CP ID:          {session_info.get('cp_id', 'N/A')}")
+            details.append(f"Driver ID:      {session_info.get('driver_id', 'N/A')}")
+            details.append(f"Status:         {session_info.get('status', 'N/A')}")
+            details.append(f"Start Time:     {session_info.get('start_time', 'N/A')}")
+            
             end_time = session_info.get("end_time")
             if end_time:
-                print(f"  End Time:       {end_time}")
-
+                details.append(f"End Time:       {end_time}")
+            
             energy = session_info.get("energy_consumed_kwh", 0.0)
             cost = session_info.get("total_cost", 0.0)
-            print(f"  Energy Used:    {energy:.2f} kWh")
-            print(f"  Total Cost:     {cost:.2f} €")
-            print("-" * 60)
+            details.append(f"Energy Used:    {energy:.2f} kWh")
+            details.append(f"Total Cost:     {cost:.2f} €")
+            
+            self.printer.print_panel("\n".join(details), title="Charging Session Details", style="green")
 
         except Exception as e:
             self.logger.error(f"Failed to get charging session information: {e}")
@@ -441,17 +453,15 @@ class AdminCLI:
                         cp_id_to_auth
                     ):
                         authorized_count += 1
-                        print(f"✓  Authorized charging point: {cp_id_to_auth}")
+                        self.printer.print_success(f"Authorized charging point: {cp_id_to_auth}")
 
-                print(f"\nSuccessfully authorized {authorized_count} charging points")
+                self.printer.print_success(f"Successfully authorized {authorized_count} charging points")
             else:
                 # Authorize specified charging point
                 if self.central.message_dispatcher.authorize_charging_point(cp_id):
-                    print(f"✓  Charging point {cp_id} has been authorized")
+                    self.printer.print_success(f"Charging point {cp_id} has been authorized")
                 else:
-                    print(
-                        f"✗  Unable to authorize charging point {cp_id} (may not be in pending list)"
-                    )
+                    self.printer.print_error(f"Unable to authorize charging point {cp_id} (may not be in pending list)")
 
         except Exception as e:
             self.logger.error(f"Failed to authorize charging point: {e}")
@@ -463,20 +473,20 @@ class AdminCLI:
             pending = self.central.message_dispatcher.get_pending_authorizations()
 
             if not pending:
-                print("No pending charging points for authorization currently")
+                self.printer.print_warning("No pending charging points for authorization currently")
                 return
 
-            print("\nPending Charging Points for Authorization:")
-            print("=" * 60)
+            # 准备表格数据
+            headers = ["CP ID", "Client ID", "Waiting Time", "Action"]
+            rows = []
             for auth_info in pending:
                 cp_id = auth_info["cp_id"]
                 client_id = auth_info["client_id"]
                 pending_time = auth_info["pending_time"]
-                print(f"  CP ID:          {cp_id}")
-                print(f"  Client ID:      {client_id}")
-                print(f"  Waiting Time:   {pending_time:.1f} seconds")
-                print(f"  Action:         Use 'authorize {cp_id}' command to authorize")
-                print("-" * 60)
+                rows.append([cp_id, client_id, f"{pending_time:.1f}s", f"Use 'authorize {cp_id}' to authorize"])
+            
+            title = f"Pending Authorizations (Total: {len(pending)})"
+            self.printer.print_table(title, headers, rows)
 
         except Exception as e:
             self.logger.error(f"Failed to get pending authorizations list: {e}")
@@ -513,24 +523,24 @@ class AdminCLI:
                 if cost:
                     total_cost += cost
 
-            print("\nSystem Statistics:")
-            print("=" * 60)
-
-            print(f"\nCharging Points Statistics:")
-            print(f"  Total:          {len(all_cps)}")
+            # 构建统计信息面板
+            stats_content = []
+            
+            stats_content.append("Charging Points Statistics:")
+            stats_content.append(f"  Total: {len(all_cps)}")
             for status, count in status_count.items():
-                print(f"  {status:<15} {count}")
-
-            print(f"\nCharging Sessions Statistics:")
-            print(f"  Total Sessions: {len(all_sessions)}")
+                stats_content.append(f"  {status:<15} {count}")
+            
+            stats_content.append("\nCharging Sessions Statistics:")
+            stats_content.append(f"  Total Sessions: {len(all_sessions)}")
             for status, count in session_status_count.items():
-                print(f"  {status:<15} {count}")
-
-            print(f"\nOverall Statistics:")
-            print(f"  Total Energy:   {total_energy:.2f} kWh")
-            print(f"  Total Revenue:  {total_cost:.2f} €")
-
-            print("=" * 60)
+                stats_content.append(f"  {status:<15} {count}")
+            
+            stats_content.append("\nOverall Statistics:")
+            stats_content.append(f"  Total Energy:   {total_energy:.2f} kWh")
+            stats_content.append(f"  Total Revenue:  {total_cost:.2f} €")
+            
+            self.printer.print_panel("\n".join(stats_content), title="System Statistics", style="cyan")
 
         except Exception as e:
             self.logger.error(f"Failed to get statistics: {e}")

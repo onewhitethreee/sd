@@ -1,6 +1,11 @@
 import threading
 from typing import TYPE_CHECKING
 import time
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Config.ConsolePrinter import get_printer
 
 if TYPE_CHECKING:
     from Driver.EV_Driver import Driver
@@ -22,6 +27,7 @@ class DriverCLI:
         self.running = False
         self.cli_thread = None
         self.logger = driver.logger
+        self.printer = get_printer()
 
     def start(self):
         """
@@ -73,35 +79,39 @@ class DriverCLI:
         """
         Muestra el menú
         """
-        print("\n" + "=" * 60)
-        print("  EV_DRIVER - DRIVER CONTROL MENU")
-        print("=" * 60)
-        print(f"  Driver ID: {self.driver.args.id_client}")
-
-        # 显示当前充电状态
+        # 获取当前状态信息
+        status_info = []
         with self.driver.lock:
+            status_info.append(f"Driver ID: {self.driver.args.id_client}")
             if self.driver.current_charging_session:
                 session = self.driver.current_charging_session
-                print(f"  Status: CHARGING")
-                print(f"  Session ID: {session.get('session_id', 'N/A')}")
-                print(f"  CP ID: {session.get('cp_id', 'N/A')}")
-                print(f"  Energy: {session.get('energy_consumed_kwh', 0.0):.3f} kWh")
-                print(f"  Cost: €{session.get('total_cost', 0.0):.2f}")
+                status_info.append(f"Status: CHARGING")
+                status_info.append(f"Session ID: {session.get('session_id', 'N/A')}")
+                status_info.append(f"CP ID: {session.get('cp_id', 'N/A')}")
+                status_info.append(f"Energy: {session.get('energy_consumed_kwh', 0.0):.3f} kWh")
+                status_info.append(f"Cost: €{session.get('total_cost', 0.0):.2f}")
             else:
-                print(f"  Status: IDLE")
-
-        print("-" * 60)
-        print("  CHARGING OPERATIONS:")
-        print("  [1] List available charging points")
-        print("  [2] Request charging (requires CP ID)")
-        print("  [3] Stop current charging session")
-        print()
-        print("  INFORMATION:")
-        print("  [4] Show current charging status")
-        print("  [5] Show charging history")
-        print()
-        print("  [0] Exit Driver Application")
-        print("=" * 60)
+                status_info.append("Status: IDLE")
+        
+        # 显示状态面板
+        self.printer.print_panel("\n".join(status_info), title="Current Status", style="cyan")
+        
+        # 显示菜单
+        menu_items = {
+            "CHARGING OPERATIONS": [
+                "[1] List available charging points",
+                "[2] Request charging (requires CP ID)",
+                "[3] Stop current charging session"
+            ],
+            "INFORMATION": [
+                "[4] Show current charging status",
+                "[5] Show charging history"
+            ],
+            "EXIT": [
+                "[0] Exit Driver Application"
+            ]
+        }
+        self.printer.print_menu("EV_DRIVER - DRIVER CONTROL MENU", menu_items)
 
     def _process_command(self, command: str):
         """
@@ -119,11 +129,11 @@ class DriverCLI:
                 self._handle_list_command()
 
             elif command == "2":
-                cp_id = input("Introduce el ID del punto de carga: ").strip()
+                cp_id = input("Enter Charging Point ID: ").strip()
                 if cp_id:
                     self._handle_charge_command(cp_id)
                 else:
-                    print("Error: El ID del punto de carga no puede estar vacío")
+                    self.printer.print_error("Charging Point ID cannot be empty")
 
             elif command == "3":
                 self._handle_stop_command()
@@ -135,7 +145,7 @@ class DriverCLI:
                 self._handle_history_command()
 
             else:
-                print("Por favor, introduce un número válido del menú.")
+                self.printer.print_warning("Please enter a valid menu option number.")
 
         except Exception as e:
             self.logger.error(f"Error al procesar el comando: {e}")
@@ -148,13 +158,20 @@ class DriverCLI:
             self.driver._request_available_cps()
             with self.driver.lock:
                 if self.driver.available_charging_points:
-                    print(f"\nLista de puntos de carga disponibles:")
-                    print("-" * 80)
-                    self.driver._formatter_charging_points(
-                        self.driver.available_charging_points
-                    )
+                    # 准备表格数据
+                    headers = ["#", "CP ID", "Location", "Price (€/kWh)", "Status"]
+                    rows = []
+                    for i, cp in enumerate(self.driver.available_charging_points, 1):
+                        rows.append([
+                            str(i),
+                            cp.get("id", "N/A"),
+                            cp.get("location", "N/A"),
+                            f"€{cp.get('price_per_kwh', 0.0):.4f}",
+                            cp.get("status", "N/A")
+                        ])
+                    self.printer.print_table("Available Charging Points", headers, rows)
                 else:
-                    print("No hay puntos de carga disponibles actualmente.")
+                    self.printer.print_warning("No charging points available currently.")
 
         except Exception as e:
             self.logger.error(f"Error al obtener la lista de puntos de carga: {e}")
@@ -167,9 +184,9 @@ class DriverCLI:
             with self.driver.lock:
                 if self.driver.current_charging_session:
                     session = self.driver.current_charging_session
-                    print(f"Error: Ya hay una sesión de carga activa")
-                    print(f"  ID de sesión: {session.get('session_id')}")
-                    print(f"  Punto de carga: {session.get('cp_id')}")
+                    error_info = f"Session ID: {session.get('session_id')}\nCP ID: {session.get('cp_id')}"
+                    self.printer.print_error("A charging session is already active")
+                    self.printer.print_info(error_info)
                     return
 
             with self.driver.lock:
@@ -177,20 +194,18 @@ class DriverCLI:
                     cp.get("id") for cp in self.driver.available_charging_points
                 ]
                 if cp_id not in available_ids:
-                    print(
-                        f"Advertencia: El punto de carga {cp_id} puede no estar en la lista de disponibles"
-                    )
+                    self.printer.print_warning(f"Charging point {cp_id} may not be in the available list")
                     return
 
             # Enviar solicitud de carga
-            print(f"Enviando solicitud de carga al punto de carga {cp_id}...")
+            self.printer.print_info(f"Sending charging request to charging point {cp_id}...")
             success = self.driver._send_charge_request(cp_id)
 
             if success:
-                print(f"✓ Solicitud de carga enviada")
-                print("Esperando respuesta del sistema Central...")
+                self.printer.print_success("Charging request sent")
+                self.printer.print_info("Waiting for response from Central system...")
             else:
-                print(f"✗ Solicitud de carga fallida")
+                self.printer.print_error("Charging request failed")
 
         except Exception as e:
             self.logger.error(f"Error al enviar solicitud de carga: {e}")
@@ -202,22 +217,22 @@ class DriverCLI:
         try:
             with self.driver.lock:
                 if not self.driver.current_charging_session:
-                    print("No hay ninguna sesión de carga activa")
+                    self.printer.print_warning("No active charging session")
                     return
 
                 session = self.driver.current_charging_session
-                print(f"Deteniendo sesión de carga...")
-                print(f"  ID de sesión: {session.get('session_id')}")
-                print(f"  ID de punto de carga: {session.get('cp_id')}")
+                self.printer.print_info("Stopping charging session...")
+                self.printer.print_key_value("Session ID", session.get('session_id', 'N/A'))
+                self.printer.print_key_value("CP ID", session.get('cp_id', 'N/A'))
 
             # Enviar solicitud de detener carga
             success = self.driver._send_stop_charging_request()
 
             if success:
-                print(f"✓ Solicitud de detener carga enviada")
-                print("Esperando que la sesión de carga finalice...")
+                self.printer.print_success("Stop charging request sent")
+                self.printer.print_info("Waiting for charging session to complete...")
             else:
-                print(f"✗ Solicitud de detener carga fallida")
+                self.printer.print_error("Stop charging request failed")
 
         except Exception as e:
             self.logger.error(f"Error al detener carga: {e}")
@@ -227,31 +242,28 @@ class DriverCLI:
         try:
             with self.driver.lock:
                 if not self.driver.current_charging_session:
-                    print("\nEstado de carga actual: Libre")
-                    print("No hay ninguna sesión de carga activa.")
+                    self.printer.print_info("Current charging status: IDLE")
+                    self.printer.print_warning("No active charging session")
                     return
 
                 session = self.driver.current_charging_session
 
-                print("\nEstado de carga actual:")
-                print("=" * 60)
-                print(f"  ID de sesión:         {session.get('session_id', 'N/A')}")
-                print(f"  ID de punto de carga:       {session.get('cp_id', 'N/A')}")
-                print(f"  Estado:           Charging")
-                print(
-                    f"  Energía consumida:     {session.get('energy_consumed_kwh', 0.0):.3f} kWh"
-                )
-                print(f"  Costo total:       {session.get('total_cost', 0.0):.2f} €")
+                # 构建详细信息面板
+                details = []
+                details.append(f"Session ID:      {session.get('session_id', 'N/A')}")
+                details.append(f"CP ID:           {session.get('cp_id', 'N/A')}")
+                details.append(f"Status:          Charging")
+                details.append(f"Energy Consumed: {session.get('energy_consumed_kwh', 0.0):.3f} kWh")
+                details.append(f"Total Cost:      €{session.get('total_cost', 0.0):.2f}")
 
                 # Calcular duración de carga (si hay tiempo de inicio)
                 if "start_time" in session:
-
                     elapsed = time.time() - session.get("start_time", time.time())
                     minutes = int(elapsed // 60)
                     seconds = int(elapsed % 60)
-                    print(f"  Duración de carga:       {minutes} min {seconds} seg")
+                    details.append(f"Duration:        {minutes} min {seconds} seg")
 
-                print("=" * 60)
+                self.printer.print_panel("\n".join(details), title="Current Charging Status", style="green")
 
         except Exception as e:
             self.logger.error(f"Error al obtener estado de carga: {e}")
@@ -261,11 +273,11 @@ class DriverCLI:
         Maneja el comando de historial - Consulta y muestra el historial de carga
         """
         try:
-            print("\nConsultando historial de carga...")
+            self.printer.print_info("Requesting charging history...")
 
             self.driver._request_charging_history()
 
             # Nota: La respuesta llegará de forma asíncrona y será manejada por DriverMessageDispatcher._handle_charging_history_response
 
         except Exception as e:
-            print(f"\n✗  Error al consultar historial de carga: {e}")
+            self.printer.print_error(f"Failed to request charging history: {e}")
