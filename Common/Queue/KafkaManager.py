@@ -157,7 +157,8 @@ class KafkaManager:
                     self.logger.error(f"Error processing message: {e}")
 
         except Exception as e:
-            self.logger.error(f"Error consuming messages: {e}")
+            # self.logger.error(f"Error consuming messages: {e}")
+            pass
 
 
     def start(self):

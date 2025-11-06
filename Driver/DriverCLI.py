@@ -107,6 +107,9 @@ class DriverCLI:
                 "[4] Show current charging status",
                 "[5] Show charging history"
             ],
+            "AUTO MODE": [
+                "[6] Start auto-charging (load from file)"
+            ],
             "EXIT": [
                 "[0] Exit Driver Application"
             ]
@@ -144,6 +147,9 @@ class DriverCLI:
             elif command == "5":
                 self._handle_history_command()
 
+            elif command == "6":
+                self._handle_auto_mode_command()
+
             else:
                 self.printer.print_warning("Please enter a valid menu option number.")
 
@@ -156,6 +162,8 @@ class DriverCLI:
         """
         try:
             self.driver._request_available_cps()
+            # Wait for response from Kafka 
+            time.sleep(1.5)
             with self.driver.lock:
                 if self.driver.available_charging_points:
                     # 准备表格数据
@@ -281,3 +289,52 @@ class DriverCLI:
 
         except Exception as e:
             self.printer.print_error(f"Failed to request charging history: {e}")
+
+    def _handle_auto_mode_command(self):
+        """
+        Maneja el comando de modo automático - Procesa el archivo de servicios
+        """
+        try:
+            # Check if there's an active charging session
+            with self.driver.lock:
+                if self.driver.current_charging_session:
+                    self.printer.print_warning("Cannot start auto-mode while a charging session is active")
+                    return
+
+                # Check if service queue is already being processed
+                if self.driver.service_queue:
+                    self.printer.print_warning("Auto-mode is already running")
+                    self.printer.print_info(f"Remaining services: {len(self.driver.service_queue)}")
+                    return
+
+            # Prompt user for file path
+            self.printer.print_info("Enter service file path (or press ENTER for default 'test_services.txt'):")
+            file_path = input().strip()
+
+            # Use default if empty
+            if not file_path:
+                file_path = "test_services.txt"
+
+            # Load services from specified file
+            services = self.driver._load_services_from_file(file_path)
+
+            if not services:
+                self.printer.print_warning(f"No services found in file: {file_path}")
+                self.printer.print_info("Please ensure the file exists and contains charging point IDs (one per line)")
+                return
+
+            # Start auto mode
+            self.printer.print_success(f"Starting auto-mode with {len(services)} charging point(s) from '{file_path}'")
+            self.printer.print_info("Auto-mode will process services automatically")
+
+            # Start processing services in a separate thread to not block CLI
+            auto_thread = threading.Thread(
+                target=self.driver._auto_mode,
+                args=(services,),
+                daemon=True
+            )
+            auto_thread.start()
+
+        except Exception as e:
+            self.logger.error(f"Error starting auto-mode: {e}")
+            self.printer.print_error(f"Failed to start auto-mode: {e}")
