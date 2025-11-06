@@ -37,18 +37,18 @@ class AdminCLI:
         self.running = True
         self.cli_thread = threading.Thread(target=self._run_cli, daemon=True)
         self.cli_thread.start()
-        self.logger.info("Admin CLI has started")
+        self.logger.debug("Admin CLI has started")
 
     def stop(self):
         """Stop interactive command line interface"""
         self.running = False
         if self.cli_thread:
             self.cli_thread.join(timeout=2)
-        self.logger.info("Admin CLI has stopped")
+        self.logger.debug("Admin CLI has stopped")
 
     def _run_cli(self):
         """运行交互式命令循环"""
-        self.logger.info("Admin CLI ready. Press ENTER to show menu...")
+        self.logger.debug("Admin CLI ready. Press ENTER to show menu...")
 
         while self.running:
             try:

@@ -45,7 +45,7 @@ class EV_CP_E:
 
             # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
             if not self.args.debug_port:
-                listen_address = os.getenv("IP_PORT_EV_CP_E")
+                listen_address = os.getenv("IP_PORT_EV_CP_E") 
             else:
                 listen_address = f"localhost:{self.args.debug_port}"
             listen_host = listen_address.split(":")[0] if listen_address else "localhost"
@@ -166,7 +166,7 @@ class EV_CP_E:
 
             self.engine_listen_address = (actual_host, actual_port)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Monitor server started on {actual_host}:{actual_port}"
             )
 
@@ -221,7 +221,7 @@ class EV_CP_E:
                     replication_factor=1
                 )
 
-                self.logger.info("Kafka producer initialized successfully")
+                self.logger.debug("Kafka producer initialized successfully")
                 return True
             else:
                 self.logger.warning("Failed to initialize Kafka producer")
@@ -233,7 +233,7 @@ class EV_CP_E:
 
     def _shutdown_system(self):
         """关闭系统"""
-        self.logger.info("Starting system shutdown...")
+        self.logger.debug("Starting system shutdown...")
         self.running = False
 
         if self.is_charging:
@@ -249,7 +249,7 @@ class EV_CP_E:
         if self.kafka_manager:
             self.kafka_manager.stop()
 
-        self.logger.info("System shutdown complete")
+        self.logger.debug("System shutdown complete")
 
     def _start_charging_session(
         self,
@@ -287,7 +287,7 @@ class EV_CP_E:
             daemon=True, 
         )
         charging_thread.start()
-        self.logger.info(
+        self.logger.debug(
             f"Charging session {self.current_session['session_id']} "
         )
         return True
@@ -330,7 +330,7 @@ class EV_CP_E:
 
     def _charging_process(self, session_id_to_track: str):
         """充电过程模拟（30秒后自动停止）"""
-        self.logger.info(f"Charging process started for session {session_id_to_track}.")
+        self.logger.debug(f"Charging process started for session {session_id_to_track}.")
 
 
         charging_start_time = time.time()
@@ -371,7 +371,7 @@ class EV_CP_E:
                     f"Error in charging process for session {session_id_to_track}: {e}"
                 )
                 break
-        self.logger.info(f"Charging process ended for session {session_id_to_track}.")
+        self.logger.debug(f"Charging process ended for session {session_id_to_track}.")
 
     def _send_charging_data(self):
         """发送充电数据到Monitor和Kafka"""
@@ -458,22 +458,22 @@ class EV_CP_E:
         try:
             self.engine_cli = EngineCLI(self, self.logger)
             self.engine_cli.start()
-            self.logger.info("Engine CLI initialized successfully")
-            self.logger.info("Press ENTER to show interactive menu for manual operations")
+            self.logger.debug("Engine CLI initialized successfully")
+            self.logger.debug("Press ENTER to show interactive menu for manual operations")
         except Exception as e:
             self.logger.error(f"Failed to initialize Engine CLI: {e}")
             self.engine_cli = None
 
     def initialize_system(self):
         """初始化系统"""
-        self.logger.info("Initializing EV_CP_E module")
+        self.logger.debug("Initializing EV_CP_E module")
         return self._init_connections()
 
     def start(self):
-        self.logger.info(
+        self.logger.debug(
             f"Will listen for Monitor on {self.engine_listen_address[0]}:{self.engine_listen_address[1]}"
         )
-        self.logger.info(
+        self.logger.debug(
             f"Will connect to Broker at {self.args.broker[0]}:{self.args.broker[1]}"
         )
 
@@ -491,7 +491,7 @@ class EV_CP_E:
                 time.sleep(0.1)  # Keep running
 
         except KeyboardInterrupt:
-            self.logger.info("Shutting down EV_CP_E")
+            self.logger.debug("Shutting down EV_CP_E")
             self._shutdown_system()
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}")

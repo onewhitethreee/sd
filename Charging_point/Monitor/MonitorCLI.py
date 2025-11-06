@@ -39,7 +39,7 @@ class MonitorCLI:
             target=self._run_cli, daemon=True, name="MonitorCLI"
         )
         self.cli_thread.start()
-        self.logger.info("Monitor CLI started")
+        self.logger.debug("Monitor CLI started")
 
     def stop(self):
         """Detiene el CLI"""

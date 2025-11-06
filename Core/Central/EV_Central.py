@@ -156,7 +156,7 @@ class EV_Central:
 
             if self.kafka_manager.init_producer():
                 # 创建Central需要的所有Kafka topics
-                self.logger.info("Creating required Kafka topics...")
+                self.logger.debug("Creating required Kafka topics...")
 
                 # 充电会话相关topics（Engine -> Central）
                 self.kafka_manager.create_topic_if_not_exists(
@@ -195,7 +195,7 @@ class EV_Central:
                     replication_factor=1
                 )
 
-                self.logger.info("Kafka producer initialized successfully")
+                self.logger.debug("Kafka producer initialized successfully")
                 return True
             else:
                 self.logger.error("Failed to initialize Kafka producer")
@@ -251,7 +251,7 @@ class EV_Central:
             )
 
             if success1 and success2 and success3 and success4 and success5:
-                self.logger.info(
+                self.logger.debug(
                     "Kafka consumers initialized successfully (charging_session_data, charging_session_complete, driver_requests)"
                 )
                 return True
@@ -315,7 +315,7 @@ class EV_Central:
             self.logger.error(f"Error handling Driver request from Kafka: {e}")
 
     def initialize_systems(self):
-        self.logger.info("Initializing systems...")
+        self.logger.debug("Initializing systems...")
         self._init_socket_server()
 
         self._init_database()
@@ -342,14 +342,14 @@ class EV_Central:
         try:
             self.admin_cli = AdminCLI(self)
             self.admin_cli.start()
-            self.logger.info("Admin CLI initialized successfully")
+            self.logger.debug("Admin CLI initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize Admin CLI: {e}")
             # 不要因为CLI失败而退出系统
             self.admin_cli = None
 
     def shutdown_systems(self):
-        self.logger.info("Shutting down systems...")
+        self.logger.debug("Shutting down systems...")
         if self.admin_cli:
             self.admin_cli.stop()
         if self.socket_server:
@@ -388,7 +388,7 @@ if __name__ == "__main__":
         ev_central.logger.info("EV Central main loop finished.")
 
     except KeyboardInterrupt:
-        ev_central.logger.info("Shutting down EV Central due to KeyboardInterrupt.")
+        ev_central.logger.debug("Shutting down EV Central due to KeyboardInterrupt.")
     finally:
         ev_central.shutdown_systems()
         sys.exit(0)

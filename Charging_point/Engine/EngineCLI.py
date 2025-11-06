@@ -42,13 +42,13 @@ class EngineCLI:
             target=self._run_cli, daemon=True, name="EngineCLI"
         )
         self.cli_thread.start()
-        self.logger.info("Engine CLI started")
+        self.logger.debug("Engine CLI started")
 
     def stop(self):
         """Detiene el CLI"""
         self.running = False
         if self.cli_thread:
-            self.logger.info("Engine CLI stopped")
+            self.logger.debug("Engine CLI stopped")
 
     def _show_menu(self):
         """Muestra el menú del CLI"""

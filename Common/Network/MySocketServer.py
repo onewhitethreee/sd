@@ -271,7 +271,7 @@ class MySocketServer:
         """
         Detener el servidor socket
         """
-        self.logger.info("Stopping socket server...")
+        self.logger.debug("Stopping socket server...")
         self.running_event.clear()  # Detener el bucle principal del servidor
 
         with self.clients_lock:
@@ -295,7 +295,7 @@ class MySocketServer:
             self.server_socket = None  
             self.logger.debug("Server listening socket closed.")
 
-        self.logger.info("Socket server stopped.")
+        self.logger.debug("Socket server stopped.")
 
 
     def has_active_clients(self) -> bool:
@@ -313,10 +313,6 @@ class MySocketServer:
         if self.server_socket:
             return self.server_socket.getsockname()[1]
         return self.port
-
-    
-
-    
 
 
 if __name__ == "__main__":

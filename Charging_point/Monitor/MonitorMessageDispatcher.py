@@ -124,7 +124,7 @@ class MonitorMessageDispatcher:
 
         status = message.get(MessageFields.STATUS)
         if status == ResponseStatus.SUCCESS:
-            self.logger.info("✓  Authentication successful. Now can register.")
+            self.logger.debug("✓  Authentication successful. Now can register.")
             # 设置授权标志
             self.monitor._authorized = True
             # 认证成功后，自动尝试注册
@@ -165,7 +165,7 @@ class MonitorMessageDispatcher:
 
         status = message.get(MessageFields.STATUS)
         if status == ResponseStatus.SUCCESS:
-            self.logger.info("Registration successful.")
+            self.logger.debug("Registration successful.")
             # 设置注册确认标志
             self.monitor._registration_confirmed = True
 
