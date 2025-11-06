@@ -82,6 +82,10 @@ class EV_CP_E:
         # Cuando está en True, get_current_status() siempre retorna FAULTY
         self._manual_faulty_mode = False
 
+        # Flag para indicar que el CP está en estado STOPPED (servicio suspendido por administrador)
+        # Cuando está en True, no se pueden iniciar nuevas sesiones de carga
+        self.cp_service_stopped = False
+
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
         self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
         self.printer = get_printer()  # 使用美化输出工具

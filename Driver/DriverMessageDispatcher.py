@@ -142,9 +142,10 @@ class DriverMessageDispatcher:
                         f"ID de sesión no coincide: se esperaba {current_session_id}, se recibió {session_id}"
                     )
             else:
-                self.logger.warning(
-                    f"No hay sesiones de carga activas, no se puede actualizar el estado. ID de sesión recibido: {session_id}"
-                )
+                # self.logger.warning(
+                #     f"No hay sesiones de carga activas, no se puede actualizar el estado. ID de sesión recibido: {session_id}"
+                # )
+                pass
 
         return True
 

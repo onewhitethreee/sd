@@ -1175,9 +1175,9 @@ class MessageDispatcher:
         return success
 
     def _send_stop_charging_to_monitor(self, cp_id, session_id, driver_id):
-        """向Monitor发送停止充电命令"""
+        """向Monitor发送停止充电会话命令（不是停止CP服务）"""
         message = self._build_notification_message(
-            "stop_charging_command",
+            MessageTypes.STOP_CHARGING_SESSION_COMMAND,
             cp_id=cp_id,
             session_id=session_id,
             driver_id=driver_id,
@@ -1414,7 +1414,7 @@ class MessageDispatcher:
         # 向Monitor发送停止命令
         if monitor_client_id:
             stop_command_message = self._build_notification_message(
-                "stop_cp_command", cp_id=cp_id
+                MessageTypes.STOP_CP_COMMAND, cp_id=cp_id
             )
             self._send_message_to_client(monitor_client_id, stop_command_message)
 
@@ -1446,7 +1446,7 @@ class MessageDispatcher:
         # 向Monitor发送恢复命令
         if monitor_client_id:
             resume_command_message = self._build_notification_message(
-                "resume_cp_command", cp_id=cp_id
+                MessageTypes.RESUME_CP_COMMAND, cp_id=cp_id
             )
             self._send_message_to_client(monitor_client_id, resume_command_message)
 

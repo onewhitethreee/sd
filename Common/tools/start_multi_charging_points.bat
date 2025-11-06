@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set /a loop_count=3
+set /a loop_count=10
 set /a start_port=5003
 set start_id=cp_001
 

@@ -11,10 +11,10 @@ class MessageTypes:
     # ==================== Constantes de mensajes de Engine ====================
 
     # Constante que son enviadas por el Monitor al Engine
-    INIT_CP_ID = "init_cp_id"  
+    INIT_CP_ID = "init_cp_id"
     HEALTH_CHECK_REQUEST = "health_check_request"
     START_CHARGING_COMMAND = "start_charging_command"
-    STOP_CHARGING_COMMAND = "stop_charging_command"
+    STOP_CHARGING_COMMAND = "stop_charging_command" 
 
     # Constante que son enviadas por el Engine al Monitor
     HEALTH_CHECK_RESPONSE = "health_check_response"
@@ -36,12 +36,15 @@ class MessageTypes:
     STATUS_UPDATE_RESPONSE = "status_update_response"
     CHARGE_COMPLETION_RESPONSE = "charge_completion_response"
 
+    # Constante que son enviadas por el Central al Monitor
+    STOP_CHARGING_SESSION_COMMAND = "stop_charging_session_command"  # Central -> Monitor (detener sesión de carga, estado→ACTIVE)
+    STOP_CP_COMMAND = "stop_cp_command"  # Central -> Monitor (detener servicio del CP, estado→STOPPED)
+    RESUME_CP_COMMAND = "resume_cp_command"  # Central -> Monitor (reanudar servicio del CP, estado→ACTIVE)
+
     # Constante que son enviadas por el Monitor al Central
     AUTH_RESPONSE = "auth_response"
     REGISTER_RESPONSE = "register_response"
     HEARTBEAT_RESPONSE = "heartbeat_response"
-    STOP_CP_COMMAND = "stop_cp_command"
-    RESUME_CP_COMMAND = "resume_cp_command"
 
     # ==================== Constantes de mensajes de Driver ====================
 

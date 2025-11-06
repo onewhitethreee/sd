@@ -60,6 +60,8 @@ class EngineCLI:
         status_text = f"Status: {status}"
         if self.engine._manual_faulty_mode:
             status_text += " ⚠️  [MANUAL FAULTY MODE ACTIVE]"
+        if self.engine.cp_service_stopped:
+            status_text += " 🚫 [CP SERVICE STOPPED]"
         status_info.append(status_text)
         status_info.append(f"Charging: {'YES' if self.engine.is_charging else 'NO'}")
 
@@ -149,6 +151,10 @@ class EngineCLI:
         if self.engine._manual_faulty_mode:
             self.printer.print_error("Cannot start charging: Engine in MANUAL FAULTY mode")
             self.printer.print_info("Simulate recovery first (option [4])")
+            return
+        if self.engine.cp_service_stopped:
+            self.printer.print_error("Cannot start charging: CP service is STOPPED by administrator")
+            self.printer.print_info("Charging point is out of service. Contact administrator or use 'resume' command from Central")
             return
         if self.engine.is_charging:
             self.printer.print_warning("Vehicle already connected and charging!")
@@ -291,6 +297,8 @@ class EngineCLI:
         status_details.append(f"Engine Status: {status}")
         if self.engine._manual_faulty_mode:
             status_details.append("⚠️  MANUAL FAULTY MODE: ACTIVE (use option [4] to recover)")
+        if self.engine.cp_service_stopped:
+            status_details.append("🚫 CP SERVICE STOPPED: Charging not allowed (admin must resume from Central)")
         
         status_details.append(f"Running: {self.engine.running}")
         status_details.append(f"Charging: {self.engine.is_charging}")
