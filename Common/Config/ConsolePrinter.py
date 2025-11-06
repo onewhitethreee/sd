@@ -318,6 +318,125 @@ class ConsolePrinter:
                 print(f"  {parent}")
                 for child in children:
                     print(f"    ├─ {child}")
+    
+    def print_charging_ticket(self, session_data: dict):
+        """
+        打印充电完成票据（Ticket）
+        
+        Args:
+            session_data: 包含充电会话信息的字典，应包含：
+                - session_id: 会话ID
+                - cp_id: 充电桩ID（可选）
+                - driver_id: 司机ID（可选）
+                - energy_consumed_kwh: 消耗电量（kWh）
+                - total_cost: 总费用（欧元）
+                - start_time: 开始时间（可选）
+                - end_time: 结束时间（可选）
+        """
+        from datetime import datetime
+        
+        # 提取数据，设置默认值
+        session_id = session_data.get("session_id", "N/A")
+        cp_id = session_data.get("cp_id", "N/A")
+        driver_id = session_data.get("driver_id", "N/A")
+        energy = session_data.get("energy_consumed_kwh", 0.0)
+        cost = session_data.get("total_cost", 0.0)
+        start_time = session_data.get("start_time", "")
+        end_time = session_data.get("end_time", "")
+        
+        # 格式化时间
+        if start_time:
+            try:
+                if isinstance(start_time, str):
+                    start_str = start_time
+                else:
+                    start_str = datetime.fromtimestamp(start_time).strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                start_str = str(start_time)
+        else:
+            start_str = "N/A"
+        
+        if end_time:
+            try:
+                if isinstance(end_time, str):
+                    end_str = end_time
+                else:
+                    end_str = datetime.fromtimestamp(end_time).strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                end_str = str(end_time)
+        else:
+            end_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 构建票据内容（类似真实收据格式）
+        ticket_lines = []
+        
+        # 使用主题颜色
+        title_style = self.THEME["panel_title"]
+        key_style = self.THEME["table_header"]
+        value_style = self.THEME["info"]
+        separator_style = self.THEME["separator"]
+        
+        # 标题部分
+        ticket_lines.append(f"[{title_style}]{'EV CHARGING SERVICE':^50}[/{title_style}]")
+        ticket_lines.append(f"[{separator_style}]{'─' * 50}[/{separator_style}]")
+        ticket_lines.append("")
+        
+        # 会话信息
+        ticket_lines.append(f"[{title_style}]Session Information[/{title_style}]")
+        ticket_lines.append(f"  [{key_style}]Session ID:[/{key_style}]     [{value_style}]{session_id}[/{value_style}]")
+        if cp_id != "N/A":
+            ticket_lines.append(f"  [{key_style}]Charging Point:[/{key_style}]  [{value_style}]{cp_id}[/{value_style}]")
+        if driver_id != "N/A":
+            ticket_lines.append(f"  [{key_style}]Driver ID:[/{key_style}]     [{value_style}]{driver_id}[/{value_style}]")
+        ticket_lines.append("")
+        
+        # 充电详情
+        ticket_lines.append(f"[{title_style}]Charging Details[/{title_style}]")
+        ticket_lines.append(f"  [{key_style}]Start Time:[/{key_style}]      [{value_style}]{start_str}[/{value_style}]")
+        ticket_lines.append(f"  [{key_style}]End Time:[/{key_style}]        [{value_style}]{end_str}[/{value_style}]")
+        ticket_lines.append(f"  [{key_style}]Energy Consumed:[/{key_style}] [{value_style}]{energy:.3f} kWh[/{value_style}]")
+        ticket_lines.append("")
+        
+        # 分隔线
+        ticket_lines.append(f"[{separator_style}]{'─' * 50}[/{separator_style}]")
+        ticket_lines.append("")
+        
+        # 支付摘要
+        ticket_lines.append(f"[{title_style}]Payment Summary[/{title_style}]")
+        ticket_lines.append(f"  [{key_style}]Total Cost:[/{key_style}]      [{value_style}]€{cost:.2f}[/{value_style}]")
+        ticket_lines.append("")
+        
+        # 底部
+        ticket_lines.append(f"[{separator_style}]{'─' * 50}[/{separator_style}]")
+        
+        # 打印票据
+        ticket_content = "\n".join(ticket_lines)
+        if self.use_rich:
+            # 使用Panel显示票据，使其更美观
+            panel = Panel(
+                ticket_content,
+                title="Charging Completed",
+                box=box.DOUBLE,
+                border_style=self.THEME["panel_border"],
+                padding=(1, 2)
+            )
+            self.console.print(panel)
+        else:
+            # Fallback: 简单格式
+            print("\n" + "=" * 50)
+            print("CHARGING RECEIPT".center(50))
+            print("=" * 50)
+            print(f"Session ID: {session_id}")
+            if cp_id != "N/A":
+                print(f"Charging Point: {cp_id}")
+            if driver_id != "N/A":
+                print(f"Driver ID: {driver_id}")
+            print(f"Start Time: {start_str}")
+            print(f"End Time: {end_str}")
+            print(f"Energy Consumed: {energy:.3f} kWh")
+            print(f"Total Cost: €{cost:.2f}")
+            print("=" * 50)
+            
 
 
 # 全局实例，方便使用

@@ -17,6 +17,7 @@ from Common.Config.Status import Status
 from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Charging_point.Engine.EngineMessageDispatcher import EngineMessageDispatcher
 from Charging_point.Engine.EngineCLI import EngineCLI
+from Common.Config.ConsolePrinter import get_printer
 
 
 class EV_CP_E:
@@ -83,6 +84,7 @@ class EV_CP_E:
 
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
         self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
+        self.printer = get_printer()  # 使用美化输出工具
 
     @property
     def is_charging(self):
@@ -306,14 +308,23 @@ class EV_CP_E:
         final_session_data["duration"] = (
             final_session_data["end_time"] - final_session_data["start_time"]
         )
+        
+        # 准备ticket数据
+        ticket_data = {
+            "session_id": session_id,
+            "cp_id": self.cp_id if self.cp_id else "N/A",
+            "driver_id": driver_id,
+            "energy_consumed_kwh": final_session_data['energy_consumed_kwh'],
+            "total_cost": final_session_data['total_cost'],
+            "start_time": final_session_data.get("start_time"),
+            "end_time": final_session_data["end_time"],
+        }
 
-        self.current_session = None  
-        self.logger.info(f"Charging session {session_id} completed:")
-        self.logger.info(f"  Duration: {final_session_data['duration']:.1f} seconds")
-        self.logger.info(
-            f"  Energy consumed: {final_session_data['energy_consumed_kwh']:.2f} kWh"
-        )
-        self.logger.info(f"  Total cost: €{final_session_data['total_cost']:.2f}")
+        self.current_session = None
+        
+        # 使用Rich美化显示充电完成票据
+        self.printer.print_charging_ticket(ticket_data)
+        
         self._send_charging_completion(final_session_data)  # Send completion notification
         return True
 
@@ -323,7 +334,7 @@ class EV_CP_E:
 
 
         charging_start_time = time.time()
-        MAX_CHARGING_DURATION = os.getenv("MAX_CHARGING_DURATION", 30)  
+        MAX_CHARGING_DURATION = int(os.getenv("MAX_CHARGING_DURATION", 30))
 
  
         while (

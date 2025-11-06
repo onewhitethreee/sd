@@ -1,9 +1,11 @@
 import time
 import sys
 import os
+from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
+from Common.Config.ConsolePrinter import get_printer
 
 
 class DriverMessageDispatcher:
@@ -18,6 +20,7 @@ class DriverMessageDispatcher:
         """
         self.logger = logger
         self.driver = driver
+        self.printer = get_printer()  # 使用美化输出工具
 
         # Mensaje viene de kafka Consumer en EV_Driver
         self.handlers = {
@@ -190,11 +193,26 @@ class DriverMessageDispatcher:
                 session_id = message.get(MessageFields.SESSION_ID)
                 energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
                 total_cost = message.get(MessageFields.TOTAL_COST, 0)
-
-                self.logger.info(f"✓  Charging completed!")
-                self.logger.info(f"Session ID: {session_id}")
-                self.logger.info(f"Total Energy: {energy_consumed_kwh:.3f}kWh")
-                self.logger.info(f"Total Cost: €{total_cost:.2f}")
+                
+                # 获取当前会话的完整信息
+                current_session = self.driver.current_charging_session
+                cp_id = current_session.get("cp_id", "N/A")
+                driver_id = self.driver.args.id_client if hasattr(self.driver.args, 'id_client') else "N/A"
+                start_time = current_session.get("start_time")
+                
+                # 构建完整的会话数据用于ticket
+                ticket_data = {
+                    "session_id": session_id,
+                    "cp_id": cp_id,
+                    "driver_id": driver_id,
+                    "energy_consumed_kwh": energy_consumed_kwh,
+                    "total_cost": total_cost,
+                    "start_time": start_time,
+                    "end_time": time.time(),  # 当前时间作为结束时间
+                }
+                
+                # 使用Rich美化显示充电完成票据
+                self.printer.print_charging_ticket(ticket_data)
 
                 self.driver.current_charging_session = None
 
