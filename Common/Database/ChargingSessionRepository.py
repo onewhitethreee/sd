@@ -34,7 +34,7 @@ class ChargingSessionRepository(BaseRepository):
             """
             self.execute_update(query, (session_id, cp_id, driver_id, start_time, "in_progress"))
 
-            self.logger.info(f"Sesión de carga {session_id} creada con éxito")
+            self.logger.debug(f"Sesión de carga {session_id} creada con éxito")
             return True
         except Exception as e:
             self.logger.error(f"Error al crear la sesión de carga {session_id}: {e}")
@@ -90,7 +90,7 @@ class ChargingSessionRepository(BaseRepository):
             query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
 
             self.execute_update(query, params)
-            self.logger.info(f"Sesión de carga {session_id} actualizada con éxito")
+            self.logger.debug(f"Sesión de carga {session_id} actualizada con éxito")
             return True
         except Exception as e:
             self.logger.error(f"Error al actualizar la sesión de carga {session_id}: {e}")
@@ -195,7 +195,7 @@ class ChargingSessionRepository(BaseRepository):
                 for row in rows
             ]
         except Exception as e:
-            self.logger.error(f"获取所有充电会话失败: {e}")
+            self.logger.error(f"Failed to get all charging sessions: {e}")
             return []
 
     def get_active_sessions_by_charging_point(self, cp_id):

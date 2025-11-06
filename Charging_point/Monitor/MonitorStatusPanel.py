@@ -1,7 +1,7 @@
 """
 Monitor状态监控面板
 Windows兼容的实时终端UI,用于显示Monitor的当前状态
-使用os.system('cls')和colorama库实现跨平台兼容
+使用Rich库实现跨平台兼容的美化显示
 """
 
 import os
@@ -11,14 +11,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 try:
-    from colorama import Fore, Back, Style, init
-    # 初始化colorama以支持Windows
-    init(autoreset=True)
-    COLORAMA_AVAILABLE = True
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.layout import Layout
+    from rich.text import Text
+    from rich.live import Live
+    from rich import box
+    RICH_AVAILABLE = True
 except ImportError:
-    COLORAMA_AVAILABLE = False
-    print("警告: colorama未安装,将使用无颜色模式")
-    print("安装命令: pip install colorama")
+    RICH_AVAILABLE = False
+    print("Warning: rich not installed, will use simple mode")
+    print("Install command: pip install rich")
 
 if TYPE_CHECKING:
     from Charging_point.Monitor.EC_CP_M import EV_CP_M
@@ -39,18 +42,20 @@ class MonitorStatusPanel:
         self.running = False
         self.panel_thread = None
         self.update_interval = 1  # 刷新间隔(秒)
-        self.use_colors = COLORAMA_AVAILABLE
+        self.use_rich = RICH_AVAILABLE
+        if self.use_rich:
+            self.console = Console()
 
     def start(self):
         """启动状态面板"""
         if self.running:
-            self.logger.warning("Monitor状态面板已经在运行中")
+            self.logger.warning("Monitor status panel is already running")
             return
 
         self.running = True
         self.panel_thread = threading.Thread(target=self._run_panel, daemon=True)
         self.panel_thread.start()
-        self.logger.info("Monitor状态面板已启动")
+        self.logger.debug("Monitor status panel started")
 
     def stop(self):
         """停止状态面板"""
@@ -59,69 +64,96 @@ class MonitorStatusPanel:
             self.panel_thread.join(timeout=2)
         # 清屏后显示退出消息
         self._clear_screen()
-        print("\nMonitor状态面板已停止")
-        self.logger.info("Monitor状态面板已停止")
+
+        self.logger.debug("Monitor status panel stopped")
 
     def _clear_screen(self):
         """清屏 - Windows/Linux兼容"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        if self.use_rich:
+            self.console.clear()
+        else:
+            os.system("cls" if os.name == "nt" else "clear")
 
-    def _get_color(self, status: str) -> str:
-        """根据状态返回颜色代码"""
-        if not self.use_colors:
-            return ""
-
-        status_colors = {
-            "ACTIVE": Fore.GREEN,
-            "FAULTY": Fore.RED,
-            "CHARGING": Fore.YELLOW,
-            "DISCONNECTED": Fore.CYAN,
-            "STOPPED": Fore.WHITE,
+    def _get_status_color(self, status: str) -> str:
+        """根据状态返回Rich颜色代码（使用全局主题）"""
+        from Common.Config.ConsolePrinter import ConsolePrinter
+        theme = ConsolePrinter.get_theme()
+        
+        status_color_map = {
+            "ACTIVE": theme.get("status_active", "dim"),
+            "FAULTY": theme.get("status_faulty", "dim"),
+            "CHARGING": theme.get("status_charging", "dim"),
+            "DISCONNECTED": theme.get("status_disconnected", "dim"),
+            "STOPPED": theme.get("status_stopped", "dim"),
         }
-        return status_colors.get(status, Fore.WHITE)
-
-    def _reset_color(self) -> str:
-        """重置颜色"""
-        if not self.use_colors:
-            return ""
-        return Style.RESET_ALL
+        return status_color_map.get(status, "dim")
 
     def _run_panel(self):
         """运行面板主循环"""
         try:
-            print("\n正在启动Monitor状态面板...")
-            print("按 Ctrl+C 退出面板\n")
+            if self.use_rich:
+                self.console.print("[bold blue]Starting Monitor status panel...[/bold blue]")
+                self.console.print("[dim]Press Ctrl+C to exit the panel[/dim]\n")
+            else:
+                print("\nStarting Monitor status panel...")
+                print("Press Ctrl+C to exit the panel\n")
             time.sleep(1)
 
-            while self.running:
-                try:
-                    self._draw_panel()
-                    time.sleep(self.update_interval)
-                except KeyboardInterrupt:
-                    self.logger.info("检测到键盘中断,正在停止面板...")
-                    self.running = False
-                    break
-                except Exception as e:
-                    self.logger.error(f"绘制面板时出错: {e}")
-                    time.sleep(2)
+            if self.use_rich:
+                # 使用Rich的Live功能实现实时更新
+                with Live(self._create_rich_panel(), refresh_per_second=1, screen=True) as live:
+                    while self.running:
+                        try:
+                            live.update(self._create_rich_panel())
+                            time.sleep(self.update_interval)
+                        except KeyboardInterrupt:
+                            self.logger.debug("Keyboard interrupt detected, stopping panel...")
+                            self.running = False
+                            break
+                        except Exception as e:
+                            self.logger.error(f"Error drawing panel: {e}")
+                            time.sleep(2)
+            else:
+                # 降级到简单模式
+                while self.running:
+                    try:
+                        self._draw_simple_panel()
+                        time.sleep(self.update_interval)
+                    except KeyboardInterrupt:
+                        self.logger.debug("Keyboard interrupt detected, stopping panel...")
+                        self.running = False
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error drawing panel: {e}")
+                        time.sleep(2)
 
         except Exception as e:
-            self.logger.error(f"Monitor状态面板运行出错: {e}")
+            self.logger.error(f"Monitor status panel runtime error: {e}")
         finally:
             self._clear_screen()
-            print("\nMonitor状态面板已退出")
+            if self.use_rich:
+                self.console.print("\n[bold]Monitor status panel exited[/bold]")
+            else:
+                print("\nMonitor status panel exited")
 
-    def _draw_panel(self):
-        """绘制面板内容"""
-        self._clear_screen()
-
+    def _create_rich_panel(self):
+        """创建Rich格式的面板内容"""
         # 获取当前状态数据
         cp_id = self.monitor.args.id_cp
         current_status = self.monitor._current_status
+        status_color = self._get_status_color(current_status)
 
         # 连接状态
-        central_connected = self.monitor.central_conn_mgr.is_connected if self.monitor.central_conn_mgr else False
-        engine_connected = self.monitor.engine_conn_mgr.is_connected if self.monitor.engine_conn_mgr else False
+        central_connected = (
+            self.monitor.central_conn_mgr.is_connected
+            if self.monitor.central_conn_mgr
+            else False
+        )
+        engine_connected = (
+            self.monitor.engine_conn_mgr.is_connected
+            if self.monitor.engine_conn_mgr
+            else False
+        )
 
         # 认证和注册状态
         authorized = self.monitor._authorized
@@ -131,98 +163,121 @@ class MonitorStatusPanel:
         last_health_time = self.monitor._last_health_response_time
         if last_health_time:
             time_since_health = time.time() - last_health_time
-            health_status = f"{time_since_health:.1f}秒前" if time_since_health < 90 else f"超时 ({time_since_health:.1f}秒前)"
+            health_status = (
+                f"{time_since_health:.1f}s ago"
+                if time_since_health < 90
+                else f"Timeout ({time_since_health:.1f}s ago)"
+            )
+            health_color = "green" if time_since_health < 90 else "red"
         else:
-            health_status = "未收到响应"
+            health_status = "No Response Received"
+            health_color = "red"
 
-        # 绘制标题
-        title = "=" * 80
-        print(title)
-        print(f"{'Monitor 状态监控面板':^80}")
-        print(f"{'充电桩ID: ' + cp_id:^80}")
-        print(f"{'更新时间: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S'):^80}")
-        print(title)
-        print()
+        # 心跳状态
+        heartbeat_running = (
+            self.monitor._heartbeat_thread and self.monitor._heartbeat_thread.is_alive()
+        )
 
-        # 绘制充电桩状态
-        status_color = self._get_color(current_status)
-        print(f"【充电桩状态】")
-        print(f"  当前状态: {status_color}{current_status}{self._reset_color()}")
-        print()
-
-        # ✅ 绘制组件状态（Central和Engine）
-        print(f"【组件状态】")
-
-        # Central状态判断
+        # 获取全局主题配置
+        from Common.Config.ConsolePrinter import ConsolePrinter
+        theme = ConsolePrinter.get_theme()
+        
+        # 构建面板内容
+        content_parts = []
+        
+        # 标题
+        title_style = theme.get("panel_title", "bold")
+        content_parts.append(f"[{title_style}]{'Monitor Status Panel':^80}[/{title_style}]")
+        content_parts.append(f"[{title_style}]Charging Point ID:[/{title_style}] {cp_id}")
+        content_parts.append(f"[{title_style}]Update Time:[/{title_style}] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        content_parts.append("")
+        
+        # 充电桩状态
+        section_style = theme.get("section_title", "bold")
+        status_style = self._get_status_color(current_status)
+        content_parts.append(f"[{section_style}]Charging Point Status[/{section_style}]")
+        content_parts.append(f"  Current Status: [{status_style}]{current_status}[/{status_style}]")
+        content_parts.append("")
+        
+        # 组件状态
+        content_parts.append(f"[{section_style}]Component Status[/{section_style}]")
+        
+        # Central状态
         if central_connected:
             if registered:
-                central_component_status = "ACTIVE"
-                central_status_color = self._get_color("ACTIVE")
+                central_status_style = theme.get("status_active", "dim")
+                central_status_text = f"[{central_status_style}]ACTIVE[/{central_status_style}]"
             else:
-                central_component_status = "CONNECTED (未注册)"
-                central_status_color = Fore.YELLOW if self.use_colors else ""
+                central_status_style = theme.get("warning", "dim")
+                central_status_text = f"[{central_status_style}]CONNECTED (Not Registered)[/{central_status_style}]"
         else:
-            central_component_status = "DISCONNECTED"
-            central_status_color = self._get_color("DISCONNECTED")
-
-        # Engine状态判断
-        if engine_connected:
-            # 根据健康检查判断Engine状态
-            if last_health_time and (time.time() - last_health_time < self.monitor.ENGINE_HEALTH_TIMEOUT):
-                engine_component_status = "ACTIVE"
-                engine_status_color = self._get_color("ACTIVE")
-            else:
-                engine_component_status = "FAULTY (健康检查超时)"
-                engine_status_color = self._get_color("FAULTY")
-        else:
-            engine_component_status = "DISCONNECTED"
-            engine_status_color = self._get_color("DISCONNECTED")
-
-        print(f"  Central:  {central_status_color}{central_component_status}{self._reset_color()}")
+            central_status_style = theme.get("status_disconnected", "dim")
+            central_status_text = f"[{central_status_style}]DISCONNECTED[/{central_status_style}]"
+        
+        content_parts.append(f"  Central: {central_status_text}")
         if self.monitor.central_conn_mgr:
-            print(f"            地址: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}")
-
-        print(f"  Engine:   {engine_status_color}{engine_component_status}{self._reset_color()}")
+            content_parts.append(f"    Address: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}")
+        
+        # Engine状态
+        if engine_connected:
+            if last_health_time and (time.time() - last_health_time < self.monitor.ENGINE_HEALTH_TIMEOUT):
+                engine_status_style = theme.get("status_active", "dim")
+                engine_status_text = f"[{engine_status_style}]ACTIVE[/{engine_status_style}]"
+            else:
+                engine_status_style = theme.get("status_faulty", "dim")
+                engine_status_text = f"[{engine_status_style}]FAULTY (Health Check Timeout)[/{engine_status_style}]"
+        else:
+            engine_status_style = theme.get("status_disconnected", "dim")
+            engine_status_text = f"[{engine_status_style}]DISCONNECTED[/{engine_status_style}]"
+        
+        content_parts.append(f"  Engine: {engine_status_text}")
         if self.monitor.engine_conn_mgr:
-            print(f"            地址: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}")
-        print()
+            content_parts.append(f"    Address: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}")
+        content_parts.append("")
+        
+        # 认证和注册
+        content_parts.append(f"[{section_style}]Authentication & Registration[/{section_style}]")
+        info_style = theme.get("info", "dim")
+        auth_text = f"[{info_style}]Authenticated[/{info_style}]" if authorized else f"[{info_style}]Not Authenticated[/{info_style}]"
+        reg_text = f"[{info_style}]Registered[/{info_style}]" if registered else f"[{info_style}]Not Registered[/{info_style}]"
+        content_parts.append(f"  Auth Status: {auth_text}")
+        content_parts.append(f"  Registration Status: {reg_text}")
+        content_parts.append("")
+        
+        # 健康检查
+        content_parts.append(f"[{section_style}]Engine Health Check[/{section_style}]")
+        health_style = "dim" if health_color == "green" else theme.get("error", "dim")
+        content_parts.append(f"  Last Response: [{health_style}]{health_status}[/{health_style}]")
+        content_parts.append(f"  Check Interval: {self.monitor.ENGINE_HEALTH_CHECK_INTERVAL}s")
+        content_parts.append(f"  Timeout Threshold: {self.monitor.ENGINE_HEALTH_TIMEOUT}s")
+        content_parts.append("")
+        
+        # 心跳
+        content_parts.append(f"[{section_style}]Central Heartbeat[/{section_style}]")
+        heartbeat_style = theme.get("success", "dim") if heartbeat_running else theme.get("error", "dim")
+        heartbeat_text = f"[{heartbeat_style}]Running[/{heartbeat_style}]" if heartbeat_running else f"[{heartbeat_style}]Stopped[/{heartbeat_style}]"
+        content_parts.append(f"  Heartbeat Status: {heartbeat_text}")
+        content_parts.append(f"  Heartbeat Interval: {self.monitor.HEARTBEAT_INTERVAL}s")
+        content_parts.append("")
+        
+        # 系统信息
+        content_parts.append(f"[{section_style}]System Information[/{section_style}]")
+        content_parts.append(f"  Monitor Running: {'Yes' if self.monitor.running else 'No'}")
+        content_parts.append(f"  Main Thread: {threading.main_thread().name}")
+        content_parts.append(f"  Active Threads: {threading.active_count()}")
+        content_parts.append("")
+        separator_style = theme.get("separator", "dim")
+        content_parts.append(f"[{separator_style}]Tip: Press Ctrl+C to exit the panel[/{separator_style}]")
+        
+        # 创建面板
+        panel_content = "\n".join(content_parts)
+        border_style = theme.get("panel_border", "dim")
+        return Panel(panel_content, title="Monitor Status Panel", box=box.ROUNDED, border_style=border_style)
 
-        # 绘制认证和注册状态
-        print(f"【认证与注册】")
-        auth_status = f"{Fore.GREEN}已认证{self._reset_color()}" if authorized else f"{Fore.RED}未认证{self._reset_color()}" if self.use_colors else ("已认证" if authorized else "未认证")
-        reg_status = f"{Fore.GREEN}已注册{self._reset_color()}" if registered else f"{Fore.RED}未注册{self._reset_color()}" if self.use_colors else ("已注册" if registered else "未注册")
-
-        print(f"  认证状态: {auth_status}")
-        print(f"  注册状态: {reg_status}")
-        print()
-
-        # 绘制健康检查状态
-        print(f"【Engine健康检查】")
-        health_color = Fore.GREEN if (last_health_time and time_since_health < 90) and self.use_colors else (Fore.RED if self.use_colors else "")
-        print(f"  最后响应: {health_color}{health_status}{self._reset_color()}")
-        print(f"  检查间隔: {self.monitor.ENGINE_HEALTH_CHECK_INTERVAL}秒")
-        print(f"  超时阈值: {self.monitor.ENGINE_HEALTH_TIMEOUT}秒")
-        print()
-
-        # 绘制心跳状态
-        print(f"【Central心跳】")
-        heartbeat_running = self.monitor._heartbeat_thread and self.monitor._heartbeat_thread.is_alive()
-        heartbeat_status = f"{Fore.GREEN}运行中{self._reset_color()}" if heartbeat_running and self.use_colors else ("运行中" if heartbeat_running else "已停止")
-        print(f"  心跳状态: {heartbeat_status}")
-        print(f"  心跳间隔: {self.monitor.HEARTBEAT_INTERVAL}秒")
-        print()
-
-        # 绘制系统信息
-        print(f"【系统信息】")
-        print(f"  Monitor运行: {'是' if self.monitor.running else '否'}")
-        print(f"  主线程: {threading.main_thread().name}")
-        print(f"  活跃线程数: {threading.active_count()}")
-        print()
-
-        # 绘制底部提示
-        print("=" * 80)
-        print(f"{'提示: 按 Ctrl+C 退出监控面板':^80}")
-        print("=" * 80)
+    def _draw_panel(self):
+        """绘制面板内容（已废弃，使用_create_rich_panel代替）"""
+        # 此方法已废弃，保留仅为向后兼容
+        pass
 
     def _draw_simple_panel(self):
         """绘制简化版面板(当colorama不可用时)"""
@@ -230,21 +285,29 @@ class MonitorStatusPanel:
 
         cp_id = self.monitor.args.id_cp
         current_status = self.monitor._current_status
-        central_connected = self.monitor.central_conn_mgr.is_connected if self.monitor.central_conn_mgr else False
-        engine_connected = self.monitor.engine_conn_mgr.is_connected if self.monitor.engine_conn_mgr else False
+        central_connected = (
+            self.monitor.central_conn_mgr.is_connected
+            if self.monitor.central_conn_mgr
+            else False
+        )
+        engine_connected = (
+            self.monitor.engine_conn_mgr.is_connected
+            if self.monitor.engine_conn_mgr
+            else False
+        )
 
         print("=" * 60)
-        print(f" Monitor 状态监控面板")
-        print(f" 充电桩ID: {cp_id}")
-        print(f" 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f" Monitor Status Panel")
+        print(f" Charging Point ID: {cp_id}")
+        print(f" Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 60)
         print()
-        print(f"充电桩状态: {current_status}")
-        print(f"Central连接: {'已连接' if central_connected else '未连接'}")
-        print(f"Engine连接: {'已连接' if engine_connected else '未连接'}")
+        print(f"Charging Point Status: {current_status}")
+        print(f"Central Connection: {'Connected' if central_connected else 'Disconnected'}")
+        print(f"Engine Connection: {'Connected' if engine_connected else 'Disconnected'}")
         print()
         print("=" * 60)
-        print(" 按 Ctrl+C 退出")
+        print(" Press Ctrl+C to exit")
         print("=" * 60)
 
 
@@ -252,7 +315,7 @@ def test_panel():
     """测试函数 - 用于独立测试面板"""
     from unittest.mock import Mock
 
-    print("Monitor状态面板测试")
+    print("Monitor status panel test")
     print("=" * 60)
 
     # 创建模拟的Monitor对象
@@ -289,7 +352,7 @@ def test_panel():
     panel = MonitorStatusPanel(mock_monitor)
 
     try:
-        print("正在启动面板... (按 Ctrl+C 退出)")
+        print("Starting panel... (Press Ctrl+C to exit)")
         time.sleep(2)
         panel.start()
 
@@ -298,10 +361,10 @@ def test_panel():
             time.sleep(1)
 
     except KeyboardInterrupt:
-        print("\n检测到中断,正在停止...")
+        print("\nInterrupt detected, stopping...")
         panel.stop()
     except Exception as e:
-        print(f"\n错误: {e}")
+        print(f"\nError: {e}")
         panel.stop()
 
 

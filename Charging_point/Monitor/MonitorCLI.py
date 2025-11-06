@@ -9,6 +9,7 @@ import os
 
 # Añadir el directorio raíz al path para imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from Common.Config.ConsolePrinter import get_printer
 
 
 class MonitorCLI:
@@ -25,6 +26,7 @@ class MonitorCLI:
         self.running = False
         self.cli_thread = None
         self.panel_active = False  # Controla si el panel está activo
+        self.printer = get_printer()
 
     def start(self):
         """Inicia el CLI en un hilo separado"""
@@ -47,11 +49,10 @@ class MonitorCLI:
 
     def _show_menu(self):
         """Muestra el menú del CLI"""
-        print("\n" + "=" * 60)
-        print("  EV_CP_M - MONITOR CONTROL MENU")
-        print("=" * 60)
-        print(f"  CP ID: {self.monitor.args.id_cp}")
-        print(f"  Status: {self.monitor._current_status}")
+        # 构建状态信息
+        status_info = []
+        status_info.append(f"CP ID: {self.monitor.args.id_cp}")
+        status_info.append(f"Status: {self.monitor._current_status}")
 
         # Estado de conexiones
         central_status = (
@@ -71,8 +72,8 @@ class MonitorCLI:
             else "✗ Disconnected"
         )
 
-        print(f"  Central: {central_status}")
-        print(f"  Engine:  {engine_status}")
+        status_info.append(f"Central: {central_status}")
+        status_info.append(f"Engine:  {engine_status}")
 
         # Estado de autenticación y registro
         auth_status = "✓ Authorized" if self.monitor._authorized else "✗ Not authorized"
@@ -82,19 +83,24 @@ class MonitorCLI:
             else "✗ Not registered"
         )
 
-        print(f"  Auth:    {auth_status}")
-        print(f"  Reg:     {reg_status}")
+        status_info.append(f"Auth:    {auth_status}")
+        status_info.append(f"Reg:     {reg_status}")
 
-        print("-" * 60)
-        print("  PANEL CONTROL:")
+        # 显示状态面板
+        self.printer.print_panel("\n".join(status_info), title="Current Status", style="cyan")
+        
+        # 显示菜单
         panel_status = "VISIBLE" if self.panel_active else "HIDDEN"
-        print(f"  [1] Toggle Status Panel (Current: {panel_status})")
-        print()
-        print("  INFORMATION:")
-        print("  [2] Show current status summary")
-        print("  [3] Show connection details")
-        print()
-        print("=" * 60)
+        menu_items = {
+            "PANEL CONTROL": [
+                f"[1] Toggle Status Panel (Current: {panel_status})"
+            ],
+            "INFORMATION": [
+                "[2] Show current status summary",
+                "[3] Show connection details"
+            ]
+        }
+        self.printer.print_menu("EV_CP_M - MONITOR CONTROL MENU", menu_items)
 
     def _run_cli(self):
         """Ejecuta el loop principal del CLI"""
@@ -117,8 +123,8 @@ class MonitorCLI:
                 elif user_input == "3":
                     self._show_connection_details()
                 else:
-                    print(f"Unknown command: {user_input}")
-                    print("Press ENTER to show menu")
+                    self.printer.print_warning(f"Unknown command: {user_input}")
+                    self.printer.print_info("Press ENTER to show menu")
 
             except EOFError:
                 # Input cerrado (ej. Ctrl+D)
@@ -131,7 +137,7 @@ class MonitorCLI:
         if self.panel_active:
             # Ocultar panel
             self._hide_panel()
-            print("Status panel HIDDEN. Press ENTER to show menu.")
+            self.printer.print_info("Status panel HIDDEN. Press ENTER to show menu.")
         else:
             # Mostrar panel
             self._show_panel()
@@ -139,12 +145,12 @@ class MonitorCLI:
     def _show_panel(self):
         """Muestra el panel de estado"""
         if not self.monitor.enable_panel:
-            print("❌ Panel is disabled. Cannot show panel.")
-            print("   Start Monitor with --panel flag to enable panel.")
+            self.printer.print_error("Panel is disabled. Cannot show panel.")
+            self.printer.print_info("Start Monitor with --panel flag to enable panel.")
             return
 
         if self.panel_active:
-            print("⚠️  Panel is already visible.")
+            self.printer.print_warning("Panel is already visible.")
             return
 
         try:
@@ -157,138 +163,106 @@ class MonitorCLI:
             # Iniciar el panel
             self.monitor.status_panel.start()
             self.panel_active = True
-            print("✓ Status panel is now VISIBLE")
-            print("  Press Ctrl+C in the panel to return to CLI menu")
+            self.printer.print_success("Status panel is now VISIBLE")
+            self.printer.print_info("Press 1 in the panel to return to CLI menu")
 
         except ImportError as e:
-            print(f"❌ Cannot import MonitorStatusPanel: {e}")
-            print("   Make sure MonitorStatusPanel.py exists")
+            self.printer.print_error(f"Cannot import MonitorStatusPanel: {e}")
+            self.printer.print_info("Make sure MonitorStatusPanel.py exists")
         except Exception as e:
-            print(f"❌ Failed to show panel: {e}")
+            self.printer.print_error(f"Failed to show panel: {e}")
 
     def _hide_panel(self):
         """Oculta el panel de estado"""
         if not self.panel_active:
-            print("⚠️  Panel is already hidden.")
+            self.printer.print_warning("Panel is already hidden.")
             return
 
         try:
             if self.monitor.status_panel:
                 self.monitor.status_panel.stop()
                 self.panel_active = False
-                print("✓ Status panel is now HIDDEN")
+                self.printer.print_success("Status panel is now HIDDEN")
         except Exception as e:
-            print(f"❌ Failed to hide panel: {e}")
+            self.printer.print_error(f"Failed to hide panel: {e}")
 
     def _show_status_summary(self):
         """Muestra un resumen del estado actual"""
-        print("\n" + "=" * 60)
-        print("  STATUS SUMMARY")
-        print("=" * 60)
-        print(f"  Charging Point ID: {self.monitor.args.id_cp}")
-        print(f"  Current Status:    {self.monitor._current_status}")
-        print()
-        print("  CONNECTIONS:")
+        # 构建状态摘要
+        summary = []
+        summary.append(f"Charging Point ID: {self.monitor.args.id_cp}")
+        summary.append(f"Current Status:    {self.monitor._current_status}")
+        summary.append("\nCONNECTIONS:")
 
         # Central
         central_connected = (
             self.monitor.central_conn_mgr and self.monitor.central_conn_mgr.is_connected
         )
         central_addr = f"{self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}"
-        print(
-            f"    Central: {'✓ Connected' if central_connected else '✗ Disconnected'} ({central_addr})"
-        )
+        summary.append(f"  Central: {'✓ Connected' if central_connected else '✗ Disconnected'} ({central_addr})")
 
         # Engine
         engine_connected = (
             self.monitor.engine_conn_mgr and self.monitor.engine_conn_mgr.is_connected
         )
         engine_addr = f"{self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}"
-        print(
-            f"    Engine:  {'✓ Connected' if engine_connected else '✗ Disconnected'} ({engine_addr})"
-        )
+        summary.append(f"  Engine:  {'✓ Connected' if engine_connected else '✗ Disconnected'} ({engine_addr})")
 
-        print()
-        print("  AUTHENTICATION & REGISTRATION:")
-        print(f"    Authorized: {'✓ Yes' if self.monitor._authorized else '✗ No'}")
-        print(
-            f"    Registered: {'✓ Yes' if self.monitor._registration_confirmed else '✗ No'}"
-        )
+        summary.append("\nAUTHENTICATION & REGISTRATION:")
+        summary.append(f"  Authorized: {'✓ Yes' if self.monitor._authorized else '✗ No'}")
+        summary.append(f"  Registered: {'✓ Yes' if self.monitor._registration_confirmed else '✗ No'}")
 
-        print()
-        print("  HEALTH CHECK:")
+        summary.append("\nHEALTH CHECK:")
         if self.monitor._last_health_response_time:
             import time
-
             elapsed = time.time() - self.monitor._last_health_response_time
-            print(f"    Last Engine response: {elapsed:.1f}s ago")
+            summary.append(f"  Last Engine response: {elapsed:.1f}s ago")
         else:
-            print(f"    Last Engine response: Never")
+            summary.append("  Last Engine response: Never")
 
-        print("=" * 60)
+        self.printer.print_panel("\n".join(summary), title="STATUS SUMMARY", style="blue")
 
     def _show_connection_details(self):
         """Muestra detalles de las conexiones"""
-        print("\n" + "=" * 60)
-        print("  CONNECTION DETAILS")
-        print("=" * 60)
-
+        # 构建连接详情
+        details = []
+        
         # Central Connection
-        print("  CENTRAL CONNECTION:")
-        print(
-            f"    Address: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}"
-        )
+        details.append("CENTRAL CONNECTION:")
+        details.append(f"  Address: {self.monitor.args.ip_port_ev_central[0]}:{self.monitor.args.ip_port_ev_central[1]}")
         if self.monitor.central_conn_mgr:
-            print(
-                f"    Connected: {'Yes' if self.monitor.central_conn_mgr.is_connected else 'No'}"
-            )
-            print(f"    Heartbeat Interval: {self.monitor.HEARTBEAT_INTERVAL}s")
+            details.append(f"  Connected: {'Yes' if self.monitor.central_conn_mgr.is_connected else 'No'}")
+            details.append(f"  Heartbeat Interval: {self.monitor.HEARTBEAT_INTERVAL}s")
             heartbeat_running = (
                 self.monitor._heartbeat_thread
                 and self.monitor._heartbeat_thread.is_alive()
             )
-            print(
-                f"    Heartbeat Thread: {'Running' if heartbeat_running else 'Stopped'}"
-            )
+            details.append(f"  Heartbeat Thread: {'Running' if heartbeat_running else 'Stopped'}")
         else:
-            print("    Connection Manager: Not initialized")
+            details.append("  Connection Manager: Not initialized")
 
-        print()
-
-        # Engine Connection
-        print("  ENGINE CONNECTION:")
-        print(
-            f"    Address: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}"
-        )
+        details.append("\nENGINE CONNECTION:")
+        details.append(f"  Address: {self.monitor.args.ip_port_ev_cp_e[0]}:{self.monitor.args.ip_port_ev_cp_e[1]}")
         if self.monitor.engine_conn_mgr:
-            print(
-                f"    Connected: {'Yes' if self.monitor.engine_conn_mgr.is_connected else 'No'}"
-            )
-            print(
-                f"    Health Check Interval: {self.monitor.ENGINE_HEALTH_CHECK_INTERVAL}s"
-            )
-            print(f"    Health Check Timeout: {self.monitor.ENGINE_HEALTH_TIMEOUT}s")
+            details.append(f"  Connected: {'Yes' if self.monitor.engine_conn_mgr.is_connected else 'No'}")
+            details.append(f"  Health Check Interval: {self.monitor.ENGINE_HEALTH_CHECK_INTERVAL}s")
+            details.append(f"  Health Check Timeout: {self.monitor.ENGINE_HEALTH_TIMEOUT}s")
             health_running = (
                 self.monitor._engine_health_thread
                 and self.monitor._engine_health_thread.is_alive()
             )
-            print(
-                f"    Health Check Thread: {'Running' if health_running else 'Stopped'}"
-            )
+            details.append(f"  Health Check Thread: {'Running' if health_running else 'Stopped'}")
 
             if self.monitor._last_health_response_time:
                 import time
-
                 elapsed = time.time() - self.monitor._last_health_response_time
                 status = (
                     "OK" if elapsed < self.monitor.ENGINE_HEALTH_TIMEOUT else "TIMEOUT"
                 )
-                print(f"    Last Health Response: {elapsed:.1f}s ago ({status})")
+                details.append(f"  Last Health Response: {elapsed:.1f}s ago ({status})")
             else:
-                print(f"    Last Health Response: Never")
+                details.append("  Last Health Response: Never")
         else:
-            print("    Connection Manager: Not initialized")
+            details.append("  Connection Manager: Not initialized")
 
-        print("=" * 60)
-
-
+        self.printer.print_panel("\n".join(details), title="CONNECTION DETAILS", style="green")

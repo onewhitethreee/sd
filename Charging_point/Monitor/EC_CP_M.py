@@ -51,6 +51,7 @@ class EV_CP_M:
                 ip_port_ev_cp_e = self.config.get_ip_port_ev_cp_e()
                 ip_port_ev_central = self.config.get_ip_port_ev_cp_central()
                 import random
+
                 id_cp = f"cp_{random.randint(0,99999)}"
                 no_panel = not enable_panel
 
@@ -95,7 +96,7 @@ class EV_CP_M:
     def _register_with_central(self):
         """
         和central注册一个charging point (现在由 ConnectionManager 发送)。
-        
+
         注意：必须先通过认证才能注册。
         """
         if not self.central_conn_mgr.is_connected:
@@ -107,7 +108,9 @@ class EV_CP_M:
 
         # 检查是否已通过认证
         if not self._authorized:
-            self.logger.warning("Not authorized yet, cannot register. Please authenticate first.")
+            self.logger.warning(
+                "Not authorized yet, cannot register. Please authenticate first."
+            )
             return False
 
         # 重置注册确认标志，等待 Central 响应
@@ -117,12 +120,14 @@ class EV_CP_M:
             "type": "register_request",
             "message_id": str(uuid.uuid4()),
             "id": self.args.id_cp,
-            "location": "Unknown",  
+            "location": "Unknown",
             "price_per_kwh": 0.20,
         }
         success = self.central_conn_mgr.send(register_message)
         if success:
-            self.logger.info("Registration request sent to Central, waiting for confirmation...")
+            self.logger.debug(
+                "Registration request sent to Central, waiting for confirmation..."
+            )
         return success
 
     def _handle_connection_status_change(self, source_name: str, status: str):
@@ -130,16 +135,13 @@ class EV_CP_M:
         由 ConnectionManager 回调，处理连接状态变化。
         这就是 EV_CP_M 响应底层网络事件的核心逻辑。
 
-        Según especificaciones (Guía de Corrección, página 3):
-        Monitor_OK and Engine_OK => Activado (Verde)
-        Monitor_OK and Engine_KO => Averiado (Rojo)
-        Monitor_KO and Engine_OK => Desconectado (gestionado por Central)
-        Monitor_KO and Engine_KO => Desconectado (gestionado por Central)
         """
         self.logger.debug(f"Connection status for {source_name} changed to {status}")
         if source_name == "Central":
             if status == "CONNECTED":
-                self.logger.info("Central is now connected. Attempting to authenticate...")
+                self.logger.info(
+                    "Central is now connected. Attempting to authenticate..."
+                )
                 # 先发送认证请求，只有认证成功后才能注册
                 if not self._authorized:
                     self.authenticate_charging_point()
@@ -153,7 +155,9 @@ class EV_CP_M:
                 if self.engine_conn_mgr and self.engine_conn_mgr.is_connected:
                     self._check_and_update_to_active()
                 else:
-                    self.logger.info("Waiting for Engine connection before setting ACTIVE status")
+                    self.logger.info(
+                        "Waiting for Engine connection before setting ACTIVE status"
+                    )
             elif status == "DISCONNECTED":
                 self.logger.warning(
                     "Central is disconnected. Handling disconnection..."
@@ -165,10 +169,7 @@ class EV_CP_M:
                 self.logger.warning(f"Unknown status '{status}' for Central")
         elif source_name == "Engine":
             if status == "CONNECTED":
-                self.logger.info(
-                    "Engine is now connected. Initializing CP_ID..."
-                )
-                # ✅ 首先发送CP_ID初始化消息给Engine
+                self.logger.debug("Engine is now connected. Initializing CP_ID...")
                 self._send_cp_id_to_engine()
 
                 # 然后启动健康检查线程
@@ -177,7 +178,9 @@ class EV_CP_M:
                 if self.central_conn_mgr and self.central_conn_mgr.is_connected:
                     self._check_and_update_to_active()
                 else:
-                    self.logger.info("Waiting for Central connection before setting ACTIVE status")
+                    self.logger.info(
+                        "Waiting for Central connection before setting ACTIVE status"
+                    )
             elif status == "DISCONNECTED":
                 self.logger.warning("Engine is disconnected. Reporting failure.")
                 self._report_failure("EV_CP_E connection lost")
@@ -219,7 +222,7 @@ class EV_CP_M:
         只有当Central和Engine都连接成功，且注册已确认时才更新为ACTIVE
         """
         if (
-            self._registration_confirmed  # 新增：必须注册成功
+            self._registration_confirmed
             and self.central_conn_mgr
             and self.central_conn_mgr.is_connected
             and self.engine_conn_mgr
@@ -239,11 +242,11 @@ class EV_CP_M:
                 f"Central={self.central_conn_mgr.is_connected if self.central_conn_mgr else False}, "
                 f"Engine={self.engine_conn_mgr.is_connected if self.engine_conn_mgr else False}"
             )
-    # TODO 这里也没有停止啊？
+
     def _stop_engine_health_check_thread(self):
         """停止对 Engine 的健康检查线程"""
         if self._engine_health_thread and self._engine_health_thread.is_alive():
-            self.logger.info("Stopping Engine health check thread.")
+            self.logger.debug("Stopping Engine health check thread.")
             # 通过设置 running 标志让线程自然退出
             # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
             # 因为我们没有单独的停止事件，所以只能依赖这些条件
@@ -254,7 +257,7 @@ class EV_CP_M:
     def _stop_heartbeat_thread(self):
         """停止发送心跳的线程"""
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
-            self.logger.info("Stopping heartbeat thread for Central.")
+            self.logger.debug("Stopping heartbeat thread for Central.")
             # 通过设置 running 标志让线程自然退出
             # 这里假设线程会检查 self.running 和 conn_mgr.is_connected
             # 因为我们没有单独的停止事件，所以只能依赖这些条件
@@ -267,7 +270,7 @@ class EV_CP_M:
         if self._engine_health_thread and self._engine_health_thread.is_alive():
             self.logger.debug("Engine health check thread already running.")
             return
-        self.logger.info("Starting Engine health check thread.")
+        self.logger.debug("Starting Engine health check thread.")
         self._engine_health_thread = threading.Thread(
             target=self._check_engine_health,
             daemon=True,
@@ -296,7 +299,7 @@ class EV_CP_M:
                     "Failed to send heartbeat to Central (might be disconnected internally)."
                 )
             time.sleep(self.HEARTBEAT_INTERVAL)
-        self.logger.info("Heartbeat thread for Central has stopped.")
+        self.logger.debug("Heartbeat thread for Central has stopped.")
 
     def _start_heartbeat_thread(self):
         """
@@ -305,7 +308,7 @@ class EV_CP_M:
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
             self.logger.debug("Heartbeat thread for Central already running.")
             return
-        self.logger.info("Starting heartbeat thread for Central.")
+        self.logger.debug("Starting heartbeat thread for Central.")
         self._heartbeat_thread = threading.Thread(
             target=self._send_heartbeat, daemon=True, name="CentralHeartbeatThread"
         )
@@ -313,21 +316,11 @@ class EV_CP_M:
 
     def authenticate_charging_point(self):
         """
-        认证充电点（TODO: 需要实现）
-        
-        根据用户需求：
-        1. 在注册时，应该发送认证请求给Central
-        2. Central需要手动同意后才能授权使用
-        3. 只有经过认证的充电点才能正常使用
-        
-        当前状态：方法已定义，但尚未在注册流程中调用
-        实现计划：
-        - 在 _register_with_central() 方法中，先调用此方法发送认证请求
-        - 等待Central的认证响应（auth_response）
-        - 只有认证成功后，才发送注册请求
-        - 如果认证失败，Monitor应该等待或重试
+        认证充电点
+
+
         """
-        self.logger.info(f"Authenticating charging point {self.args.id_cp}")
+        self.logger.debug(f"Authenticating charging point {self.args.id_cp}")
         if not self.central_conn_mgr.is_connected:
             self.logger.error("Cannot authenticate: not connected to Central.")
             return False
@@ -350,7 +343,7 @@ class EV_CP_M:
         """
         检查EV_CP_E的健康状态。
         """
-        self.logger.info("Starting health check thread for EV_CP_E")
+        self.logger.debug("Starting health check thread for EV_CP_E")
         # 初始化为当前时间，这样不会立即超时
         self._last_health_response_time = time.time()
         while (
@@ -370,7 +363,7 @@ class EV_CP_M:
                 # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
                 # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
                 # 并且如果是正常状态，CP status会再次更新。
-                break  # 退出循环，等待CM重连和新的健康检查线程启动
+                break
 
             health_check_msg = {
                 "type": "health_check_request",
@@ -385,7 +378,7 @@ class EV_CP_M:
                 )
 
             time.sleep(self.ENGINE_HEALTH_CHECK_INTERVAL)
-        self.logger.info("Health check thread for EV_CP_E has stopped.")
+        self.logger.debug("Health check thread for EV_CP_E has stopped.")
 
     def _report_failure(self, failure_info):
         """
@@ -403,7 +396,7 @@ class EV_CP_M:
             "failure_info": failure_info,
         }
         if self.central_conn_mgr.send(failure_message):
-            self.logger.info("Reported failure to Central.")
+            self.logger.debug("Reported failure to Central.")
             return True
         else:
             self.logger.error(
@@ -418,7 +411,7 @@ class EV_CP_M:
         if self._current_status == status:
             self.logger.debug(f"CP status already {status}, no update needed.")
             return
-        self.logger.info(f"Updating charging point status to: {status}")
+        self.logger.debug(f"Updating charging point status to: {status}")
         self._current_status = status
         self.report_status_to_central(status)
         if status == "FAULTY":
@@ -440,7 +433,7 @@ class EV_CP_M:
             "status": status,
         }
         if self.central_conn_mgr.send(status_message):
-            self.logger.info(f"Status update sent to Central: {status}")
+            self.logger.debug(f"Status update sent to Central: {status}")
             return True
         else:
             self.logger.error(
@@ -464,7 +457,9 @@ class EV_CP_M:
         }
 
         if self.engine_conn_mgr.send(init_message):
-            self.logger.info(f"✅ CP_ID '{self.args.id_cp}' sent to Engine for initialization.")
+            self.logger.info(
+                f"✓  CP_ID '{self.args.id_cp}' sent to Engine for initialization."
+            )
             return True
         else:
             self.logger.error(
@@ -524,16 +519,18 @@ class EV_CP_M:
             "cp_id": cp_id,
             "session_id": session_id,
             "driver_id": driver_id,
-            "price_per_kwh": price_per_kwh,  # 转发价格信息
+            "price_per_kwh": price_per_kwh,
         }
         if self.engine_conn_mgr.send(start_charging_message):
             self.logger.info(
                 f"Start charging command sent to Engine for session {session_id}, price: €{price_per_kwh}/kWh."
             )
-            # ✅ 立即更新Monitor状态为CHARGING
+            # 立即更新Monitor状态为CHARGING
             # 这样监控面板能够实时显示正确的状态
             self.update_cp_status(Status.CHARGING.value)
-            self.logger.info(f"Monitor status updated to CHARGING for session {session_id}")
+            self.logger.info(
+                f"Monitor status updated to CHARGING for session {session_id}"
+            )
             return True
         else:
             self.logger.error("Failed to send start charging command to Engine.")
@@ -564,7 +561,6 @@ class EV_CP_M:
                 f"Charging data from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
-        # TODO 这里用常量
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
@@ -607,7 +603,6 @@ class EV_CP_M:
 
         session_id = message.get("session_id")
 
-        # TODO 这里用response常量
         completion_message = {
             "type": "charge_completion",
             "message_id": message.get("message_id"),
@@ -618,10 +613,12 @@ class EV_CP_M:
         }
         if self.central_conn_mgr.send(completion_message):
             self.logger.info("Charging completion forwarded to Central.")
-            # ✅ 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
+            # 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
             # 这样监控面板能够实时显示正确的状态
             self.update_cp_status(Status.ACTIVE.value)
-            self.logger.info(f"Monitor status updated to ACTIVE after charging completion for session {session_id}")
+            self.logger.info(
+                f"Monitor status updated to ACTIVE after charging completion for session {session_id}"
+            )
             return True
         else:
             self.logger.error("Failed to forward charging completion to Central.")
@@ -662,7 +659,6 @@ class EV_CP_M:
         # 如果是 daemon=True，在主线程退出后，它们会被强制终止，这在大多数情况下是接受的。
         # 为了更明确的控制，可以在 `_send_heartbeat` 和 `_check_engine_health` 中加一个事件标志来立即停止。
         self.logger.info("All connection managers stopped. Main loop will now exit.")
-        # 原来的 _exit(0) 彻底移除！
 
         self.logger.info("Shutdown complete")
 
@@ -671,52 +667,51 @@ class EV_CP_M:
         try:
             from Charging_point.Monitor.MonitorCLI import MonitorCLI
 
-            self.logger.info("启动Monitor CLI...")
+            self.logger.info("Starting Monitor CLI...")
             self.cli = MonitorCLI(self, self.logger)
             self.cli.start()
-            self.logger.info("Monitor CLI已启动")
+            self.logger.info("Monitor CLI started")
 
         except ImportError as e:
-            self.logger.error(f"无法导入MonitorCLI: {e}")
-            self.logger.error("请确保MonitorCLI.py文件存在")
+            self.logger.error(f"Unable to import MonitorCLI: {e}")
+            self.logger.error("Please ensure MonitorCLI.py file exists")
         except Exception as e:
-            self.logger.error(f"启动CLI失败: {e}")
+            self.logger.error(f"Failed to start CLI: {e}")
 
     def _stop_cli(self):
         """停止Monitor CLI"""
         if self.cli:
-            self.logger.info("正在停止Monitor CLI...")
+            self.logger.info("Stopping Monitor CLI...")
             self.cli.stop()
             self.cli = None
 
     def _start_status_panel(self):
         """启动状态监控面板"""
         if not self._auto_start_panel:
-            self.logger.info("状态面板未自动启动（使用--no-panel参数）")
-            self.logger.info("可以通过CLI命令手动启动面板")
+            self.logger.info("Panel can be manually started via CLI commands")
             return
 
         try:
             from Charging_point.Monitor.MonitorStatusPanel import MonitorStatusPanel
 
-            self.logger.info("启动Monitor状态监控面板...")
+            self.logger.info("Starting Monitor status panel...")
             self.status_panel = MonitorStatusPanel(self)
             self.status_panel.start()
-            self.logger.info("Monitor状态监控面板已启动")
+            self.logger.info("Monitor status panel started")
             # 通知CLI面板已激活
             if self.cli:
                 self.cli.panel_active = True
 
         except ImportError as e:
-            self.logger.error(f"无法导入MonitorStatusPanel: {e}")
-            self.logger.error("请确保MonitorStatusPanel.py文件存在")
+            self.logger.error(f"Unable to import MonitorStatusPanel: {e}")
+            self.logger.error("Please ensure MonitorStatusPanel.py file exists")
         except Exception as e:
-            self.logger.error(f"启动状态面板失败: {e}")
+            self.logger.error(f"Failed to start status panel: {e}")
 
     def _stop_status_panel(self):
         """停止状态监控面板"""
         if self.status_panel:
-            self.logger.info("正在停止Monitor状态监控面板...")
+            self.logger.info("Stopping Monitor status panel...")
             self.status_panel.stop()
             self.status_panel = None
             # 通知CLI面板已停止
@@ -769,7 +764,7 @@ class EV_CP_M:
         self.initialize_systems()
         try:
             while self.running:
-                time.sleep(1)  # 主循环，等待管理器和回调函数处理事件
+                time.sleep(0.1)  # 主循环，等待管理器和回调函数处理事件
         except KeyboardInterrupt:
             self.logger.info("Keyboard interrupt detected. Shutting down EV_CP_M.")
         except Exception as e:
@@ -785,7 +780,13 @@ class EV_CP_M:
 
 
 if __name__ == "__main__":
-    logger = CustomLogger.get_logger()
+    import logging
+    config = ConfigManager()
+    debug_mode = config.get_debug_mode()
+    if not debug_mode:
+        logger = CustomLogger.get_logger(level=logging.INFO)
+    else:
+        logger = CustomLogger.get_logger(level=logging.DEBUG)
 
     ev_cp_m = EV_CP_M(logger=logger)
     ev_cp_m.start()

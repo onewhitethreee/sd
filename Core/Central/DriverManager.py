@@ -62,17 +62,17 @@ class DriverManager:
                     if old_client_id in self._client_to_driver:
                         del self._client_to_driver[old_client_id]
                 else:
-                    self.logger.debug(f"Driver {driver_id} 已注册，跳过")
+                    self.logger.debug(f"Driver {driver_id} already registered, skipping")
                     return True
 
             # 注册新连接
             self._driver_connections[driver_id] = client_id
             self._client_to_driver[client_id] = driver_id
-            self.logger.info(f"Driver {driver_id} 已连接 (client: {client_id})")
+            self.logger.info(f"Driver {driver_id} connected (client: {client_id})")
             return True
 
         except Exception as e:
-            self.logger.error(f"注册Driver连接失败: {e}")
+            self.logger.error(f"Failed to register Driver connection: {e}")
             return False
 
     def get_driver_client_id(self, driver_id: str) -> str | None:
@@ -128,7 +128,7 @@ class DriverManager:
                 driver_id
             )
         except Exception as e:
-            self.logger.error(f"获取Driver {driver_id} 的活跃会话失败: {e}")
+            self.logger.error(f"Failed to get active sessions for Driver {driver_id}: {e}")
             return []
 
     def handle_driver_disconnect(self, client_id: str) -> tuple[str | None, list]:
@@ -146,10 +146,10 @@ class DriverManager:
         # 查找driver_id
         driver_id = self._client_to_driver.get(client_id)
         if not driver_id:
-            self.logger.debug(f"客户端 {client_id} 不是Driver，跳过Driver断开连接处理")
+            self.logger.debug(f"Client {client_id} is not a Driver, skipping Driver disconnect handling")
             return None, []
 
-        self.logger.warning(f"Driver {driver_id} (客户端 {client_id}) 断开连接")
+        self.logger.warning(f"Driver {driver_id} (client {client_id}) disconnected")
 
         # 获取活跃会话
         active_sessions = self.get_driver_active_sessions(driver_id)
@@ -157,10 +157,10 @@ class DriverManager:
 
         if session_ids:
             self.logger.info(
-                f"Driver {driver_id} 有 {len(session_ids)} 个活跃会话需要停止: {session_ids}"
+                f"Driver {driver_id} has {len(session_ids)} active sessions to stop: {session_ids}"
             )
         else:
-            self.logger.info(f"Driver {driver_id} 没有活跃的充电会话")
+            self.logger.info(f"Driver {driver_id} has no active charging sessions")
 
         # 清理连接映射
         if driver_id in self._driver_connections:
@@ -168,7 +168,7 @@ class DriverManager:
         if client_id in self._client_to_driver:
             del self._client_to_driver[client_id]
 
-        self.logger.info(f"已清理Driver {driver_id} 的连接信息")
+        self.logger.info(f"Cleaned up connection information for Driver {driver_id}")
         return driver_id, session_ids
 
     def get_all_connected_drivers(self) -> list[str]:
@@ -201,7 +201,7 @@ class DriverManager:
         """
         try:
             if driver_id not in self._driver_connections:
-                self.logger.warning(f"Driver {driver_id} 未连接，无法注销")
+                self.logger.warning(f"Driver {driver_id} not connected, cannot unregister")
                 return False
 
             client_id = self._driver_connections[driver_id]
@@ -211,11 +211,11 @@ class DriverManager:
             if client_id in self._client_to_driver:
                 del self._client_to_driver[client_id]
 
-            self.logger.info(f"已注销Driver {driver_id} 的连接")
+            self.logger.info(f"Unregistered Driver {driver_id} connection")
             return True
 
         except Exception as e:
-            self.logger.error(f"注销Driver {driver_id} 连接失败: {e}")
+            self.logger.error(f"Failed to unregister Driver {driver_id} connection: {e}")
             return False
 
     def get_driver_info(self, driver_id: str) -> dict | None:
@@ -256,12 +256,12 @@ if __name__ == "__main__":
 
     # 测试注册连接
     driver_manager.register_driver_connection("driver_001", "client_123")
-    print(f"Driver连接数: {driver_manager.get_connection_count()}")
+    print(f"Driver connections: {driver_manager.get_connection_count()}")
 
     # 测试查询
     print(f"Driver client_id: {driver_manager.get_driver_client_id('driver_001')}")
-    print(f"Client的driver: {driver_manager.get_driver_by_client_id('client_123')}")
+    print(f"Client's driver: {driver_manager.get_driver_by_client_id('client_123')}")
 
     # 测试断开
     driver_id, sessions = driver_manager.handle_driver_disconnect("client_123")
-    print(f"断开的Driver: {driver_id}, 活跃会话: {sessions}")
+    print(f"Disconnected Driver: {driver_id}, active sessions: {sessions}")

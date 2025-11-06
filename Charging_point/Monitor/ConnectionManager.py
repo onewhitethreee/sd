@@ -87,7 +87,7 @@ class ConnectionManager:
                 name=f"{self.name}CM_Thread",
             )
             self._reconnect_thread.start()
-            self.logger.info(f"[{self.name}] ConnectionManager started.")
+            self.logger.debug(f"[{self.name}] ConnectionManager started.")
 
     def stop(self):
         """
@@ -96,7 +96,7 @@ class ConnectionManager:
         try:
 
             if self._running:
-                self.logger.info(f"[{self.name}] Stopping ConnectionManager.")
+                self.logger.debug(f"[{self.name}] Stopping ConnectionManager.")
                 self._running = False
                 if self._reconnect_thread:
                     self._reconnect_thread.join(timeout=5)  # 给线程一点时间自己退出
@@ -105,7 +105,7 @@ class ConnectionManager:
                             f"[{self.name}] ConnectionManager thread did not terminate gracefully."
                         )
                 self._client.disconnect()  # 确保底层socket客户端断开连接
-                self.logger.info(f"[{self.name}] ConnectionManager stopped.")
+                self.logger.debug(f"[{self.name}] ConnectionManager stopped.")
         except KeyboardInterrupt:
             pass
         except Exception as e:
@@ -134,7 +134,7 @@ class ConnectionManager:
                 )
                 if self._client.connect(self.host, self.port):
                     self._connected = True
-                    self.logger.info(f"[{self.name}] Successfully connected.")
+                    self.logger.debug(f"[{self.name}] Successfully connected.")
                     self._connection_status_callback(self.name, "CONNECTED")
                 else:
                     self.logger.error(
@@ -148,5 +148,5 @@ class ConnectionManager:
 
         # 循环结束时，确保客户端断开
         self._client.disconnect()
-        self.logger.info(f"[{self.name}] Reconnect loop terminated.")
+        self.logger.debug(f"[{self.name}] Reconnect loop terminated.")
 

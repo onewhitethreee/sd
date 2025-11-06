@@ -47,20 +47,20 @@ class KafkaTopicReader:
                 bootstrap_servers=[self.broker_address],
                 request_timeout_ms=10000
             )
-            logger.info(f"成功连接到Kafka: {self.broker_address}")
+            logger.info(f"Successfully connected to Kafka: {self.broker_address}")
             return True
         except Exception as e:
-            logger.error(f"连接Kafka失败: {e}")
+            logger.error(f"Failed to connect to Kafka: {e}")
             return False
 
     def list_topics(self):
         """列出所有主题"""
         try:
             topics = self.admin_client.list_topics()
-            logger.info(f"找到 {len(topics)} 个主题")
+            logger.info(f"Found {len(topics)} topics")
             return sorted(topics)
         except Exception as e:
-            logger.error(f"获取主题列表失败: {e}")
+            logger.error(f"Failed to get topic list: {e}")
             return []
 
     def get_topic_metadata(self, topic):
@@ -69,7 +69,7 @@ class KafkaTopicReader:
             metadata = self.admin_client.describe_topics([topic])
             return metadata
         except Exception as e:
-            logger.error(f"获取主题 {topic} 元数据失败: {e}")
+            logger.error(f"Failed to get topic {topic} metadata: {e}")
             return None
 
     def read_topic_messages(self, topic, max_messages=100, from_beginning=True):
@@ -93,7 +93,7 @@ class KafkaTopicReader:
             )
 
             logger.info(f"\n{'='*80}")
-            logger.info(f"主题: {topic}")
+            logger.info(f"Topic: {topic}")
             logger.info(f"{'='*80}")
 
             message_count = 0
@@ -101,33 +101,33 @@ class KafkaTopicReader:
             for message in consumer:
                 message_count += 1
 
-                print(f"\n--- 消息 #{message_count} ---")
-                print(f"分区: {message.partition}")
-                print(f"偏移量: {message.offset}")
-                print(f"时间戳: {datetime.fromtimestamp(message.timestamp/1000).strftime('%Y-%m-%d %H:%M:%S')}")
-                print(f"内容: {json.dumps(message.value, ensure_ascii=False, indent=2)}")
+                print(f"\n--- Message #{message_count} ---")
+                print(f"Partition: {message.partition}")
+                print(f"Offset: {message.offset}")
+                print(f"Timestamp: {datetime.fromtimestamp(message.timestamp/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"Content: {json.dumps(message.value, ensure_ascii=False, indent=2)}")
 
                 if max_messages > 0 and message_count >= max_messages:
-                    logger.info(f"已读取 {max_messages} 条消息，停止读取")
+                    logger.info(f"Read {max_messages} messages, stopping")
                     break
 
             if message_count == 0:
-                logger.info(f"主题 {topic} 中没有消息")
+                logger.info(f"Topic {topic} has no messages")
             else:
-                logger.info(f"主题 {topic} 共读取 {message_count} 条消息")
+                logger.info(f"Topic {topic} read {message_count} messages in total")
 
             consumer.close()
 
         except json.JSONDecodeError as e:
-            logger.error(f"JSON解析错误: {e}")
+            logger.error(f"JSON parsing error: {e}")
         except Exception as e:
-            logger.error(f"读取主题 {topic} 消息失败: {e}")
+            logger.error(f"Failed to read messages from topic {topic}: {e}")
 
     def close(self):
         """关闭连接"""
         if self.admin_client:
             self.admin_client.close()
-            logger.info("已关闭Kafka连接")
+            logger.info("Kafka connection closed")
 
 
 def main():
@@ -158,13 +158,13 @@ def main():
     # 获取broker地址
     broker_address = args.broker or os.getenv('BROKER_ADDRESS', 'localhost:9092')
 
-    logger.info(f"使用Kafka Broker: {broker_address}")
+    logger.info(f"Using Kafka Broker: {broker_address}")
 
     # 创建读取器
     reader = KafkaTopicReader(broker_address)
 
     if not reader.connect():
-        logger.error("无法连接到Kafka，退出")
+        logger.error("Failed to connect to Kafka, exiting")
         sys.exit(1)
 
     try:
@@ -172,14 +172,14 @@ def main():
         topics = reader.list_topics()
 
         if not topics:
-            logger.warning("未找到任何主题")
+            logger.warning("No topics found")
             return
 
         # 过滤掉内部主题
         user_topics = [t for t in topics if not t.startswith('__')]
 
         print(f"\n{'='*80}")
-        print(f"可用的主题 ({len(user_topics)}):")
+        print(f"Available Topics ({len(user_topics)}):")
         print(f"{'='*80}")
         for i, topic in enumerate(user_topics, 1):
             print(f"{i}. {topic}")
@@ -203,10 +203,10 @@ def main():
                     from_beginning=not args.latest
                 )
             else:
-                logger.error(f"主题 '{args.topic}' 不存在")
+                logger.error(f"Topic '{args.topic}' does not exist")
         else:
             # 交互式选择
-            print("请选择要读取的主题 (输入数字，或 'all' 读取所有，'q' 退出):")
+            print("Please select a topic to read (enter a number, 'all' to read all, 'q' to quit):")
             choice = input("> ").strip()
 
             if choice.lower() == 'q':
@@ -229,9 +229,9 @@ def main():
                             from_beginning=not args.latest
                         )
                     else:
-                        logger.error("无效的选择")
+                        logger.error("Invalid selection")
                 except ValueError:
-                    logger.error("请输入有效的数字")
+                    logger.error("Please enter a valid number")
 
     finally:
         reader.close()

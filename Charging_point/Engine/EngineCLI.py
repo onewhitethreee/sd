@@ -13,6 +13,7 @@ import uuid
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
 from Common.Queue.KafkaManager import KafkaTopics
+from Common.Config.ConsolePrinter import get_printer
 
 
 class EngineCLI:
@@ -28,6 +29,7 @@ class EngineCLI:
         self.logger = logger
         self.running = False
         self.cli_thread = None
+        self.printer = get_printer()
 
     def start(self):
         """Inicia el CLI en un hilo separado"""
@@ -37,9 +39,7 @@ class EngineCLI:
 
         self.running = True
         self.cli_thread = threading.Thread(
-            target=self._run_cli,
-            daemon=True,
-            name="EngineCLI"
+            target=self._run_cli, daemon=True, name="EngineCLI"
         )
         self.cli_thread.start()
         self.logger.info("Engine CLI started")
@@ -52,41 +52,44 @@ class EngineCLI:
 
     def _show_menu(self):
         """Muestra el menú del CLI"""
-        print("\n" + "=" * 60)
-        print("  EV_CP_E - ENGINE CONTROL MENU")
-        print("=" * 60)
-        print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-
+        # 构建状态信息
+        status_info = []
+        status_info.append(f"CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
+        
         status = self.engine.get_current_status()
-        status_indicator = f"  Status: {status}"
+        status_text = f"Status: {status}"
         if self.engine._manual_faulty_mode:
-            status_indicator += " ⚠️  [MANUAL FAULTY MODE ACTIVE]"
-        print(status_indicator)
-
-        print(f"  Charging: {'YES' if self.engine.is_charging else 'NO'}")
+            status_text += " ⚠️  [MANUAL FAULTY MODE ACTIVE]"
+        status_info.append(status_text)
+        status_info.append(f"Charging: {'YES' if self.engine.is_charging else 'NO'}")
 
         if self.engine.is_charging and self.engine.current_session:
-            print(f"  Session ID: {self.engine.current_session['session_id']}")
-            print(f"  Driver ID: {self.engine.current_session['driver_id']}")
-            print(f"  Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
-            print(f"  Cost: €{self.engine.current_session['total_cost']:.2f}")
+            status_info.append(f"Session ID: {self.engine.current_session['session_id']}")
+            status_info.append(f"Driver ID: {self.engine.current_session['driver_id']}")
+            status_info.append(f"Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
+            status_info.append(f"Cost: €{self.engine.current_session['total_cost']:.2f}")
 
-        print("-" * 60)
-        print("  MANUAL CHARGING (from CP, sends request to Central):")
-        print("  [1] Request charging (manual charge_request to Central)")
-        print("  [2] Stop charging (simulate vehicle unplug)")
-        print()
-        print("  ENGINE HARDWARE SIMULATION:")
-        print("  [3] Simulate Engine failure (Send KO to Monitor)")
-        print("  [4] Simulate Engine recovery (Send OK to Monitor)")
-        print()
-        print("  STATUS:")
-        print("  [5] Show current status")
-        print()
-        print("  [0] Exit menu (Engine continues running)")
-        print("=" * 60)
-        print()
+        # 显示状态面板
+        self.printer.print_panel("\n".join(status_info), title="Current Status", style="cyan")
         
+        # 显示菜单
+        menu_items = {
+            "MANUAL CHARGING (from CP, sends request to Central)": [
+                "[1] Request charging (manual charge_request to Central)",
+                "[2] Stop charging (simulate vehicle unplug)"
+            ],
+            "ENGINE HARDWARE SIMULATION": [
+                "[3] Simulate Engine failure (Send KO to Monitor)",
+                "[4] Simulate Engine recovery (Send OK to Monitor)"
+            ],
+            "STATUS": [
+                "[5] Show current status"
+            ],
+            "EXIT": [
+                "[0] Exit menu (Engine continues running)"
+            ]
+        }
+        self.printer.print_menu("EV_CP_E - ENGINE CONTROL MENU", menu_items)
 
     def _run_cli(self):
         """Ejecuta el loop principal del CLI"""
@@ -114,10 +117,10 @@ class EngineCLI:
                 elif user_input == "5":
                     self._show_status()
                 elif user_input == "0":
-                    print("\n✓ Exiting menu. Engine continues running in background.")
-                    print("  (Press ENTER anytime to show menu again)\n")
+                    self.printer.print_success("Exiting menu. Engine continues running in background.")
+                    self.printer.print_info("(Press ENTER anytime to show menu again)")
                 else:
-                    print(f"\n⚠ Invalid option: '{user_input}'. Press ENTER to show menu.\n")
+                    self.printer.print_warning(f"Invalid option: '{user_input}'. Press ENTER to show menu.")
 
             except EOFError:
                 # Si se cierra stdin, salir del CLI
@@ -139,44 +142,38 @@ class EngineCLI:
         Este método implementa la opción MANUAL: envía un charge_request a Central
         como lo haría un Driver, pero iniciado desde el propio CP.
         """
-        print("\n" + "-" * 60)
-
         if not self.engine.cp_id:
-            print("❌ Cannot start charging: CP_ID not initialized yet")
-            print("   Wait for Monitor to provide CP_ID")
-            print("-" * 60)
+            self.printer.print_error("Cannot start charging: CP_ID not initialized yet")
+            self.printer.print_info("Wait for Monitor to provide CP_ID")
             return
         if self.engine._manual_faulty_mode:
-            print("❌ Cannot start charging: Engine in MANUAL FAULTY mode")
-            print("   Simulate recovery first (option [4])")
-            print("-" * 60)
+            self.printer.print_error("Cannot start charging: Engine in MANUAL FAULTY mode")
+            self.printer.print_info("Simulate recovery first (option [4])")
             return
         if self.engine.is_charging:
-            print("⚠ Vehicle already connected and charging!")
-            print(f"   Session ID: {self.engine.current_session['session_id']}")
-            print(f"   Driver ID: {self.engine.current_session['driver_id']}")
-            print("-" * 60)
+            self.printer.print_warning("Vehicle already connected and charging!")
+            self.printer.print_key_value("Session ID", self.engine.current_session['session_id'])
+            self.printer.print_key_value("Driver ID", self.engine.current_session['driver_id'])
             return
 
         # Solicitar Driver ID para la sesión manual
-        print("🔌 MANUAL CHARGING REQUEST")
-        print("   (Sends charge_request to Central, like a Driver would)")
-        print()
+        self.printer.print_section("MANUAL CHARGING REQUEST", "-", 60)
+        self.printer.print_info("(Sends charge_request to Central, like a Driver would)")
 
-        driver_id = input("   Enter Driver ID (or press ENTER for 'manual_driver'): ").strip()
+        driver_id = input("Enter Driver ID (or press ENTER for 'manual_driver'): ").strip()
         if not driver_id:
             driver_id = "manual_driver"
 
-        print()
-        print(f"   Driver ID: {driver_id}")
-        print(f"   CP ID: {self.engine.cp_id}")
-        print()
-        print("   Sending charge_request to Central via Kafka...")
+        self.printer.print_key_value("Driver ID", driver_id)
+        self.printer.print_key_value("CP ID", self.engine.cp_id)
+        self.printer.print_info("Sending charge_request to Central via Kafka...")
 
         # Enviar charge_request a Central (como lo haría un Driver)
-        if not self.engine.kafka_manager or not self.engine.kafka_manager.is_connected():
-            print("❌ Kafka not connected - cannot send request to Central")
-            print("-" * 60)
+        if (
+            not self.engine.kafka_manager
+            or not self.engine.kafka_manager.is_connected()
+        ):
+            self.printer.print_error("Kafka not connected - cannot send request to Central")
             return
 
         charge_request = {
@@ -188,144 +185,129 @@ class EngineCLI:
         }
 
         success = self.engine.kafka_manager.produce_message(
-            KafkaTopics.DRIVER_CHARGE_REQUESTS,
-            charge_request
+            KafkaTopics.DRIVER_CHARGE_REQUESTS, charge_request
         )
 
         if success:
-            print("✓ Charge request sent to Central successfully")
-            print()
-            print("   Central will:")
-            print("   1. Validate this CP is available")
-            print("   2. Create charging session in database")
-            print("   3. Get price from CP configuration")
-            print("   4. Send start_charging_command to this Engine")
-            print("   5. Engine will start charging automatically")
-            print()
-            print("   Wait for Central's response...")
+            self.printer.print_success("Charge request sent to Central successfully")
+            steps = [
+                "1. Validate this CP is available",
+                "2. Create charging session in database",
+                "3. Get price from CP configuration",
+                "4. Send start_charging_command to this Engine",
+                "5. Engine will start charging automatically"
+            ]
+            self.printer.print_list(steps, "Central will:", numbered=True)
+            self.printer.print_info("Wait for Central's response...")
         else:
-            print("❌ Failed to send charge request to Kafka")
-
-        print("-" * 60)
+            self.printer.print_error("Failed to send charge request to Kafka")
 
     def _handle_vehicle_disconnected(self):
         """Maneja la simulación de desconexión del vehículo (desenchufar)"""
-        print("\n" + "-" * 60)
-
         if not self.engine.is_charging:
-            print("⚠ No vehicle connected. Nothing to disconnect.")
-            print("-" * 60)
+            self.printer.print_warning("No vehicle connected. Nothing to disconnect.")
             return
 
-        print("🔌 SIMULATING: Driver unplugs vehicle from CP")
-        print(f"   Stopping charging session: {self.engine.current_session['session_id']}")
+        self.printer.print_section("SIMULATING: Driver unplugs vehicle from CP", "-", 60)
+        self.printer.print_info(f"Stopping charging session: {self.engine.current_session['session_id']}")
 
         # Detener la carga
         success = self.engine._stop_charging_session()
 
         if success:
-            print("✓ Charging stopped successfully")
-            print("   Final charging data sent to Central (via Kafka)")
+            self.printer.print_success("Charging stopped successfully")
+            self.printer.print_info("Final charging data sent to Central (via Kafka)")
         else:
-            print("❌ Failed to stop charging")
-
-        print("-" * 60)
+            self.printer.print_error("Failed to stop charging")
 
     def _handle_simulate_failure(self):
         """Simula una avería del Engine (según PDF página 11)"""
-        print("\n" + "-" * 60)
-        print("💥 SIMULATING: Engine hardware/software failure")
-        print("   This will trigger Monitor to report FAULTY status to Central")
+        self.printer.print_section("SIMULATING: Engine hardware/software failure", "=", 60)
+        self.printer.print_info("This will trigger Monitor to report FAULTY status to Central")
 
         # Activar modo de fallo manual - esto persiste hasta que se llame a recovery
         self.engine._manual_faulty_mode = True
-        print("   ✓ Engine set to MANUAL FAULTY mode (persists until manual recovery)")
+        self.printer.print_success("Engine set to MANUAL FAULTY mode (persists until manual recovery)")
 
         # Enviar mensaje de fallo al Monitor
-        if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
+        if (
+            self.engine.monitor_server
+            and self.engine.monitor_server.has_active_clients()
+        ):
             failure_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
-                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "FAULTY",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
             }
             self.engine.monitor_server.send_broadcast_message(failure_message)
-            print("   ✓ FAULTY signal sent to Monitor (via Socket)")
+            self.printer.print_success("FAULTY signal sent to Monitor (via Socket)")
 
             # Si estamos cargando, detener la carga
             if self.engine.is_charging:
-                print("   ✓ Charging interrupted due to failure")
+                self.printer.print_success("Charging interrupted due to failure")
                 self.engine._stop_charging_session()
         else:
-            print("⚠ No Monitor connected, cannot send FAULTY signal")
+            self.printer.print_warning("No Monitor connected, cannot send FAULTY signal")
 
-        print()
-        print("   NOTE: Engine will remain in FAULTY mode until you use option [4]")
-        print("         to simulate recovery. Health checks will continue to report FAULTY.")
-        print("-" * 60)
+        self.printer.print_info("NOTE: Engine will remain in FAULTY mode until you use option [4]")
+        self.printer.print_info("      to simulate recovery. Health checks will continue to report FAULTY.")
 
     def _handle_simulate_recovery(self):
         """Simula la recuperación del Engine de una avería"""
-        print("\n" + "-" * 60)
-        print("✓ SIMULATING: Engine recovery from failure")
-        print("   This will trigger Monitor to report ACTIVE status to Central")
+        self.printer.print_section("SIMULATING: Engine recovery from failure", "=", 60)
+        self.printer.print_info("This will trigger Monitor to report ACTIVE status to Central")
 
         # Desactivar modo de fallo manual
         self.engine._manual_faulty_mode = False
-        print("   ✓ Engine MANUAL FAULTY mode deactivated")
+        self.printer.print_success("Engine MANUAL FAULTY mode deactivated")
 
         # Enviar mensaje de recuperación al Monitor
-        if self.engine.monitor_server and self.engine.monitor_server.has_active_clients():
+        if (
+            self.engine.monitor_server
+            and self.engine.monitor_server.has_active_clients()
+        ):
             recovery_message = {
                 MessageFields.TYPE: MessageTypes.HEALTH_CHECK_RESPONSE,
-                MessageFields.MESSAGE_ID: str(uuid.uuid4()),  
+                MessageFields.MESSAGE_ID: str(uuid.uuid4()),
                 MessageFields.STATUS: ResponseStatus.SUCCESS,
                 MessageFields.ENGINE_STATUS: "ACTIVE",
                 MessageFields.IS_CHARGING: self.engine.is_charging,
             }
             self.engine.monitor_server.send_broadcast_message(recovery_message)
-            print("   ✓ ACTIVE signal sent to Monitor (via Socket)")
-            print()
-            print("   Engine recovered! Health checks will now report ACTIVE status.")
+            self.printer.print_success("ACTIVE signal sent to Monitor (via Socket)")
+            self.printer.print_success("Engine recovered! Health checks will now report ACTIVE status.")
         else:
-            print("⚠ No Monitor connected, cannot send ACTIVE signal")
-
-        print("-" * 60)
+            self.printer.print_warning("No Monitor connected, cannot send ACTIVE signal")
 
     def _show_status(self):
         """Muestra el estado actual del Engine"""
-        print("\n" + "=" * 60)
-        print("  CURRENT ENGINE STATUS")
-        print("=" * 60)
-        print(f"  CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-
+        # 构建状态信息
+        status_details = []
+        status_details.append(f"CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
+        
         status = self.engine.get_current_status()
-        print(f"  Engine Status: {status}")
+        status_details.append(f"Engine Status: {status}")
         if self.engine._manual_faulty_mode:
-            print("  ⚠️  MANUAL FAULTY MODE: ACTIVE (use option [4] to recover)")
-
-        print(f"  Running: {self.engine.running}")
-        print(f"  Charging: {self.engine.is_charging}")
+            status_details.append("⚠️  MANUAL FAULTY MODE: ACTIVE (use option [4] to recover)")
+        
+        status_details.append(f"Running: {self.engine.running}")
+        status_details.append(f"Charging: {self.engine.is_charging}")
 
         if self.engine.monitor_server:
-            print(f"  Monitor Server: Running on {self.engine.engine_listen_address[0]}:{self.engine.engine_listen_address[1]}")
-            print(f"  Monitor Connected: {self.engine.monitor_server.has_active_clients()}")
+            status_details.append(f"Monitor Server: Running on {self.engine.engine_listen_address[0]}:{self.engine.engine_listen_address[1]}")
+            status_details.append(f"Monitor Connected: {self.engine.monitor_server.has_active_clients()}")
         else:
-            print("  Monitor Server: Not initialized")
-
-        if self.engine.kafka_manager:
-            print(f"  Kafka Connected: {self.engine.kafka_manager.is_connected()}")
-        else:
-            print("  Kafka: Not initialized")
+            status_details.append("Monitor Server: Not initialized")
 
         if self.engine.is_charging and self.engine.current_session:
-            print("\n  CURRENT CHARGING SESSION:")
-            print(f"    Session ID: {self.engine.current_session['session_id']}")
-            print(f"    Driver ID: {self.engine.current_session['driver_id']}")
-            print(f"    Duration: {time.time() - self.engine.current_session['start_time']:.1f}s")
-            print(f"    Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
-            print(f"    Cost: €{self.engine.current_session['total_cost']:.2f}")
-            print(f"    Price: €{self.engine.current_session['price_per_kwh']}/kWh")
+            status_details.append("\nCURRENT CHARGING SESSION:")
+            status_details.append(f"  Session ID: {self.engine.current_session['session_id']}")
+            status_details.append(f"  Driver ID: {self.engine.current_session['driver_id']}")
+            status_details.append(f"  Duration: {time.time() - self.engine.current_session['start_time']:.1f}s")
+            status_details.append(f"  Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
+            status_details.append(f"  Cost: €{self.engine.current_session['total_cost']:.2f}")
+            status_details.append(f"  Price: €{self.engine.current_session['price_per_kwh']}/kWh")
 
-        print("=" * 60)
+        self.printer.print_panel("\n".join(status_details), title="CURRENT ENGINE STATUS", style="blue")

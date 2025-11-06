@@ -1,12 +1,3 @@
-"""
-Engine消息分发器
-
-负责处理来自Monitor的所有消息，包括：
-- 健康检查请求
-- 启动/停止充电命令
-
-所有处理器方法返回响应字典，通过MySocketServer自动发送回Monitor。
-"""
 
 import sys
 import os
@@ -30,7 +21,7 @@ class EngineMessageDispatcher:
             engine: EV_CP_E实例，用于访问Engine的业务逻辑
         """
         self.logger = logger
-        self.engine = engine  
+        self.engine = engine
 
         # 消息处理器映射（使用消息类型常量）
         self.handlers = {
@@ -62,14 +53,13 @@ class EngineMessageDispatcher:
                 self.logger.warning(f"Unknown message type: {msg_type}")
                 return self._create_error_response(
                     message.get(MessageFields.MESSAGE_ID),
-                    f"Unknown message type: {msg_type}"
+                    f"Unknown message type: {msg_type}",
                 )
 
         except Exception as e:
             self.logger.error(f"Error dispatching message: {e}")
             return self._create_error_response(
-                message.get(MessageFields.MESSAGE_ID),
-                str(e)
+                message.get(MessageFields.MESSAGE_ID), str(e)
             )
 
     def _create_error_response(self, message_id, error_msg):
@@ -118,8 +108,12 @@ class EngineMessageDispatcher:
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
-            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
-            MessageFields.MESSAGE: f"CP_ID set to {cp_id}" if success else "CP_ID already initialized",
+            MessageFields.STATUS: (
+                ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE
+            ),
+            MessageFields.MESSAGE: (
+                f"CP_ID set to {cp_id}" if success else "CP_ID already initialized"
+            ),
             MessageFields.CP_ID: cp_id,
         }
 
@@ -145,7 +139,6 @@ class EngineMessageDispatcher:
         self.logger.debug(f"Health check response prepared: {response}")
         return response
 
-
     def _handle_start_charging_command(self, message):
         """
         处理开始充电命令
@@ -159,7 +152,7 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing start charging command")
+        self.logger.debug("Processing start charging command")
 
         # 获取会话ID（由Central通过Monitor提供）
         session_id = message.get(MessageFields.SESSION_ID)
@@ -192,8 +185,12 @@ class EngineMessageDispatcher:
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
-            MessageFields.STATUS: ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE,
-            MessageFields.MESSAGE: "Charging started" if success else "Failed to start charging",
+            MessageFields.STATUS: (
+                ResponseStatus.SUCCESS if success else ResponseStatus.FAILURE
+            ),
+            MessageFields.MESSAGE: (
+                "Charging started" if success else "Failed to start charging"
+            ),
             MessageFields.SESSION_ID: session_id if success else None,
         }
 
@@ -213,7 +210,7 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing stop charging command")
+        self.logger.debug("Processing stop charging command")
 
         session_id = message.get(MessageFields.SESSION_ID)
 
@@ -222,7 +219,9 @@ class EngineMessageDispatcher:
             if self.engine.current_session:
                 stopped_session_id = self.engine.current_session["session_id"]
                 self.engine._stop_charging_session()
-                self.logger.info(f"紧急停止充电会话: {stopped_session_id} (session_id=None)")
+                self.logger.info(
+                    f"Emergency stop charging session: {stopped_session_id} (session_id=None)"
+                )
                 return {
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -231,7 +230,7 @@ class EngineMessageDispatcher:
                     MessageFields.SESSION_ID: stopped_session_id,
                 }
             else:
-                self.logger.debug("紧急停止命令收到，但没有活跃会话")
+                self.logger.debug("Emergency stop command received, but no active session")
                 return {
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -246,7 +245,7 @@ class EngineMessageDispatcher:
             and self.engine.current_session["session_id"] == session_id
         ):
             self.engine._stop_charging_session()
-            self.logger.info(f"充电会话 {session_id} 已停止")
+            self.logger.info(f"Charging session {session_id} stopped")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -255,7 +254,7 @@ class EngineMessageDispatcher:
                 MessageFields.SESSION_ID: session_id,
             }
         else:
-            self.logger.warning(f"会话ID不匹配或无活跃会话: {session_id}")
+            self.logger.warning(f"Session ID mismatch or no active session: {session_id}")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -278,13 +277,13 @@ class EngineMessageDispatcher:
         Returns:
             dict: 命令响应消息
         """
-        self.logger.info("Processing resume CP command from Central (via Monitor)")
+        self.logger.debug("Processing resume CP command from Central (via Monitor)")
 
         cp_id = message.get(MessageFields.CP_ID)
 
         # 验证CP_ID匹配
         if self.engine.cp_id != cp_id:
-            self.logger.warning(f"CP_ID不匹配: 期望 {self.engine.cp_id}, 收到 {cp_id}")
+            self.logger.warning(f"CP_ID mismatch: expected {self.engine.cp_id}, received {cp_id}")
             return {
                 MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                 MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
@@ -297,13 +296,16 @@ class EngineMessageDispatcher:
         self.engine._manual_faulty_mode = False
 
         if was_faulty:
-            self.logger.info("✅ Central resume command: Cleared manual FAULTY mode")
+            self.logger.info("✓  Central resume command: Cleared manual FAULTY mode")
 
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
             MessageFields.STATUS: ResponseStatus.SUCCESS,
-            MessageFields.MESSAGE: f"CP {cp_id} resumed, manual FAULTY mode cleared" if was_faulty else f"CP {cp_id} resumed",
+            MessageFields.MESSAGE: (
+                f"CP {cp_id} resumed, manual FAULTY mode cleared"
+                if was_faulty
+                else f"CP {cp_id} resumed"
+            ),
             MessageFields.CP_ID: cp_id,
         }
-

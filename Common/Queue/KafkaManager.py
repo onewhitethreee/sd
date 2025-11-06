@@ -143,7 +143,7 @@ class KafkaManager:
             self.logger.error(f"Consumer not found: {topic}")
             return
 
-        self.logger.info(f"Starting to consume messages from topic {topic}")
+            self.logger.debug(f"Starting to consume messages from topic {topic}")
 
         try:
             for message in consumer:
@@ -177,7 +177,7 @@ class KafkaManager:
         for topic, consumer in self.consumers.items():
             try:
                 consumer.close()
-                self.logger.info(f"Consumer closed: {topic}")
+                self.logger.debug(f"Consumer closed: {topic}")
             except Exception as e:
                 self.logger.error(f"Failed to close consumer: {e}")
 
@@ -185,7 +185,7 @@ class KafkaManager:
         if self.producer:
             try:
                 self.producer.close()
-                self.logger.info("Producer closed successfully")
+                self.logger.debug("Producer closed successfully")
             except Exception as e:
                 self.logger.error(f"Failed to close producer: {e}")
 
@@ -246,7 +246,7 @@ class KafkaManager:
                 replication_factor=replication_factor
             )
             admin.create_topics([new_topic], validate_only=False)
-            self.logger.info(f"Topic {topic} created successfully")
+            self.logger.debug(f"Topic {topic} created successfully")
             admin.close()
             return True
 
