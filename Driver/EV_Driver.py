@@ -278,9 +278,9 @@ class Driver:
 
     def _auto_mode(self, services):
 
-        self.logger.info(f"Entering auto mode with {len(services)} services")
+        self.logger.debug(f"Entering auto mode with {len(services)} services")
         print(
-            f"🤖 Auto mode: Processing {len(services)} charging point(s) automatically"
+            f"Processing {len(services)} charging point(s) from file automatically"
         )
         print(f"    Type 'help' to see available commands during auto mode\n")
 
