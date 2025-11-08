@@ -81,8 +81,8 @@ class EngineCLI:
                 "[2] Stop charging (simulate vehicle unplug)"
             ],
             "ENGINE HARDWARE SIMULATION": [
-                "[3] Simulate Engine failure (Send KO to Monitor)",
-                "[4] Simulate Engine recovery (Send OK to Monitor)"
+                "[3] Simulate Engine failure",
+                "[4] Simulate Engine recovery "
             ],
             "STATUS": [
                 "[5] Show current status"
@@ -250,15 +250,19 @@ class EngineCLI:
             self.engine.monitor_server.send_broadcast_message(failure_message)
             self.printer.print_success("FAULTY signal sent to Monitor (via Socket)")
 
-            # Si estamos cargando, detener la carga
+            # Si estamos cargando, SUSPENDER la carga (NO finalizar)
             if self.engine.is_charging:
-                self.printer.print_success("Charging interrupted due to failure")
-                self.engine._stop_charging_session()
+                session_id = self.engine.current_session['session_id']
+                self.printer.print_warning(f"⚠️  Charging session '{session_id}' will be SUSPENDED")
+                self.printer.print_info("Session data will be preserved and sent when Engine recovers")
+                self.engine._stop_charging_session()  # Llamará internamente a suspender
         else:
             self.printer.print_warning("No Monitor connected, cannot send FAULTY signal")
 
         self.printer.print_info("NOTE: Engine will remain in FAULTY mode until you use option [4]")
         self.printer.print_info("      to simulate recovery. Health checks will continue to report FAULTY.")
+        if self.engine._suspended_session:
+            self.printer.print_warning(f"      Session '{self.engine._suspended_session['session_id']}' is SUSPENDED and will be sent on recovery")
 
     def _handle_simulate_recovery(self):
         """Simula la recuperación del Engine de una avería"""
