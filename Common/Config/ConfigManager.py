@@ -50,9 +50,6 @@ class ConfigManager:
         ip_port = self.get("BROKER_ADDRESS", "localhost:9092").split(":")
         return (ip_port[0], int(ip_port[1]))
     
-    def get_listen_port(self):
-        return int(self.get("LISTEN_PORT", "5000"))
-    
     def get_db_path(self):
         return self.get("DB_PATH", "ev_central.db")
         
@@ -60,7 +57,7 @@ class ConfigManager:
         ip_port = self.get("IP_PORT_EV_CP_E", "localhost:6000").split(":")
         return (ip_port[0], int(ip_port[1]))
     def get_ip_port_ev_cp_central(self):
-        ip_port = self.get("IP_PORT_EV_CP_CENTRAL", "localhost:5000").split(":")
+        ip_port = self.get("IP_PORT_EV_CP_CENTRAL", "localhost:5002").split(":")
         return (ip_port[0], int(ip_port[1]))
 
 

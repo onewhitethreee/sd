@@ -51,7 +51,7 @@ class EV_Central:
         else:
 
             class Args:
-                listen_port = self.config.get_listen_port()
+                listen_port = self.config.get_ip_port_ev_cp_central()[1]
                 broker = self.config.get_broker()
 
             self.args = Args()
@@ -78,11 +78,12 @@ class EV_Central:
 
             if self.debug_mode:
                 server_host = self.config.get_ip_port_ev_cp_central()[0]
-                server_port = self.config.get_listen_port()
+                server_port = self.config.get_ip_port_ev_cp_central()[1]
             else:
                 server_host = "0.0.0.0"
                 server_port = self.args.listen_port
-
+            print(f"Starting Socket Server on {server_host}:{server_port}")
+            print(f"kafka broker at {self.args.broker[0]}:{self.args.broker[1]}")
             # 将自定义消息处理函数分配给 socket 服务器
             self.socket_server = MySocketServer(
                 host=server_host,
