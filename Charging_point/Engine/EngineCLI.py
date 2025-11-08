@@ -55,7 +55,7 @@ class EngineCLI:
         # 构建状态信息
         status_info = []
         status_info.append(f"CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-        
+
         status = self.engine.get_current_status()
         status_text = f"Status: {status}"
         if self.engine._manual_faulty_mode:
@@ -70,6 +70,10 @@ class EngineCLI:
             status_info.append(f"Driver ID: {self.engine.current_session['driver_id']}")
             status_info.append(f"Energy: {self.engine.current_session['energy_consumed_kwh']:.3f} kWh")
             status_info.append(f"Cost: €{self.engine.current_session['total_cost']:.2f}")
+
+        # Mostrar sesión suspendida si existe
+        if self.engine._suspended_session:
+            status_info.append(f"⏸️  Suspended: {self.engine._suspended_session['session_id']} ({self.engine._suspended_session['energy_consumed_kwh']:.3f} kWh)")
 
         # 显示状态面板
         self.printer.print_panel("\n".join(status_info), title="Current Status", style="cyan")
@@ -253,8 +257,10 @@ class EngineCLI:
             # Si estamos cargando, SUSPENDER la carga (NO finalizar)
             if self.engine.is_charging:
                 session_id = self.engine.current_session['session_id']
+                driver_id = self.engine.current_session['driver_id']
                 self.printer.print_warning(f"⚠️  Charging session '{session_id}' will be SUSPENDED")
                 self.printer.print_info("Session data will be preserved and sent when Engine recovers")
+                self.printer.print_info(f"Driver '{driver_id}' will be notified about the failure")
                 self.engine._stop_charging_session()  # Llamará internamente a suspender
         else:
             self.printer.print_warning("No Monitor connected, cannot send FAULTY signal")
@@ -272,6 +278,11 @@ class EngineCLI:
         # Desactivar modo de fallo manual
         self.engine._manual_faulty_mode = False
         self.printer.print_success("Engine MANUAL FAULTY mode deactivated")
+
+        # Si hay una sesión suspendida, procesarla antes de enviar el mensaje de recuperación
+        if self.engine._suspended_session:
+            self.printer.print_info(f"✓  Processing suspended session '{self.engine._suspended_session['session_id']}'...")
+            self.engine._resume_suspended_session()
 
         # Enviar mensaje de recuperación al Monitor
         if (
@@ -296,14 +307,14 @@ class EngineCLI:
         # 构建状态信息
         status_details = []
         status_details.append(f"CP ID: {self.engine.cp_id if self.engine.cp_id else 'Not initialized'}")
-        
+
         status = self.engine.get_current_status()
         status_details.append(f"Engine Status: {status}")
         if self.engine._manual_faulty_mode:
             status_details.append("⚠️  MANUAL FAULTY MODE: ACTIVE (use option [4] to recover)")
         if self.engine.cp_service_stopped:
             status_details.append("🚫 CP SERVICE STOPPED: Charging not allowed (admin must resume from Central)")
-        
+
         status_details.append(f"Running: {self.engine.running}")
         status_details.append(f"Charging: {self.engine.is_charging}")
 
@@ -319,7 +330,7 @@ class EngineCLI:
             energy = session['energy_consumed_kwh']
             cost = session['total_cost']
             price = session['price_per_kwh']
-            
+
             status_details.append("\n🔋 CURRENT CHARGING SESSION:")
             status_details.append(f"  Session ID: {session['session_id']}")
             status_details.append(f"  Driver ID: {session['driver_id']}")
@@ -327,13 +338,24 @@ class EngineCLI:
             status_details.append(f"  Energy Consumed: {energy:.3f} kWh")
             status_details.append(f"  Total Cost: €{cost:.2f}")
             status_details.append(f"  Price: €{price}/kWh")
-            
-           
-            
+
+
+
             # 显示实时进度（如果设置了最大充电时长）
             max_duration = int(os.getenv("MAX_CHARGING_DURATION", 30))
             if max_duration > 0:
                 progress = min(100, (duration / max_duration) * 100)
                 status_details.append(f"  Progress: {progress:.1f}% ({duration:.0f}s / {max_duration}s)")
+
+        # Mostrar información de sesión suspendida si existe
+        if self.engine._suspended_session:
+            session = self.engine._suspended_session
+            status_details.append("\n⏸️  SUSPENDED SESSION (waiting for recovery):")
+            status_details.append(f"  Session ID: {session['session_id']}")
+            status_details.append(f"  Driver ID: {session['driver_id']}")
+            status_details.append(f"  Energy Consumed: {session['energy_consumed_kwh']:.3f} kWh")
+            status_details.append(f"  Total Cost: €{session['total_cost']:.2f}")
+            status_details.append(f"  Duration: {session['duration']:.1f}s")
+            status_details.append("  ⚠️  Will be sent to Central and Driver when Engine recovers")
 
         self.printer.print_panel("\n".join(status_details), title="CURRENT ENGINE STATUS", style="blue")

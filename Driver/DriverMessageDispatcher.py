@@ -118,10 +118,29 @@ class DriverMessageDispatcher:
                 - session_id: ID de sesión
                 - energy_consumed_kwh: Energía consumida
                 - total_cost: Costo total
+                - status: Estado (opcional, "error" indica fallo del CP)
+                - reason: Razón del error (opcional)
+                - message: Mensaje descriptivo (opcional)
         """
         session_id = message.get(MessageFields.SESSION_ID)
         energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
         total_cost = message.get(MessageFields.TOTAL_COST, 0)
+        status = message.get(MessageFields.STATUS)
+        reason = message.get(MessageFields.REASON)
+        error_message = message.get(MessageFields.MESSAGE)
+
+        # Si el mensaje indica un error (fallo del CP)
+        if status == "error":
+            cp_id = message.get(MessageFields.CP_ID, "Unknown CP")
+            self.logger.error(f"⚠️  CHARGING POINT FAULT DETECTED!")
+            self.logger.error(f"CP: {cp_id}, Session: {session_id}")
+            self.logger.error(f"Reason: {reason}")
+            if error_message:
+                self.logger.error(f"Message: {error_message}")
+            self.logger.warning(f"Energy consumed before fault: {energy_consumed_kwh:.3f} kWh")
+            self.logger.warning(f"Cost before fault: €{total_cost:.2f}")
+            self.logger.info("Session has been suspended. Data will be sent when CP recovers.")
+            return True
 
         with self.driver.lock:
             if self.driver.current_charging_session:

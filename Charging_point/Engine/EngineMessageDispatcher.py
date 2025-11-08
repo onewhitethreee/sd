@@ -303,6 +303,11 @@ class EngineMessageDispatcher:
 
         if was_faulty:
             self.logger.info("✓  Central resume command: Cleared manual FAULTY mode")
+            # Si había una sesión suspendida, procesarla ahora
+            if self.engine._suspended_session:
+                self.logger.info(f"✓  Processing suspended session after Central resume command")
+                self.engine._resume_suspended_session()
+
         if was_stopped:
             self.logger.info("✓  Central resume command: CP service resumed, charging allowed")
 

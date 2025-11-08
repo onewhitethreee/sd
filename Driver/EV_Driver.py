@@ -428,7 +428,7 @@ class Driver:
 
         # Request available charging point list
         self._request_available_cps()
-        time.sleep(2)
+        time.sleep(1)
 
         # Key change: Start CLI early so it is available in any mode
         self._init_cli()
