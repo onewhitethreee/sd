@@ -59,15 +59,3 @@ class ConfigManager:
     def get_ip_port_ev_cp_central(self):
         ip_port = self.get("IP_PORT_EV_CP_CENTRAL", "localhost:5002").split(":")
         return (ip_port[0], int(ip_port[1]))
-
-
-if __name__ == "__main__":
-
-    config = ConfigManager()
-
-    debug_mode = config.get("DEBUG_MODE") == "True"
-    print(f"DEBUG_MODE: {debug_mode}")
-    print(type(debug_mode))
-    if debug_mode:
-        print("Debug mode is enabled.")
-        print(config.get_debug_mode())

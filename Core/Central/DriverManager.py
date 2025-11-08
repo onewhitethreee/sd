@@ -240,28 +240,3 @@ class DriverManager:
             "active_sessions_count": len(active_sessions),
             "active_session_ids": [s["session_id"] for s in active_sessions],
         }
-
-
-if __name__ == "__main__":
-    # 测试代码
-    from Common.Config.CustomLogger import CustomLogger
-    from Common.Database.SqliteConnection import SqliteConnection
-    from Core.Central.ChargingSession import ChargingSession
-
-    logger = CustomLogger.get_logger()
-    db_manager = SqliteConnection("ev_central.db")
-    charging_session_manager = ChargingSession(logger, db_manager)
-
-    driver_manager = DriverManager(logger, charging_session_manager)
-
-    # 测试注册连接
-    driver_manager.register_driver_connection("driver_001", "client_123")
-    print(f"Driver connections: {driver_manager.get_connection_count()}")
-
-    # 测试查询
-    print(f"Driver client_id: {driver_manager.get_driver_client_id('driver_001')}")
-    print(f"Client's driver: {driver_manager.get_driver_by_client_id('client_123')}")
-
-    # 测试断开
-    driver_id, sessions = driver_manager.handle_driver_disconnect("client_123")
-    print(f"Disconnected Driver: {driver_id}, active sessions: {sessions}")

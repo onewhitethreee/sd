@@ -214,16 +214,6 @@ class Driver:
             self.logger.error(f"Error loading services from file: {e}")
             return []
 
-    def _formatter_charging_points(self, charging_points):
-        """
-        Formatear y mostrar la lista de puntos de carga disponibles
-        Args:
-            charging_points: Lista de puntos de carga
-        """
-        # 这个方法现在由DriverCLI使用美化表格显示
-        # 保留这个方法以保持向后兼容，但实际显示由DriverCLI处理
-        pass
-
     def _show_charging_history(self, history_data=None):
         """
         Mostrar el historial de carga

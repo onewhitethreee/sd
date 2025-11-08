@@ -28,13 +28,3 @@ class AppArgumentParser:
         self.parser.add_argument(*args, **kwargs)
     def parse_args(self):
         return self.parser.parse_args()
-
-
-
-
-if __name__ == "__main__":
-    tools = AppArgumentParser("MyApp", "This is my application")
-    args = tools.parse_args()
-    print(f"Parsed arguments: {args}")
-    
-

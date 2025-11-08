@@ -1511,26 +1511,3 @@ class MessageDispatcher:
         self.logger.info(
             f"Connection error notifications sent to {len(connected_drivers)} drivers"
         )
-
-
-if __name__ == "__main__":
-    logger = CustomLogger.get_logger()
-    db_connection = SqliteConnection("ev_central.db")
-    socket_server = None  # Placeholder, should be an instance of MySocketServer
-
-    message_dispatcher = MessageDispatcher(
-        logger=logger,
-        db_manager=db_connection,
-        socket_server=socket_server,
-    )
-    # Example usage
-    example_message = {
-        "type": "register_request",
-        "id": "CP123",
-        "message_id": 1,
-        "cp_id": "CP123",
-        "location": "123 Main St",
-        "price_per_kwh": 0.15,
-    }
-    response = message_dispatcher.dispatch_message("client1", example_message)
-    print(response)

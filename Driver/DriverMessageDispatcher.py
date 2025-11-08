@@ -1,7 +1,6 @@
 import time
 import sys
 import os
-from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
@@ -258,8 +257,6 @@ class DriverMessageDispatcher:
         self.logger.debug(
             f"Available charging points: {len(self.driver.available_charging_points)}"
         )
-
-        self.driver._formatter_charging_points(self.driver.available_charging_points)
 
         return True
 

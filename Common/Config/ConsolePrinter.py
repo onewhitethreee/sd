@@ -7,10 +7,7 @@ try:
     from rich.console import Console
     from rich.table import Table
     from rich.panel import Panel
-    from rich.layout import Layout
-    from rich.text import Text
     from rich import box
-    from rich.align import Align
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False

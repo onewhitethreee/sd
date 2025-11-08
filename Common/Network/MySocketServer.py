@@ -1,9 +1,7 @@
 import socket
 import threading
-
 import sys
 import os
-import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 from Common.Config.CustomLogger import CustomLogger
@@ -313,27 +311,3 @@ class MySocketServer:
         if self.server_socket:
             return self.server_socket.getsockname()[1]
         return self.port
-
-
-if __name__ == "__main__":
-    logger = CustomLogger.get_logger()
-    server = MySocketServer(
-        host="0.0.0.0",
-        port=8080,
-        logger=logger,
-        message_callback=lambda cid, msg: {"type": "echo", "data": msg},
-        disconnect_callback=lambda cid: logger.info(f"Client {cid} disconnected"),
-    )
-
-    try:
-        server.start()
-        while server.running_event.is_set():
-            time.sleep(0.1)
-
-    except KeyboardInterrupt:
-        print("\nShutting down server...")
-        server.stop()  # KeyboardInterrupt时调用stop来清理和clear running_event
-    except Exception as e:  # 捕获其他意外异常
-        logger.error(f"FATAL ERROR in main loop: {e}", exc_info=True)
-        server.stop()  # 出错也应该停止服务器
-    print("Server stopped.")

@@ -371,20 +371,6 @@ class MonitorMessageDispatcher:
         self.logger.debug(f"Received charging data response from Central: {message}")
         return True
 
-    def _handle_charge_completion_response(self, message):
-        """
-        处理来自Central的充电完成响应
-
-        Args:
-            message: 充电完成响应消息，包含：
-                - status: "success" 或 "failure"
-                - message: 响应描述
-                - reason: 失败原因（如果失败）
-                - charge_completion: 充电完成数据
-        """
-        self.logger.debug(f"Received charge completion response from Central: {message}")
-        return True
-
     # ==================== Engine消息处理器 ====================
 
     def _handle_health_check_response(self, message):

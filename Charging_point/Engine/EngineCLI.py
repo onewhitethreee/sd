@@ -200,17 +200,8 @@ class EngineCLI:
 
         if success:
             self.printer.print_success("Charge request sent to Central successfully")
-            steps = [
-                "1. Validate this CP is available",
-                "2. Create charging session in database",
-                "3. Get price from CP configuration",
-                "4. Send start_charging_command to this Engine",
-                "5. Engine will start charging automatically"
-            ]
-            self.printer.print_list(steps, "Central will:", numbered=True)
-            self.printer.print_info("Wait for Central's response...")
         else:
-            self.printer.print_error("Failed to send charge request to Kafka")
+            self.printer.print_error("Failed to send charge request to Central")
 
     def _handle_vehicle_disconnected(self):
         """Maneja la simulación de desconexión del vehículo (desenchufar)"""

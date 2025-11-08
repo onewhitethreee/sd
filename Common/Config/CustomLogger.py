@@ -29,15 +29,6 @@ class CustomLogger:
             logger.removeHandler(handler)
         logger.addHandler(console_handler)
 
-        
+
 
         return logger
-
-
-if __name__ == "__main__":
-    logger = CustomLogger.get_logger(logging.DEBUG)
-    logger.debug("debug message")
-    logger.info("info message")
-    logger.warning("warning message")
-    logger.error("error message")
-    logger.critical("critical message")
