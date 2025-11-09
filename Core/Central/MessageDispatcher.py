@@ -825,10 +825,16 @@ class MessageDispatcher:
             if not success:
                 raise Exception("Failed to complete charging session")
 
-            # 更新充电点状态为活跃
-            self.charging_point_manager.update_charging_point_status(
-                cp_id=cp_id, status=Status.ACTIVE.value
-            )
+            # 更新充电点状态为活跃（除非充电桩已被管理员停止）
+            # 检查当前状态，如果是STOPPED，保持STOPPED状态不变
+            current_cp_status = self.charging_point_manager.get_charging_point_status(cp_id)
+            if current_cp_status != Status.STOPPED.value:
+                self.charging_point_manager.update_charging_point_status(
+                    cp_id=cp_id, status=Status.ACTIVE.value
+                )
+                self.logger.debug(f"CP {cp_id} status updated to ACTIVE after charging completion")
+            else:
+                self.logger.debug(f"CP {cp_id} is STOPPED, keeping STOPPED status after charging completion")
 
             self.logger.info(
                 f"Charging completed: CP {cp_id}, Session {session_id}, Energy consumed: {energy_consumed_kwh}kWh, Cost: €{total_cost} session_data: {session_data}"
@@ -878,6 +884,20 @@ class MessageDispatcher:
         message_id = data["message_id"]
 
         try:
+            # 检查当前状态，如果是STOPPED，不允许改为FAULTY
+            # CP被管理员停止后，不应该因为Engine的故障通知而改变状态
+            current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+            if current_status == Status.STOPPED.value:
+                self.logger.warning(
+                    f"Charging point {cp_id} is STOPPED by admin, ignoring fault notification: {failure_info}"
+                )
+                return self._create_success_response(
+                    "fault_notification",
+                    message_id,
+                    f"Fault notification logged, but CP {cp_id} is STOPPED by admin, status not changed",
+                )
+
             # 更新充电点状态为故障
             self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.FAULTY.value
@@ -929,6 +949,22 @@ class MessageDispatcher:
             )
 
         try:
+            # 检查当前状态，保护管理员设置的STOPPED状态不被任何状态更新覆盖
+            current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+            # 如果当前是STOPPED状态，拒绝所有状态更新
+            # STOPPED状态只能由Central管理员的resume命令来改变
+            if current_status == Status.STOPPED.value:
+                self.logger.debug(
+                    f"Rejecting status update to '{new_status}' for CP {cp_id}: "
+                    f"CP is STOPPED by admin, only 'resume' command can change this status"
+                )
+                return self._create_success_response(
+                    "status_update",
+                    message_id,
+                    f"Status update ignored: CP {cp_id} is STOPPED by admin",
+                )
+
             # 更新状态
             self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=new_status
@@ -1084,6 +1120,20 @@ class MessageDispatcher:
         recovery_info = message.get("recovery_info", "Fault repaired")
 
         try:
+            # 检查当前状态，如果是STOPPED，不允许改为ACTIVE
+            # CP被管理员停止后，不应该因为Engine的恢复通知而改变状态
+            current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+            if current_status == Status.STOPPED.value:
+                self.logger.warning(
+                    f"Charging point {cp_id} is STOPPED by admin, ignoring recovery notification: {recovery_info}"
+                )
+                return self._create_success_response(
+                    "recovery_response",
+                    message_id,
+                    f"Recovery notification logged, but CP {cp_id} is STOPPED by admin, status not changed",
+                )
+
             # 更新充电点状态为活跃
             self.charging_point_manager.update_charging_point_status(
                 cp_id=cp_id, status=Status.ACTIVE.value
@@ -1353,6 +1403,7 @@ class MessageDispatcher:
 
         successful_cps = []
         failed_cps = []
+        skipped_cps = []
 
         for cp in all_cps:
             cp_id = cp["cp_id"]
@@ -1361,12 +1412,24 @@ class MessageDispatcher:
             )
 
             try:
+                response = None
                 if command == "stop":
-                    self._stop_charging_point(cp_id, monitor_client_id, message_id)
+                    response = self._stop_charging_point(cp_id, monitor_client_id, message_id)
                 elif command == "resume":
-                    self._resume_charging_point(cp_id, monitor_client_id, message_id)
+                    response = self._resume_charging_point(cp_id, monitor_client_id, message_id)
 
-                successful_cps.append(cp_id)
+                # 检查响应状态
+                if response and response.get("status") == "success":
+                    successful_cps.append(cp_id)
+                elif response and response.get("status") == "failure":
+                    # 检查是否是因为状态不合适而跳过
+                    info_msg = response.get("info", "")
+                    if "disconnected" in info_msg:
+                        skipped_cps.append(cp_id)
+                        self.logger.debug(f"Skipped CP {cp_id}: {info_msg}")
+                    else:
+                        failed_cps.append(cp_id)
+                        self.logger.warning(f"Failed CP {cp_id}: {info_msg}")
             except Exception as e:
                 self.logger.error(
                     f"Failed to execute command {command} for CP {cp_id}: {e}"
@@ -1378,6 +1441,10 @@ class MessageDispatcher:
         if successful_cps:
             info_parts.append(
                 f"Successfully executed command for CPs: {', '.join(successful_cps)}"
+            )
+        if skipped_cps:
+            info_parts.append(
+                f"Skipped CPs (not in appropriate state): {', '.join(skipped_cps)}"
             )
         if failed_cps:
             info_parts.append(
@@ -1401,10 +1468,56 @@ class MessageDispatcher:
         """停止充电点（设置为STOPPED状态）"""
         # 检查当前状态
         current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+        # 不应该操作已断开连接的充电桩（因为无法通信）
+        if current_status == Status.DISCONNECTED.value:
+            return self._create_failure_response(
+                "manual_command",
+                message_id,
+                f"Charging point {cp_id} is disconnected, cannot execute stop command",
+            )
+
+        # 如果正在充电，需要先强制停止充电会话
         if current_status == Status.CHARGING.value:
             self.logger.warning(
                 f"Charging point {cp_id} is currently charging, will be forcibly stopped"
             )
+
+            # 查找并停止该充电桩的所有活跃充电会话
+            active_sessions = self.charging_session_manager.get_active_sessions_for_charging_point(cp_id)
+            for session in active_sessions:
+                session_id = session.get("session_id")
+                driver_id = session.get("driver_id")
+                energy_consumed_kwh = session.get("energy_consumed_kwh", 0.0)
+                total_cost = session.get("total_cost", 0.0)
+
+                self.logger.info(
+                    f"Forcibly stopping charging session {session_id} for CP {cp_id} due to admin stop command"
+                )
+
+                # 向Monitor发送停止充电会话命令
+                self._send_stop_charging_to_monitor(cp_id, session_id, driver_id)
+
+                # 完成充电会话
+                self.charging_session_manager.complete_charging_session(
+                    session_id=session_id,
+                    energy_consumed_kwh=energy_consumed_kwh,
+                    total_cost=total_cost,
+                )
+
+                # 通知Driver充电被强制停止
+                if driver_id:
+                    self._send_charge_completion_to_driver(
+                        driver_id,
+                        {
+                            "session_id": session_id,
+                            "cp_id": cp_id,
+                            "energy_consumed_kwh": energy_consumed_kwh,
+                            "total_cost": total_cost,
+                            "timestamp": int(time.time()),
+                            "reason": "Charging point stopped by admin",
+                        },
+                    )
 
         # 更新充电点状态为STOPPED
         self.charging_point_manager.update_charging_point_status(
@@ -1429,6 +1542,14 @@ class MessageDispatcher:
     def _resume_charging_point(self, cp_id, monitor_client_id, message_id):
         """恢复充电点（设置为ACTIVE状态）"""
         current_status = self.charging_point_manager.get_charging_point_status(cp_id)
+
+        # 不应该操作已断开连接的充电桩
+        if current_status == Status.DISCONNECTED.value:
+            return self._create_failure_response(
+                "manual_command",
+                message_id,
+                f"Charging point {cp_id} is disconnected, cannot execute resume command",
+            )
 
         # 只有STOPPED或FAULTY状态的CP可以恢复
         if current_status not in [Status.STOPPED.value, Status.FAULTY.value]:

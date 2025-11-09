@@ -229,6 +229,14 @@ class EV_CP_M:
             and self.engine_conn_mgr
             and self.engine_conn_mgr.is_connected
         ):
+            # 检查当前状态，如果是STOPPED，不能自动改为ACTIVE
+            # STOPPED状态只能由Central的resume命令来改变
+            if self._current_status == Status.STOPPED.value:
+                self.logger.debug(
+                    "CP is STOPPED by admin, cannot auto-update to ACTIVE (health check ignored)"
+                )
+                return
+
             # 只有在当前状态不是ACTIVE时才更新
             if self._current_status != Status.ACTIVE.value:
                 self.logger.debug(
