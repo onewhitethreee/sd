@@ -333,7 +333,7 @@ class EngineCLI:
 
 
             # 显示实时进度（如果设置了最大充电时长）
-            max_duration = int(os.getenv("MAX_CHARGING_DURATION", 30))
+            max_duration = self.engine.config.get_max_charging_duration()
             if max_duration > 0:
                 progress = min(100, (duration / max_duration) * 100)
                 status_details.append(f"  Progress: {progress:.1f}% ({duration:.0f}s / {max_duration}s)")
