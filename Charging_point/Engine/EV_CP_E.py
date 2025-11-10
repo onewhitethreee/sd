@@ -43,21 +43,15 @@ class EV_CP_E:
             )
             self.args = self.tools.parse_args()
 
-            # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
+            # 非 debug 模式：从 .env 文件读取监听端口，如果没有则使用端口 0（自动分配）
             if not self.args.debug_port:
-                listen_address = os.getenv("IP_PORT_EV_CP_E") 
+                # config.get_ip_port_ev_cp_e() 返回 tuple: (host, port)
+                self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
+                self.logger.info(f"Using listen address from .env: {self.engine_listen_address[0]}:{self.engine_listen_address[1]}")
             else:
-                listen_address = f"localhost:{self.args.debug_port}"
-            listen_host = listen_address.split(":")[0] if listen_address else "localhost"
-            listen_port = listen_address.split(":")[1] if listen_address else None
-
-            if listen_port:
-                self.engine_listen_address = (listen_host, int(listen_port))
-                self.logger.debug(f"Using ENGINE_LISTEN_PORT from environment: {listen_port}")
-            else:
-                # 端口 0 表示让操作系统自动分配可用端口
-                self.engine_listen_address = (listen_host, 0)
-                self.logger.debug("No ENGINE_LISTEN_PORT specified, will use automatic port assignment")
+                # debug_port 参数提供，使用 localhost
+                self.engine_listen_address = ("localhost", self.args.debug_port)
+                self.logger.info(f"Using debug port from command line: {self.args.debug_port}")
         else:
 
             class Args:
@@ -364,7 +358,7 @@ class EV_CP_E:
 
 
         charging_start_time = time.time()
-        MAX_CHARGING_DURATION = int(os.getenv("MAX_CHARGING_DURATION", 30))
+        MAX_CHARGING_DURATION = self.config.get_max_charging_duration()
 
  
         while (
