@@ -335,7 +335,7 @@ class AdminCLI:
                 if "message" in response:
                     self.printer.print_info(response['message'])
             else:
-                self.printer.print_error(f"Operation failed: {response.get('message', 'Unknown error')}")
+                pass
 
         except Exception as e:
             self.logger.error(f"Failed to stop charging point: {e}")
@@ -367,7 +367,7 @@ class AdminCLI:
                 if "message" in response:
                     self.printer.print_info(response['message'])
             else:
-                self.printer.print_error(f"Operation failed: {response.get('message', 'Unknown error')}")
+                pass
 
         except Exception as e:
             self.logger.error(f"Failed to resume charging point: {e}")

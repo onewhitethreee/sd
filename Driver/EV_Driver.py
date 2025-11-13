@@ -461,6 +461,36 @@ class Driver:
             self.logger.error(f"Failed to initialize Driver CLI: {e}")
             self.driver_cli = None
 
+    def _handle_connection_lost(self):
+        """
+        处理与Central的连接丢失
+        
+        当Central断开连接时，Driver需要：
+        1. 记录连接丢失的状态
+        2. 保持当前的charging_session状态（因为charging可能仍在进行）
+        3. 等待Central重新连接后继续接收消息
+        """
+        self.logger.warning("⚠️  Connection to Central lost")
+        
+        # 显示给用户
+        self.printer.print_warning("Connection Lost")
+        self.printer.print_info("Connection to Central has been lost. Waiting for reconnection...")
+        
+        # 重要：不要清除current_charging_session
+        # 因为charging可能仍在进行，Central重新连接后会发送完成消息
+        with self.lock:
+            if self.current_charging_session:
+                session_id = self.current_charging_session.get('session_id')
+                cp_id = self.current_charging_session.get('cp_id')
+                self.logger.warning(
+                    f"Active charging session {session_id} (CP: {cp_id}) "
+                    "will continue. Will receive completion notification when Central reconnects."
+                )
+                self.printer.print_warning(
+                    f"Charging session {session_id} is still active. "
+                    "You will receive completion notification when Central reconnects."
+                )
+
     def _handle_connection_error(self, message):
         """
         处理来自Central的connection_error消息

@@ -497,6 +497,22 @@ class MessageDispatcher:
         # 根据是否已注册返回不同的消息
         if is_already_registered:
             self.logger.info(f"Charging point {cp_id} reconnected, information updated")
+            
+            # 检查是否有活跃的charging会话需要恢复
+            active_sessions = self.charging_session_manager.get_active_sessions_for_charging_point(cp_id)
+            if active_sessions:
+                self.logger.warning(
+                    f"Charging point {cp_id} reconnected with {len(active_sessions)} active charging session(s). "
+                    f"Waiting for charge_completion messages from ChargingPoint."
+                )
+                for session in active_sessions:
+                    session_id = session.get("session_id")
+                    driver_id = session.get("driver_id")
+                    self.logger.info(
+                        f"Active session found: {session_id} for driver {driver_id}. "
+                        f"Will complete when ChargingPoint sends charge_completion message."
+                    )
+            
             return self._create_success_response(
                 "register",
                 message_id,
@@ -788,19 +804,8 @@ class MessageDispatcher:
         total_cost = data["total_cost"]
         message_id = data["message_id"]
 
-        # 幂等性检查：如果消息已处理过，直接返回成功（避免重复处理）
-        if self._is_duplicate_message(message_id):
-            self.logger.debug(
-                f"Message {message_id} already processed, skipping (idempotency)"
-            )
-            return self._create_success_response(
-                "charge_completion",
-                message_id,
-                "Charge completion notification already processed (duplicate message)",
-            )
-
         try:
-            # 从会话中获取driver_id
+            # 从会话中获取driver_id（在幂等性检查之前，因为我们需要driver_id来发送通知）
             session_info = self.charging_session_manager.get_charging_session(
                 session_id
             )
@@ -812,18 +817,69 @@ class MessageDispatcher:
                 )
 
             driver_id = session_info.get("driver_id")
+            current_status = session_info.get("status", "in_progress")
 
-            # 完成充电会话
-            success, session_data = (
-                self.charging_session_manager.complete_charging_session(
+            # 幂等性检查：如果消息已处理过，但需要确保driver收到通知和status更新
+            is_duplicate = self._is_duplicate_message(message_id)
+            is_already_completed = current_status == "completed"
+            
+            # 如果session还未完成，需要完成它（更新status为"completed"）
+            if not is_already_completed:
+                # 完成充电会话（更新status为"completed"）
+                success, session_data = (
+                    self.charging_session_manager.complete_charging_session(
+                        session_id=session_id,
+                        energy_consumed_kwh=energy_consumed_kwh,
+                        total_cost=total_cost,
+                    )
+                )
+
+                if not success:
+                    raise Exception("Failed to complete charging session")
+                
+                self.logger.info(
+                    f"Session {session_id} status updated to 'completed' for driver {driver_id}"
+                )
+            else:
+                # Session已经完成，但可能需要更新数据（如果新的数据更准确）
+                self.logger.debug(
+                    f"Session {session_id} already completed, ensuring data is up to date"
+                )
+                # 即使已完成，也更新数据（以防数据有变化）
+                self.charging_session_manager.update_charging_session(
                     session_id=session_id,
                     energy_consumed_kwh=energy_consumed_kwh,
                     total_cost=total_cost,
+                    status="completed",  # 确保status是"completed"
                 )
-            )
-
-            if not success:
-                raise Exception("Failed to complete charging session")
+            
+            # 无论消息是否已处理，都要确保driver收到通知（重连场景）
+            # 这是关键：即使消息已处理过，也要发送通知给driver
+            if driver_id:
+                self.logger.debug(
+                    f"Sending charge_completion notification to driver {driver_id} for session {session_id}"
+                )
+                self._send_charge_completion_to_driver(
+                    driver_id,
+                    {
+                        "session_id": session_id,
+                        "cp_id": cp_id,
+                        "energy_consumed_kwh": energy_consumed_kwh,
+                        "total_cost": total_cost,
+                        "timestamp": int(time.time()),
+                    },
+                )
+            
+            # 如果消息已处理过，直接返回（避免重复处理）
+            if is_duplicate:
+                self.logger.debug(
+                    f"Message {message_id} already processed, but driver notification sent"
+                )
+                return self._create_success_response(
+                    "charge_completion",
+                    message_id,
+                    "Charge completion notification already processed, driver notification sent",
+                )
 
             # 更新充电点状态为活跃（除非充电桩已被管理员停止）
             # 检查当前状态，如果是STOPPED，保持STOPPED状态不变
@@ -836,26 +892,16 @@ class MessageDispatcher:
             else:
                 self.logger.debug(f"CP {cp_id} is STOPPED, keeping STOPPED status after charging completion")
 
+            # 获取更新后的session数据用于日志
+            session_data = self.charging_session_manager.get_charging_session(session_id)
+            
             self.logger.info(
-                f"Charging completed: CP {cp_id}, Session {session_id}, Energy consumed: {energy_consumed_kwh}kWh, Cost: €{total_cost} session_data: {session_data}"
+                f"Charging completed: CP {cp_id}, Session {session_id}, Energy consumed: {energy_consumed_kwh}kWh, Cost: €{total_cost}"
             )
 
             # 注意：不再需要手动从 _driver_active_sessions 移除
             # 会话状态已在数据库中标记为 "completed"
             self.logger.debug(f"Session {session_id} for driver {driver_id} completed")
-
-            # 向Driver发送充电完成通知
-            if driver_id:
-                self._send_charge_completion_to_driver(
-                    driver_id,
-                    {
-                        "session_id": session_id,
-                        "cp_id": cp_id,
-                        "energy_consumed_kwh": energy_consumed_kwh,
-                        "total_cost": total_cost,
-                        "timestamp": int(time.time()),
-                    },
-                )
 
             return self._create_success_response(
                 "charge_completion",
