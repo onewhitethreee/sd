@@ -185,7 +185,7 @@ class MessageDispatcher:
             )
 
     def _send_response_to_client(self, client_id, response, msg_type):
-        """向客户端发送响应（智能选择Socket或Kafka）"""
+        """向客户端发送响应"""
         # 如果是Driver消息，使用Kafka
         if msg_type in [
             MessageTypes.CHARGE_REQUEST,
@@ -267,30 +267,6 @@ class MessageDispatcher:
         }
         message.update(fields)
         return message
-
-    def _send_notification_to_driver(self, driver_id: str, message: dict) -> bool:
-        """
-        向指定司机发送通知消息
-
-        返回: 是否成功发送
-        """
-        try:
-            driver_client_id = self.driver_manager.get_driver_client_id(driver_id)
-            if not driver_client_id:
-                self.logger.warning(
-                    f"Driver {driver_id} connection not found, unable to send notification: {message.get('type')}"
-                )
-                return False
-
-            self._send_message_to_client(driver_client_id, message)
-            self.logger.debug(
-                f"Notification sent to driver {driver_id}: {message.get('type')}"
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to send notification to driver {driver_id}: {e}")
-            return False
 
     def _send_command_to_monitor(self, cp_id: str, command_message: dict) -> bool:
         """
@@ -454,12 +430,11 @@ class MessageDispatcher:
         """
         self.logger.debug(f"Processing registration request from {client_id}...")
 
-        # 验证并提取字段
         success, data = self._validate_and_extract_fields(
             message, ["id", "location", "price_per_kwh", "message_id"], "register"
         )
         if not success:
-            return data  # 返回错误响应
+            return data 
 
         cp_id = data["id"]
         location = data["location"]
@@ -481,7 +456,6 @@ class MessageDispatcher:
                 )
 
         # 注册或更新充电桩信息
-        # 注意：register_charging_point 使用 insert_or_update，所以支持更新场景
         success, error_msg = self.charging_point_manager.register_charging_point(
             cp_id, location, price_per_kwh
         )
@@ -530,7 +504,7 @@ class MessageDispatcher:
 
     def _handle_heartbeat_message(self, client_id, message):
         """处理充电桩发送的心跳消息，更新其最后连接时间"""
-        # 验证并提取字段
+
         success, data = self._validate_and_extract_fields(
             message, ["id", "message_id"], "heartbeat"
         )
@@ -778,7 +752,7 @@ class MessageDispatcher:
             )
 
     def _handle_charge_completion_message(self, client_id, message):
-        """处理充电完成的通知（改进版：支持幂等性）"""
+        """处理充电完成的通知"""
         self.logger.debug(
             f"Processing charge completion notification from {client_id}..."
         )
@@ -881,16 +855,18 @@ class MessageDispatcher:
                     "Charge completion notification already processed, driver notification sent",
                 )
 
-            # 更新充电点状态为活跃（除非充电桩已被管理员停止）
-            # 检查当前状态，如果是STOPPED，保持STOPPED状态不变
+            # 更新充电点状态为活跃（除非充电桩已被管理员停止或已断开连接）
+            # 检查当前状态，如果是STOPPED或DISCONNECTED，保持当前状态不变
             current_cp_status = self.charging_point_manager.get_charging_point_status(cp_id)
-            if current_cp_status != Status.STOPPED.value:
+            if current_cp_status == Status.STOPPED.value:
+                self.logger.debug(f"CP {cp_id} is STOPPED, keeping STOPPED status after charging completion")
+            elif current_cp_status == Status.DISCONNECTED.value:
+                self.logger.debug(f"CP {cp_id} is DISCONNECTED, keeping DISCONNECTED status after charging completion")
+            else:
                 self.charging_point_manager.update_charging_point_status(
                     cp_id=cp_id, status=Status.ACTIVE.value
                 )
                 self.logger.debug(f"CP {cp_id} status updated to ACTIVE after charging completion")
-            else:
-                self.logger.debug(f"CP {cp_id} is STOPPED, keeping STOPPED status after charging completion")
 
             # 获取更新后的session数据用于日志
             session_data = self.charging_session_manager.get_charging_session(session_id)
@@ -951,7 +927,6 @@ class MessageDispatcher:
 
             self.logger.error(f"Charging point {cp_id} fault: {failure_info}")
 
-            # TODO: 在这里可以添加通知维护人员的逻辑
 
             return self._create_success_response(
                 "fault_notification",
@@ -995,7 +970,7 @@ class MessageDispatcher:
             )
 
         try:
-            # 检查当前状态，保护管理员设置的STOPPED状态不被任何状态更新覆盖
+            # 检查当前状态，保护管理员设置的STOPPED状态和DISCONNECTED状态
             current_status = self.charging_point_manager.get_charging_point_status(cp_id)
 
             # 如果当前是STOPPED状态，拒绝所有状态更新
@@ -1010,6 +985,32 @@ class MessageDispatcher:
                     message_id,
                     f"Status update ignored: CP {cp_id} is STOPPED by admin",
                 )
+
+            # 如果当前是DISCONNECTED状态，只允许更新为DISCONNECTED（保持断开状态）
+            # 不允许从DISCONNECTED更新为其他状态（如ACTIVE），除非是重新连接
+            # 重新连接时，monitor会先发送register_request（更新连接映射），然后发送status_update
+            # 如果monitor已经重新连接（有连接映射），允许更新状态
+            # 如果没有连接映射，说明monitor已经停止，应该保持DISCONNECTED状态
+            if current_status == Status.DISCONNECTED.value and new_status != Status.DISCONNECTED.value:
+                # 检查是否有连接映射（重新连接的标志）
+                monitor_client_id = self.charging_point_manager.get_client_id_for_charging_point(cp_id)
+                if not monitor_client_id:
+                    # 没有连接映射，说明monitor已经停止，拒绝状态更新
+                    self.logger.debug(
+                        f"Rejecting status update from DISCONNECTED to '{new_status}' for CP {cp_id}: "
+                        f"CP is disconnected and monitor is not connected, keeping DISCONNECTED status"
+                    )
+                    return self._create_success_response(
+                        "status_update",
+                        message_id,
+                        f"Status update ignored: CP {cp_id} is DISCONNECTED and monitor is not connected",
+                    )
+                else:
+                    # 有连接映射，说明monitor已经重新连接，允许更新状态
+                    self.logger.info(
+                        f"Allowing status update from DISCONNECTED to '{new_status}' for CP {cp_id}: "
+                        f"Monitor has reconnected (client_id: {monitor_client_id})"
+                    )
 
             # 更新状态
             self.charging_point_manager.update_charging_point_status(

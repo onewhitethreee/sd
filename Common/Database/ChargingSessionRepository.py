@@ -13,7 +13,7 @@ class ChargingSessionRepository(BaseRepository):
     def get_table_name(self):
         return "ChargingSessions"
 
-    def create(self, session_id, cp_id, driver_id, start_time):
+    def create(self, session_id, cp_id, driver_id, start_time, price_per_kwh=None):
         """
         Crear una sesión de carga
 
@@ -22,6 +22,7 @@ class ChargingSessionRepository(BaseRepository):
             cp_id: ID del punto de carga
             driver_id: ID del conductor
             start_time: Hora de inicio
+            price_per_kwh: Precio por kWh (opcional)
 
         Returns:
             bool: Si fue exitoso
@@ -29,10 +30,10 @@ class ChargingSessionRepository(BaseRepository):
         try:
             query = """
                 INSERT INTO ChargingSessions
-                (session_id, cp_id, driver_id, start_time, status)
-                VALUES (?, ?, ?, ?, ?)
+                (session_id, cp_id, driver_id, start_time, price_per_kwh, status)
+                VALUES (?, ?, ?, ?, ?, ?)
             """
-            self.execute_update(query, (session_id, cp_id, driver_id, start_time, "in_progress"))
+            self.execute_update(query, (session_id, cp_id, driver_id, start_time, price_per_kwh, "in_progress"))
 
             self.logger.debug(f"Sesión de carga {session_id} creada con éxito")
             return True
@@ -46,6 +47,7 @@ class ChargingSessionRepository(BaseRepository):
         end_time=None,
         energy_consumed_kwh=None,
         total_cost=None,
+        price_per_kwh=None,
         status=None,
     ):
         """
@@ -56,6 +58,7 @@ class ChargingSessionRepository(BaseRepository):
             end_time: Hora de fin (opcional)
             energy_consumed_kwh: Energía consumida (opcional)
             total_cost: Costo total (opcional)
+            price_per_kwh: Precio por kWh (opcional)
             status: Estado (opcional)
 
         Returns:
@@ -78,6 +81,10 @@ class ChargingSessionRepository(BaseRepository):
                 updates.append("total_cost = ?")
                 params.append(total_cost)
 
+            if price_per_kwh is not None:
+                updates.append("price_per_kwh = ?")
+                params.append(price_per_kwh)
+
             if status is not None:
                 updates.append("status = ?")
                 params.append(status)
@@ -90,7 +97,7 @@ class ChargingSessionRepository(BaseRepository):
             query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
 
             self.execute_update(query, params)
-            self.logger.debug(f"Sesión de carga {session_id} actualizada con éxito")
+            # self.logger.debug(f"Sesión de carga {session_id} actualizada con éxito")
             return True
         except Exception as e:
             self.logger.error(f"Error al actualizar la sesión de carga {session_id}: {e}")
@@ -109,7 +116,7 @@ class ChargingSessionRepository(BaseRepository):
         try:
             query = """
                 SELECT session_id, cp_id, driver_id, start_time, end_time,
-                       energy_consumed_kwh, total_cost, status
+                       energy_consumed_kwh, total_cost, price_per_kwh, status
                 FROM ChargingSessions
                 WHERE session_id = ?
             """
@@ -125,7 +132,8 @@ class ChargingSessionRepository(BaseRepository):
                     "end_time": row[4],
                     "energy_consumed_kwh": row[5],
                     "total_cost": row[6],
-                    "status": row[7],
+                    "price_per_kwh": row[7],
+                    "status": row[8],
                 }
             return None
         except Exception as e:
@@ -283,7 +291,7 @@ class ChargingSessionRepository(BaseRepository):
         try:
             query = """
                 SELECT session_id, cp_id, driver_id, start_time, end_time,
-                       energy_consumed_kwh, total_cost, status
+                       energy_consumed_kwh, total_cost, price_per_kwh, status
                 FROM ChargingSessions
                 WHERE cp_id = ?
                 ORDER BY start_time DESC
@@ -299,7 +307,8 @@ class ChargingSessionRepository(BaseRepository):
                     "end_time": row[4],
                     "energy_consumed_kwh": row[5],
                     "total_cost": row[6],
-                    "status": row[7],
+                    "price_per_kwh": row[7],
+                    "status": row[8],
                 }
                 for row in rows
             ]

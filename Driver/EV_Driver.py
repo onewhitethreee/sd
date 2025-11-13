@@ -69,7 +69,7 @@ class Driver:
 
         self.lock = threading.Lock()
         self.message_dispatcher = DriverMessageDispatcher(self.logger, self)
-
+        print("broker:", self.args.broker)
     def _send_charge_request(self, cp_id):
         """
         Enviar solicitud de carga a queue que sera producido por central

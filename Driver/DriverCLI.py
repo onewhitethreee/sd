@@ -4,7 +4,7 @@ import time
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Common.Config.ConsolePrinter import get_printer
 
 if TYPE_CHECKING:
@@ -163,7 +163,7 @@ class DriverCLI:
         try:
             self.driver._request_available_cps()
             # Wait for response from Kafka 
-            time.sleep(0.5)
+            time.sleep(1.5)
             with self.driver.lock:
                 if self.driver.available_charging_points:
                     # 准备表格数据
