@@ -62,6 +62,7 @@ class MonitorMessageDispatcher:
             MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
             MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
             MessageTypes.FAULT_NOTIFICATION_RESPONSE: self._handle_fault_notification,
+            MessageTypes.AUTH_REQUEST_RESPONSE: self._handle_auth_request_response,
         }
 
         # 来自Engine的消息处理器（使用消息类型常量）
@@ -113,7 +114,12 @@ class MonitorMessageDispatcher:
             return False
 
     # ==================== Central消息处理器 ====================
-
+    def _handle_auth_request_response(self, message):
+        """
+        处理来自Central的认证请求响应
+        """
+        self.logger.debug(f"Received authentication request response from Central: {message}")
+        return True
     def _handle_auth_response(self, message):
         """
         处理来自Central的认证响应
@@ -180,6 +186,9 @@ class MonitorMessageDispatcher:
                 and self.monitor.engine_conn_mgr.is_connected
             ):
                 self.monitor._check_and_update_to_active()
+            
+            # Central重新连接后，发送堆积的消息
+            self.monitor._send_pending_messages_to_central()
         else:
             reason = message.get(MessageFields.REASON, "Unknown")
             self.logger.error(f"Registration failed: {reason}")

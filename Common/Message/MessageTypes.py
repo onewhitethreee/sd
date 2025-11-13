@@ -45,7 +45,7 @@ class MessageTypes:
     AUTH_RESPONSE = "auth_response"
     REGISTER_RESPONSE = "register_response"
     HEARTBEAT_RESPONSE = "heartbeat_response"
-
+    AUTH_REQUEST_RESPONSE = "auth_request_response"
     # ==================== Constantes de mensajes de Driver ====================
 
     # Constante que son enviadas por el Driver al Central

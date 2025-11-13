@@ -91,6 +91,10 @@ class EV_CP_M:
         # 当前充电会话数据（用于状态面板显示）
         self._current_charging_data = None  # {session_id, driver_id, energy_consumed_kwh, total_cost, start_time}
 
+        # 消息队列：当Central断开时，堆积需要发送给Central的消息
+        self._pending_messages_to_central = []  # 队列，存储待发送的消息
+        self._pending_messages_lock = threading.Lock()  # 保护消息队列的锁
+
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
 
@@ -200,9 +204,11 @@ class EV_CP_M:
         处理Central断开连接的情况
 
         当Central断开时：
-        1. 如果正在充电，停止充电（因为无法向Central报告数据）
-        2. 更新充电点状态为FAULTY
-        3. ConnectionManager会自动尝试重连
+        1. 如果正在充电，继续完成charging（不要停止）
+        2. 堆积charge_completion消息，等待Central恢复后发送
+        3. 拒绝新的charge请求，直到Central恢复连接
+        4. 更新充电点状态为FAULTY
+        5. ConnectionManager会自动尝试重连
         """
         self.logger.warning("Handling Central disconnection...")
 
@@ -213,22 +219,28 @@ class EV_CP_M:
             )
             return
 
-        # 检查是否正在充电
+        # 重要：如果正在充电，不要停止charging
+        # 继续完成charging，消息会堆积在队列中，等待Central恢复后发送
         if self._current_status == Status.CHARGING.value:
             self.logger.warning(
-                "Currently charging, but Central is disconnected. Stopping charging to prevent data loss."
-            )
-            # 向Engine发送停止命令
-            self._send_stop_command_to_engine()
-            self.logger.info(
-                "Charging stopped due to Central disconnection. Will resume when Central reconnects."
+                "Currently charging, but Central is disconnected. "
+                "Charging will continue, and completion messages will be queued until Central reconnects."
             )
 
         # 更新状态为FAULTY（失去与Central的连接）
-        self.update_cp_status(Status.FAULTY.value)
-        self.logger.info(
-            "CP status set to FAULTY due to Central disconnection. Waiting for reconnection..."
-        )
+        # 注意：如果正在充电，状态仍然是CHARGING，但标记为FAULTY表示无法与Central通信
+        # 实际上，我们需要一个更细粒度的状态管理，但为了简化，我们保持CHARGING状态
+        # 只有在非CHARGING状态下才更新为FAULTY
+        if self._current_status != Status.CHARGING.value:
+            self.update_cp_status(Status.FAULTY.value)
+            self.logger.info(
+                "CP status set to FAULTY due to Central disconnection. Waiting for reconnection..."
+            )
+        else:
+            self.logger.info(
+                "CP is CHARGING, status remains CHARGING. "
+                "Will queue completion messages until Central reconnects."
+            )
 
     def _check_and_update_to_active(self):
         """
@@ -526,6 +538,15 @@ class EV_CP_M:
         以便监控面板能够实时显示正确的状态。
         """
         self.logger.info("Received start charging command from Central.")
+        
+        # 检查Central是否连接
+        if not self.central_conn_mgr or not self.central_conn_mgr.is_connected:
+            self.logger.error(
+                "Cannot accept start charging command: Central is not connected. "
+                "New charge requests are rejected until Central reconnects."
+            )
+            return False
+        
         cp_id = message.get("cp_id")
         session_id = message.get("session_id")
         driver_id = message.get("driver_id")
@@ -630,14 +651,11 @@ class EV_CP_M:
 
         重要：Monitor在转发充电完成消息后应更新状态为ACTIVE，
         表示充电桩已完成充电并恢复到可用状态。
+        
+        如果Central断开，消息会堆积在队列中，等待Central恢复后发送。
         """
         self.logger.info("Received charging completion from Engine.")
-        if not self.central_conn_mgr.is_connected:
-            self.logger.warning(
-                "Not connected to Central, cannot forward charging completion."
-            )
-            return False
-
+        
         # Validate required fields from Engine message
         required_fields = ["session_id", "energy_consumed_kwh", "total_cost"]
         missing_fields = [
@@ -659,6 +677,24 @@ class EV_CP_M:
             "energy_consumed_kwh": message.get("energy_consumed_kwh"),
             "total_cost": message.get("total_cost"),
         }
+        
+        # 检查Central是否连接
+        if not self.central_conn_mgr or not self.central_conn_mgr.is_connected:
+            # Central断开，堆积消息
+            with self._pending_messages_lock:
+                self._pending_messages_to_central.append(completion_message)
+            self.logger.warning(
+                f"Central is not connected. Charging completion message for session {session_id} "
+                f"has been queued. Will send when Central reconnects. "
+                f"Queue size: {len(self._pending_messages_to_central)}"
+            )
+            # 即使Central断开，也要更新状态为ACTIVE（充电已完成）
+            self.update_cp_status(Status.ACTIVE.value)
+            # 清除充电数据（充电完成）
+            self._current_charging_data = None
+            return True
+        
+        # Central已连接，立即发送
         if self.central_conn_mgr.send(completion_message):
             self.logger.info("Charging completion forwarded to Central.")
             # 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
@@ -672,7 +708,57 @@ class EV_CP_M:
             return True
         else:
             self.logger.error("Failed to forward charging completion to Central.")
+            # 发送失败，也堆积消息
+            with self._pending_messages_lock:
+                self._pending_messages_to_central.append(completion_message)
+            self.logger.warning(
+                f"Failed to send charging completion. Message queued for session {session_id}. "
+                f"Queue size: {len(self._pending_messages_to_central)}"
+            )
             return False
+
+    def _send_pending_messages_to_central(self):
+        """
+        发送堆积的消息到Central
+        
+        当Central重新连接后，发送所有堆积的charge_completion消息
+        """
+        if not self.central_conn_mgr or not self.central_conn_mgr.is_connected:
+            self.logger.debug("Central is not connected, cannot send pending messages")
+            return
+        
+        with self._pending_messages_lock:
+            if not self._pending_messages_to_central:
+                self.logger.debug("No pending messages to send to Central")
+                return
+            
+            pending_count = len(self._pending_messages_to_central)
+            self.logger.info(
+                f"Central reconnected. Sending {pending_count} pending message(s) to Central..."
+            )
+            
+            # 发送所有堆积的消息
+            sent_count = 0
+            failed_count = 0
+            for message in self._pending_messages_to_central:
+                session_id = message.get("session_id", "unknown")
+                if self.central_conn_mgr.send(message):
+                    sent_count += 1
+                    self.logger.info(
+                        f"✓ Pending charge_completion message for session {session_id} sent to Central"
+                    )
+                else:
+                    failed_count += 1
+                    self.logger.error(
+                        f"✗ Failed to send pending charge_completion message for session {session_id}"
+                    )
+            
+            # 清空队列（无论成功或失败，都清空，避免重复发送）
+            self._pending_messages_to_central.clear()
+            
+            self.logger.info(
+                f"Pending messages sent: {sent_count} successful, {failed_count} failed"
+            )
 
     def _handle_message_from_engine(self, source_name: str, message: dict):
         """处理来自EV_CP_E的消息"""

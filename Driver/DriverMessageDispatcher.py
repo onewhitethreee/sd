@@ -207,37 +207,71 @@ class DriverMessageDispatcher:
                 - energy_consumed_kwh: Energía consumida total
                 - total_cost: Costo total
         """
+        session_id = message.get(MessageFields.SESSION_ID)
+        energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
+        total_cost = message.get(MessageFields.TOTAL_COST, 0)
+        cp_id = message.get(MessageFields.CP_ID, "N/A")
+        
         with self.driver.lock:
+            # 检查是否有匹配的当前会话
             if self.driver.current_charging_session:
-                session_id = message.get(MessageFields.SESSION_ID)
-                energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
-                total_cost = message.get(MessageFields.TOTAL_COST, 0)
-
-                # 获取当前会话的完整信息
-                current_session = self.driver.current_charging_session
-                cp_id = current_session.get("cp_id", "N/A")
-                driver_id = self.driver.args.id_client if hasattr(self.driver.args, 'id_client') else "N/A"
-                start_time = current_session.get("start_time")
+                current_session_id = self.driver.current_charging_session.get("session_id")
                 
-                # 构建完整的会话数据用于ticket
-                ticket_data = {
-                    "session_id": session_id,
-                    "cp_id": cp_id,
-                    "driver_id": driver_id,
-                    "energy_consumed_kwh": energy_consumed_kwh,
-                    "total_cost": total_cost,
-                    "start_time": start_time,
-                    "end_time": time.time(),  # 当前时间作为结束时间
-                }
-                
-                # 使用Rich美化显示充电完成票据
-                self.printer.print_charging_ticket(ticket_data)
+                # 如果session_id匹配，使用当前会话的信息
+                if current_session_id == session_id:
+                    current_session = self.driver.current_charging_session
+                    cp_id = current_session.get("cp_id", cp_id)
+                    driver_id = self.driver.args.id_client if hasattr(self.driver.args, 'id_client') else "N/A"
+                    start_time = current_session.get("start_time")
+                    
+                    # 构建完整的会话数据用于ticket
+                    ticket_data = {
+                        "session_id": session_id,
+                        "cp_id": cp_id,
+                        "driver_id": driver_id,
+                        "energy_consumed_kwh": energy_consumed_kwh,
+                        "total_cost": total_cost,
+                        "start_time": start_time,
+                        "end_time": time.time(),  # 当前时间作为结束时间
+                    }
+                    
+                    # 使用Rich美化显示充电完成票据
+                    self.printer.print_charging_ticket(ticket_data)
+                    
+                    # 重要：清除当前充电会话，标记为已完成
+                    self.driver.current_charging_session = None
+                    
+                    self.logger.info(f"✓  Charging session {session_id} completed successfully")
+                else:
+                    # Session ID不匹配，可能是重连后的延迟消息
+                    self.logger.warning(
+                        f"Received charge_completion for session {session_id}, "
+                        f"but current session is {current_session_id}. "
+                        f"This may be a delayed message after reconnection."
+                    )
+                    # 仍然显示完成信息
+                    self.printer.print_success(f"Charging session {session_id} completed")
+                    self.printer.print_key_value("Energy consumed", f"{energy_consumed_kwh:.3f} kWh")
+                    self.printer.print_key_value("Total cost", f"€{total_cost:.2f}")
+                    
+                    # 如果当前会话ID不匹配，清除当前会话（可能是旧会话）
+                    self.driver.current_charging_session = None
+            else:
+                # 没有当前会话，可能是重连后的延迟消息
+                self.logger.info(
+                    f"Received charge_completion for session {session_id} "
+                    f"but no active session found. This may be a delayed message after reconnection."
+                )
+                self.printer.print_success(f"Charging session {session_id} completed")
+                self.printer.print_key_value("Energy consumed", f"{energy_consumed_kwh:.3f} kWh")
+                self.printer.print_key_value("Total cost", f"€{total_cost:.2f}")
 
-                self.driver.current_charging_session = None
-
-        self.logger.info("Waiting 4 seconds before next service...")
-        time.sleep(4)
-        self.driver._process_next_service()
+        # 只有在有service_queue时才处理下一个服务
+        # 如果没有service_queue，说明是手动模式，不需要自动处理下一个服务
+        if hasattr(self.driver, 'service_queue') and self.driver.service_queue:
+            self.logger.info("Waiting 4 seconds before next service...")
+            time.sleep(4)
+            self.driver._process_next_service()
 
         return True
 
