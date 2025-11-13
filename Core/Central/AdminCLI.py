@@ -249,10 +249,17 @@ class AdminCLI:
                 cp_id = cp.get("cp_id", "N/A")
                 location = cp.get("location", "N/A")
                 price = f"€{cp.get('price_per_kwh', 0.0):.4f}"
-                
+
                 if show_status:
                     status = cp.get("status", "N/A")
-                    rows.append([cp_id, location, status, price])
+                    # 根据状态添加颜色
+                    if status == "ACTIVE":
+                        colored_status = f"[green]{status}[/green]" if self.printer.use_rich else status
+                    elif status == "FAULTY":
+                        colored_status = f"[red]{status}[/red]" if self.printer.use_rich else status
+                    else:
+                        colored_status = status
+                    rows.append([cp_id, location, colored_status, price])
                 else:
                     rows.append([cp_id, location, price])
 
@@ -381,7 +388,20 @@ class AdminCLI:
             details = []
             details.append(f"CP ID:          {cp_info.get('cp_id', 'N/A')}")
             details.append(f"Location:       {cp_info.get('location', 'N/A')}")
-            details.append(f"Status:         {cp_info.get('status', 'N/A')}")
+
+            # 根据状态添加颜色
+            status = cp_info.get('status', 'N/A')
+            if self.printer.use_rich:
+                if status == "ACTIVE":
+                    status_display = f"[green]{status}[/green]"
+                elif status == "FAULTY":
+                    status_display = f"[red]{status}[/red]"
+                else:
+                    status_display = status
+            else:
+                status_display = status
+
+            details.append(f"Status:         {status_display}")
             details.append(f"Price:          {cp_info.get('price_per_kwh', 0.0):.4f} €/kWh")
             
             last_connection = cp_info.get("last_connection_time")
@@ -483,7 +503,7 @@ class AdminCLI:
                 cp_id = auth_info["cp_id"]
                 client_id = auth_info["client_id"]
                 pending_time = auth_info["pending_time"]
-                rows.append([cp_id, client_id, f"{pending_time:.1f}s", f"Use 'authorize {cp_id}' to authorize"])
+                rows.append([cp_id, client_id, f"{pending_time:.1f}s", f"Use 'opcion 8 and introduce {cp_id}' to authorize"])
             
             title = f"Pending Authorizations (Total: {len(pending)})"
             self.printer.print_table(title, headers, rows)

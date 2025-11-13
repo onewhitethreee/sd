@@ -260,6 +260,41 @@ class MonitorStatusPanel:
         content_parts.append(f"  Heartbeat Interval: {self.monitor.HEARTBEAT_INTERVAL}s")
         content_parts.append("")
         
+        # 充电数据（如果正在充电）
+        if self.monitor._current_charging_data and current_status == "CHARGING":
+            charging_data = self.monitor._current_charging_data
+            content_parts.append(f"[{section_style}]Current Charging Session[/{section_style}]")
+            charging_style = theme.get("status_charging", "dim")
+            
+            session_id = charging_data.get("session_id", "N/A")
+            # 截断过长的session_id以便显示
+            if len(session_id) > 30:
+                session_id = session_id[:27] + "..."
+            
+            driver_id = charging_data.get("driver_id", "unknown")
+            energy = charging_data.get("energy_consumed_kwh", 0.0)
+            cost = charging_data.get("total_cost", 0.0)
+            start_time = charging_data.get("start_time", time.time())
+            duration = time.time() - start_time
+            
+            content_parts.append(f"  Session ID: [{charging_style}]{session_id}[/{charging_style}]")
+            content_parts.append(f"  Driver ID: [{charging_style}]{driver_id}[/{charging_style}]")
+            content_parts.append(f"  Duration: [{charging_style}]{duration:.1f}s[/{charging_style}]")
+            content_parts.append(f"  Energy Consumed: [{charging_style}]{energy:.3f} kWh[/{charging_style}]")
+            content_parts.append(f"  Total Cost: [{charging_style}]€{cost:.2f}[/{charging_style}]")
+            
+                        
+            last_update = charging_data.get("last_update", time.time())
+            time_since_update = time.time() - last_update
+            if time_since_update < 5:
+                update_style = theme.get("success", "dim")
+            elif time_since_update < 10:
+                update_style = theme.get("warning", "dim")
+            else:
+                update_style = theme.get("error", "dim")
+            content_parts.append(f"  Last Update: [{update_style}]{time_since_update:.1f}s ago[/{update_style}]")
+            content_parts.append("")
+        
         # 系统信息
         content_parts.append(f"[{section_style}]System Information[/{section_style}]")
         content_parts.append(f"  Monitor Running: {'Yes' if self.monitor.running else 'No'}")
@@ -306,6 +341,24 @@ class MonitorStatusPanel:
         print(f"Central Connection: {'Connected' if central_connected else 'Disconnected'}")
         print(f"Engine Connection: {'Connected' if engine_connected else 'Disconnected'}")
         print()
+        
+        # 显示充电数据（如果正在充电）
+        if self.monitor._current_charging_data and current_status == "CHARGING":
+            charging_data = self.monitor._current_charging_data
+            print("-" * 60)
+            print(" Current Charging Session:")
+            print(f"  Session ID: {charging_data.get('session_id', 'N/A')[:30]}")
+            print(f"  Driver ID: {charging_data.get('driver_id', 'unknown')}")
+            duration = time.time() - charging_data.get("start_time", time.time())
+            print(f"  Duration: {duration:.1f}s")
+            print(f"  Energy: {charging_data.get('energy_consumed_kwh', 0.0):.3f} kWh")
+            print(f"  Cost: €{charging_data.get('total_cost', 0.0):.2f}")
+            if duration > 0:
+                charging_rate = charging_data.get('energy_consumed_kwh', 0.0) / duration * 3600
+                print(f"  Rate: {charging_rate:.2f} kWh/h")
+            print("-" * 60)
+            print()
+        
         print("=" * 60)
         print(" Press 1 to exit")
         print("=" * 60)

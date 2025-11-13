@@ -1,7 +1,6 @@
 import time
 import sys
 import os
-from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from Common.Message.MessageTypes import MessageTypes, ResponseStatus, MessageFields
@@ -118,10 +117,29 @@ class DriverMessageDispatcher:
                 - session_id: ID de sesión
                 - energy_consumed_kwh: Energía consumida
                 - total_cost: Costo total
+                - status: Estado (opcional, "error" indica fallo del CP)
+                - reason: Razón del error (opcional)
+                - message: Mensaje descriptivo (opcional)
         """
         session_id = message.get(MessageFields.SESSION_ID)
         energy_consumed_kwh = message.get(MessageFields.ENERGY_CONSUMED_KWH, 0)
         total_cost = message.get(MessageFields.TOTAL_COST, 0)
+        status = message.get(MessageFields.STATUS)
+        reason = message.get(MessageFields.REASON)
+        error_message = message.get(MessageFields.MESSAGE)
+
+        # Si el mensaje indica un error (fallo del CP)
+        if status == "error":
+            cp_id = message.get(MessageFields.CP_ID, "Unknown CP")
+            self.logger.error(f"⚠️  CHARGING POINT FAULT DETECTED!")
+            self.logger.error(f"CP: {cp_id}, Session: {session_id}")
+            self.logger.error(f"Reason: {reason}")
+            if error_message:
+                self.logger.error(f"Message: {error_message}")
+            self.logger.warning(f"Energy consumed before fault: {energy_consumed_kwh:.3f} kWh")
+            self.logger.warning(f"Cost before fault: €{total_cost:.2f}")
+            self.logger.info("Session has been suspended. Data will be sent when CP recovers.")
+            return True
 
         with self.driver.lock:
             if self.driver.current_charging_session:
@@ -142,9 +160,10 @@ class DriverMessageDispatcher:
                         f"ID de sesión no coincide: se esperaba {current_session_id}, se recibió {session_id}"
                     )
             else:
-                self.logger.warning(
-                    f"No hay sesiones de carga activas, no se puede actualizar el estado. ID de sesión recibido: {session_id}"
-                )
+                # self.logger.warning(
+                #     f"No hay sesiones de carga activas, no se puede actualizar el estado. ID de sesión recibido: {session_id}"
+                # )
+                pass
 
         return True
 
@@ -239,8 +258,6 @@ class DriverMessageDispatcher:
             f"Available charging points: {len(self.driver.available_charging_points)}"
         )
 
-        self.driver._formatter_charging_points(self.driver.available_charging_points)
-
         return True
 
     def _handle_charging_history_response(self, message):
@@ -286,7 +303,7 @@ class DriverMessageDispatcher:
             message: Mensaje de notificación de error de conexión
         """
         error = message.get("error", "Unknown error")
-        self.logger.error(f"Connection error: {error}")
+        # self.logger.error(f"Connection error: {error}")
         self.driver._handle_connection_error(message)
         return True
 

@@ -163,7 +163,7 @@ class DriverCLI:
         try:
             self.driver._request_available_cps()
             # Wait for response from Kafka 
-            time.sleep(1.5)
+            time.sleep(0.5)
             with self.driver.lock:
                 if self.driver.available_charging_points:
                     # 准备表格数据

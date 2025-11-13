@@ -214,8 +214,12 @@ class EngineMessageDispatcher:
 
         session_id = message.get(MessageFields.SESSION_ID)
 
-        # 情况1: session_id为None - 紧急停止（例如FAULTY状态或Monitor断开）
+        # 情况1: session_id为None - 紧急停止（例如FAULTY状态、Monitor断开或管理员STOP_CP命令）
         if session_id is None:
+            # 设置CP服务为停止状态（管理员命令）
+            self.engine.cp_service_stopped = True
+            self.logger.info("CP service stopped by admin command - no new charging sessions allowed")
+
             if self.engine.current_session:
                 stopped_session_id = self.engine.current_session["session_id"]
                 self.engine._stop_charging_session()
@@ -226,7 +230,7 @@ class EngineMessageDispatcher:
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
                     MessageFields.STATUS: ResponseStatus.SUCCESS,
-                    MessageFields.MESSAGE: f"Emergency stop: charging session {stopped_session_id} stopped",
+                    MessageFields.MESSAGE: f"Emergency stop: charging session {stopped_session_id} stopped, CP service suspended",
                     MessageFields.SESSION_ID: stopped_session_id,
                 }
             else:
@@ -235,7 +239,7 @@ class EngineMessageDispatcher:
                     MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
                     MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),
                     MessageFields.STATUS: ResponseStatus.SUCCESS,
-                    MessageFields.MESSAGE: "No active session to stop",
+                    MessageFields.MESSAGE: "No active session to stop, CP service suspended",
                     MessageFields.SESSION_ID: None,
                 }
 
@@ -291,12 +295,21 @@ class EngineMessageDispatcher:
                 MessageFields.MESSAGE: f"CP_ID mismatch: expected {self.engine.cp_id}, got {cp_id}",
             }
 
-        # 强制清除手动FAULTY模式 - Central的命令优先级最高
+        # 强制清除手动FAULTY模式和CP服务停止状态 - Central的命令优先级最高
         was_faulty = self.engine._manual_faulty_mode
+        was_stopped = self.engine.cp_service_stopped
         self.engine._manual_faulty_mode = False
+        self.engine.cp_service_stopped = False
 
         if was_faulty:
             self.logger.info("✓  Central resume command: Cleared manual FAULTY mode")
+            # Si había una sesión suspendida, procesarla ahora
+            if self.engine._suspended_session:
+                self.logger.info(f"✓  Processing suspended session after Central resume command")
+                self.engine._resume_suspended_session()
+
+        if was_stopped:
+            self.logger.info("✓  Central resume command: CP service resumed, charging allowed")
 
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,

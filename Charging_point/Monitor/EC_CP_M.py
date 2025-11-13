@@ -50,8 +50,6 @@ class EV_CP_M:
             class Args:
                 ip_port_ev_cp_e = self.config.get_ip_port_ev_cp_e()
                 ip_port_ev_central = self.config.get_ip_port_ev_cp_central()
-                import random
-
                 id_cp = f"cp_{random.randint(0,99999)}"
                 no_panel = not enable_panel
 
@@ -89,6 +87,9 @@ class EV_CP_M:
 
         # 认证标志：是否已通过认证
         self._authorized = False
+
+        # 当前充电会话数据（用于状态面板显示）
+        self._current_charging_data = None  # {session_id, driver_id, energy_consumed_kwh, total_cost, start_time}
 
         # 初始化消息分发器
         self.message_dispatcher = MonitorMessageDispatcher(self.logger, self)
@@ -184,8 +185,14 @@ class EV_CP_M:
             elif status == "DISCONNECTED":
                 self.logger.warning("Engine is disconnected. Reporting failure.")
                 self._report_failure("EV_CP_E connection lost")
-                # Monitor OK pero Engine KO => FAULTY
-                self.update_cp_status(Status.FAULTY.value)
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self._current_status == Status.STOPPED.value:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring Engine disconnection (not changing to FAULTY)"
+                    )
+                else:
+                    # Monitor OK pero Engine KO => FAULTY
+                    self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
 
     def _handle_central_disconnection(self):
@@ -198,6 +205,13 @@ class EV_CP_M:
         3. ConnectionManager会自动尝试重连
         """
         self.logger.warning("Handling Central disconnection...")
+
+        # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+        if self._current_status == Status.STOPPED.value:
+            self.logger.warning(
+                "CP is STOPPED by admin, ignoring Central disconnection (not changing to FAULTY)"
+            )
+            return
 
         # 检查是否正在充电
         if self._current_status == Status.CHARGING.value:
@@ -228,6 +242,14 @@ class EV_CP_M:
             and self.engine_conn_mgr
             and self.engine_conn_mgr.is_connected
         ):
+            # 检查当前状态，如果是STOPPED，不能自动改为ACTIVE
+            # STOPPED状态只能由Central的resume命令来改变
+            if self._current_status == Status.STOPPED.value:
+                self.logger.debug(
+                    "CP is STOPPED by admin, cannot auto-update to ACTIVE (health check ignored)"
+                )
+                return
+
             # 只有在当前状态不是ACTIVE时才更新
             if self._current_status != Status.ACTIVE.value:
                 self.logger.debug(
@@ -358,7 +380,13 @@ class EV_CP_M:
             ):
                 self.logger.error("EV_CP_E health check timeout. Reporting failure.")
                 self._report_failure("EV_CP_E health check timeout")
-                self.update_cp_status("FAULTY")
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self._current_status != Status.STOPPED.value:
+                    self.update_cp_status("FAULTY")
+                else:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring health check timeout (not changing to FAULTY)"
+                    )
                 # 标记为断开，让 ConnectionManager 去重连。
                 # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
                 # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
@@ -538,7 +566,7 @@ class EV_CP_M:
 
     def _handle_charging_data_from_engine(self, message):
         """
-        处理来自Engine的充电数据（转发）。
+        处理来自Engine的充电数据（转发并存储用于显示）。
         """
         self.logger.debug("Received charging data from Engine.")
         if not self.central_conn_mgr.is_connected:
@@ -561,13 +589,33 @@ class EV_CP_M:
                 f"Charging data from Engine missing required fields: {', '.join(missing_fields)}"
             )
             return False
+        
+        # 存储充电数据用于状态面板显示
+        session_id = message.get("session_id")
+        energy_consumed_kwh = message.get("energy_consumed_kwh")
+        total_cost = message.get("total_cost")
+        
+        # 更新或创建充电数据记录
+        if not self._current_charging_data or self._current_charging_data.get("session_id") != session_id:
+            # 新会话，初始化数据
+            self._current_charging_data = {
+                "session_id": session_id,
+                "driver_id": message.get("driver_id", "unknown"),
+                "start_time": time.time(),
+            }
+        
+        # 更新实时数据
+        self._current_charging_data["energy_consumed_kwh"] = energy_consumed_kwh
+        self._current_charging_data["total_cost"] = total_cost
+        self._current_charging_data["last_update"] = time.time()
+        
         charging_data_message = {
             "type": "charging_data",
             "message_id": str(uuid.uuid4()),
             "cp_id": self.args.id_cp,
-            "session_id": message.get("session_id"),
-            "energy_consumed_kwh": message.get("energy_consumed_kwh"),
-            "total_cost": message.get("total_cost"),
+            "session_id": session_id,
+            "energy_consumed_kwh": energy_consumed_kwh,
+            "total_cost": total_cost,
         }
         if self.central_conn_mgr.send(charging_data_message):
             self.logger.debug("Charging data forwarded to Central.")
@@ -616,6 +664,8 @@ class EV_CP_M:
             # 更新Monitor状态为ACTIVE（充电完成，恢复可用状态）
             # 这样监控面板能够实时显示正确的状态
             self.update_cp_status(Status.ACTIVE.value)
+            # 清除充电数据（充电完成）
+            self._current_charging_data = None
             self.logger.info(
                 f"Monitor status updated to ACTIVE after charging completion for session {session_id}"
             )

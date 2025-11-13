@@ -43,21 +43,15 @@ class EV_CP_E:
             )
             self.args = self.tools.parse_args()
 
-            # 非 debug 模式：从环境变量读取监听端口，如果没有则使用端口 0（自动分配）
+            # 非 debug 模式：从 .env 文件读取监听端口，如果没有则使用端口 0（自动分配）
             if not self.args.debug_port:
-                listen_address = os.getenv("IP_PORT_EV_CP_E") 
+                # config.get_ip_port_ev_cp_e() 返回 tuple: (host, port)
+                self.engine_listen_address = self.config.get_ip_port_ev_cp_e()
+                self.logger.info(f"Using listen address from .env: {self.engine_listen_address[0]}:{self.engine_listen_address[1]}")
             else:
-                listen_address = f"localhost:{self.args.debug_port}"
-            listen_host = listen_address.split(":")[0] if listen_address else "localhost"
-            listen_port = listen_address.split(":")[1] if listen_address else None
-
-            if listen_port:
-                self.engine_listen_address = (listen_host, int(listen_port))
-                self.logger.debug(f"Using ENGINE_LISTEN_PORT from environment: {listen_port}")
-            else:
-                # 端口 0 表示让操作系统自动分配可用端口
-                self.engine_listen_address = (listen_host, 0)
-                self.logger.debug("No ENGINE_LISTEN_PORT specified, will use automatic port assignment")
+                # debug_port 参数提供，使用 localhost
+                self.engine_listen_address = ("localhost", self.args.debug_port)
+                self.logger.info(f"Using debug port from command line: {self.args.debug_port}")
         else:
 
             class Args:
@@ -81,6 +75,15 @@ class EV_CP_E:
         # Flag para simular fallo manual (usado por CLI)
         # Cuando está en True, get_current_status() siempre retorna FAULTY
         self._manual_faulty_mode = False
+
+        # Flag para indicar que el CP está en estado STOPPED (servicio suspendido por administrador)
+        # Cuando está en True, no se pueden iniciar nuevas sesiones de carga
+        self.cp_service_stopped = False
+
+        # Sesión de recarga suspendida por avería (se guarda temporalmente)
+        # Cuando el Engine entra en estado FAULTY durante una recarga, la sesión se guarda aquí
+        # para enviarla a Central y Driver cuando el Engine vuelva a estar ACTIVE
+        self._suspended_session = None
 
         self.message_dispatcher = EngineMessageDispatcher(self.logger, self)
         self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
@@ -292,8 +295,16 @@ class EV_CP_E:
         )
         return True
 
-    def _stop_charging_session(self):
-        """停止充电会话。 因为一个ChargingPoint只能有一个充电会话。"""
+    def _stop_charging_session(self, force_stop=False):
+        """
+        停止充电会话。
+
+        Args:
+            force_stop: Si es True, finaliza completamente la sesión aunque esté en FAULTY.
+                       Si es False y está en FAULTY, guarda la sesión temporalmente.
+
+        因为一个ChargingPoint只能有一个充电会话。
+        """
         self.logger.info(f"Stopping charging for session {self.current_session['session_id']}... ")
         if not self.is_charging:
             self.logger.warning("No active charging session to stop.")
@@ -302,13 +313,26 @@ class EV_CP_E:
         session_id = self.current_session["session_id"]
         driver_id = self.current_session["driver_id"]
         self.logger.info(f"Stopping charging session '{session_id}' for Driver: {driver_id}")
-        
+
         final_session_data = self.current_session.copy()
         final_session_data["end_time"] = time.time()
         final_session_data["duration"] = (
             final_session_data["end_time"] - final_session_data["start_time"]
         )
-        
+
+        # Si el Engine está en modo FAULTY y no es un force_stop,
+        # guardar la sesión temporalmente en lugar de finalizarla
+        if self._manual_faulty_mode and not force_stop:
+            self.logger.warning(f"⚠️  Engine is FAULTY - Suspending session '{session_id}' temporarily")
+            self.logger.info(f"Session will be completed and sent when Engine recovers")
+
+            # Enviar mensaje de error al Driver informando de la avería
+            self._send_fault_notification_to_driver(driver_id, session_id, final_session_data)
+
+            self._suspended_session = final_session_data
+            self.current_session = None
+            return True
+
         # 准备ticket数据
         ticket_data = {
             "session_id": session_id,
@@ -321,10 +345,10 @@ class EV_CP_E:
         }
 
         self.current_session = None
-        
+
         # 使用Rich美化显示充电完成票据
         self.printer.print_charging_ticket(ticket_data)
-        
+
         self._send_charging_completion(final_session_data)  # Send completion notification
         return True
 
@@ -334,7 +358,7 @@ class EV_CP_E:
 
 
         charging_start_time = time.time()
-        MAX_CHARGING_DURATION = int(os.getenv("MAX_CHARGING_DURATION", 30))
+        MAX_CHARGING_DURATION = self.config.get_max_charging_duration()
 
  
         while (
@@ -383,6 +407,7 @@ class EV_CP_E:
             "message_id": str(uuid.uuid4()),  
             "cp_id": self.cp_id,  
             "session_id": self.current_session["session_id"],
+            "driver_id": self.current_session.get("driver_id", "unknown"),  # 添加driver_id用于Monitor显示
             "energy_consumed_kwh": round(
                 self.current_session["energy_consumed_kwh"], 3
             ),
@@ -420,12 +445,12 @@ class EV_CP_E:
 
         completion_message = {
             "type": "charge_completion",
-            "message_id": str(uuid.uuid4()),  
-            "cp_id": self.cp_id,  
+            "message_id": str(uuid.uuid4()),
+            "cp_id": self.cp_id,
             "session_id": final_session_data["session_id"],
             "energy_consumed_kwh": round(final_session_data["energy_consumed_kwh"], 3),
             "total_cost": round(final_session_data["total_cost"], 2),
-            "timestamp": int(time.time()),  
+            "timestamp": int(time.time()),
         }
 
         if self.monitor_server and self.monitor_server.has_active_clients():
@@ -452,6 +477,77 @@ class EV_CP_E:
             self.logger.debug(
                 "Kafka not available, charging completion only sent to Monitor"
             )
+
+    def _send_fault_notification_to_driver(self, driver_id: str, session_id: str, session_data: dict):
+        """
+        Envía notificación de avería al Driver cuando el Engine falla durante una recarga.
+
+        Args:
+            driver_id: ID del conductor
+            session_id: ID de la sesión de recarga
+            session_data: Datos de la sesión al momento de la avería
+        """
+        if not self.kafka_manager or not self.kafka_manager.is_connected():
+            self.logger.warning(f"Cannot send fault notification to Driver {driver_id} - Kafka not available")
+            return
+
+        fault_message = {
+            "type": "charging_status_update",
+            "message_id": str(uuid.uuid4()),
+            "driver_id": driver_id,
+            "session_id": session_id,
+            "cp_id": self.cp_id,
+            "status": "error",
+            "message": f"⚠️  Charging Point has experienced a FAULT. Charging session suspended.",
+            "reason": "CP_ENGINE_FAULT",
+            "energy_consumed_kwh": round(session_data['energy_consumed_kwh'], 3),
+            "total_cost": round(session_data['total_cost'], 2),
+            "timestamp": int(time.time()),
+        }
+
+        success = self.kafka_manager.produce_message(
+            KafkaTopics.DRIVER_RESPONSES, fault_message
+        )
+
+        if success:
+            self.logger.info(f"✓  Fault notification sent to Driver {driver_id} via Kafka")
+            self.printer.print_warning(f"Driver {driver_id} notified about Engine failure")
+        else:
+            self.logger.error(f"Failed to send fault notification to Driver {driver_id}")
+
+    def _resume_suspended_session(self):
+        """
+        Envía la sesión suspendida cuando el Engine se recupera de FAULTY.
+
+        Este método se llama cuando el Engine vuelve a estar ACTIVE después de una avería.
+        Envía los datos de la sesión suspendida a Central (vía Kafka) y a Driver.
+        """
+        if not self._suspended_session:
+            return
+
+        self.logger.info(f"✓  Engine recovered - Processing suspended session '{self._suspended_session['session_id']}'")
+
+        # Preparar ticket data para mostrar al usuario
+        ticket_data = {
+            "session_id": self._suspended_session["session_id"],
+            "cp_id": self.cp_id if self.cp_id else "N/A",
+            "driver_id": self._suspended_session["driver_id"],
+            "energy_consumed_kwh": self._suspended_session['energy_consumed_kwh'],
+            "total_cost": self._suspended_session['total_cost'],
+            "start_time": self._suspended_session.get("start_time"),
+            "end_time": self._suspended_session["end_time"],
+        }
+
+        # Mostrar el ticket de la sesión finalizada
+        self.printer.print_charging_ticket(ticket_data)
+        self.printer.print_success(f"Suspended session '{self._suspended_session['session_id']}' completed after recovery")
+
+        # Enviar los datos de finalización a Central y Driver
+        self._send_charging_completion(self._suspended_session)
+
+        # Limpiar la sesión suspendida
+        self._suspended_session = None
+        self.logger.info("Suspended session processed successfully")
 
     def _init_cli(self):
         """初始化Engine CLI"""
