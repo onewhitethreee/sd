@@ -185,7 +185,7 @@ class MessageDispatcher:
             )
 
     def _send_response_to_client(self, client_id, response, msg_type):
-        """向客户端发送响应（智能选择Socket或Kafka）"""
+        """向客户端发送响应"""
         # 如果是Driver消息，使用Kafka
         if msg_type in [
             MessageTypes.CHARGE_REQUEST,
@@ -267,30 +267,6 @@ class MessageDispatcher:
         }
         message.update(fields)
         return message
-
-    def _send_notification_to_driver(self, driver_id: str, message: dict) -> bool:
-        """
-        向指定司机发送通知消息
-
-        返回: 是否成功发送
-        """
-        try:
-            driver_client_id = self.driver_manager.get_driver_client_id(driver_id)
-            if not driver_client_id:
-                self.logger.warning(
-                    f"Driver {driver_id} connection not found, unable to send notification: {message.get('type')}"
-                )
-                return False
-
-            self._send_message_to_client(driver_client_id, message)
-            self.logger.debug(
-                f"Notification sent to driver {driver_id}: {message.get('type')}"
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to send notification to driver {driver_id}: {e}")
-            return False
 
     def _send_command_to_monitor(self, cp_id: str, command_message: dict) -> bool:
         """
@@ -454,12 +430,11 @@ class MessageDispatcher:
         """
         self.logger.debug(f"Processing registration request from {client_id}...")
 
-        # 验证并提取字段
         success, data = self._validate_and_extract_fields(
             message, ["id", "location", "price_per_kwh", "message_id"], "register"
         )
         if not success:
-            return data  # 返回错误响应
+            return data 
 
         cp_id = data["id"]
         location = data["location"]
@@ -481,7 +456,6 @@ class MessageDispatcher:
                 )
 
         # 注册或更新充电桩信息
-        # 注意：register_charging_point 使用 insert_or_update，所以支持更新场景
         success, error_msg = self.charging_point_manager.register_charging_point(
             cp_id, location, price_per_kwh
         )
@@ -530,7 +504,7 @@ class MessageDispatcher:
 
     def _handle_heartbeat_message(self, client_id, message):
         """处理充电桩发送的心跳消息，更新其最后连接时间"""
-        # 验证并提取字段
+
         success, data = self._validate_and_extract_fields(
             message, ["id", "message_id"], "heartbeat"
         )
@@ -778,7 +752,7 @@ class MessageDispatcher:
             )
 
     def _handle_charge_completion_message(self, client_id, message):
-        """处理充电完成的通知（改进版：支持幂等性）"""
+        """处理充电完成的通知"""
         self.logger.debug(
             f"Processing charge completion notification from {client_id}..."
         )
@@ -951,7 +925,6 @@ class MessageDispatcher:
 
             self.logger.error(f"Charging point {cp_id} fault: {failure_info}")
 
-            # TODO: 在这里可以添加通知维护人员的逻辑
 
             return self._create_success_response(
                 "fault_notification",

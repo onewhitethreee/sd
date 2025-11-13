@@ -90,7 +90,7 @@ class ChargingSessionRepository(BaseRepository):
             query = f"UPDATE ChargingSessions SET {', '.join(updates)} WHERE session_id = ?"
 
             self.execute_update(query, params)
-            self.logger.debug(f"Sesión de carga {session_id} actualizada con éxito")
+            # self.logger.debug(f"Sesión de carga {session_id} actualizada con éxito")
             return True
         except Exception as e:
             self.logger.error(f"Error al actualizar la sesión de carga {session_id}: {e}")
