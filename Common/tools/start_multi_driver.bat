@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 
 set loop_count=3
-set kafka_host=192.168.24.1
+set kafka_host=localhost
 
 for /l %%i in (1,1,%loop_count%) do (
     
