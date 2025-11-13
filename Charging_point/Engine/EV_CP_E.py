@@ -18,6 +18,8 @@ from Common.Queue.KafkaManager import KafkaManager, KafkaTopics
 from Charging_point.Engine.EngineMessageDispatcher import EngineMessageDispatcher
 from Charging_point.Engine.EngineCLI import EngineCLI
 from Common.Config.ConsolePrinter import get_printer
+from Common.Database.SqliteConnection import SqliteConnection
+from Common.Database.ChargingSessionRepository import ChargingSessionRepository
 
 
 class EV_CP_E:
@@ -89,6 +91,51 @@ class EV_CP_E:
         self.engine_cli = None  # CLI para simular acciones del usuario (enchufar/desenchufar vehículo)
         self.printer = get_printer()  # 使用美化输出工具
 
+        # 数据库连接和仓库 - 用于持久化挂起的充电会话
+        self.db_connection = None
+        self.session_repository = None
+        self._init_database()
+
+    def _init_database(self):
+        """初始化数据库连接和仓库"""
+        try:
+            # 数据库文件路径
+            db_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "data", "charging_sessions_engine.db"
+            )
+            schema_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "Core", "BD", "table.sql"
+            )
+
+            # 确保data目录存在
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+            # 初始化数据库连接
+            # 注意: Engine使用独立的数据库,只用于会话恢复
+            # 不需要外键约束检查,因为不涉及其他表的关联
+            self.db_connection = SqliteConnection(
+                db_path=db_path,
+                sql_schema_file=schema_path,
+                create_tables_if_not_exist=True
+            )
+
+            # 禁用外键约束,因为Engine的数据库是独立的
+            # 只用于保存和恢复挂起的会话,不涉及完整的数据关联
+            conn = self.db_connection.get_connection()
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.commit()
+
+            # 初始化会话仓库
+            self.session_repository = ChargingSessionRepository(
+                self.db_connection
+            )
+
+            self.logger.debug("Engine database initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Engine database: {e}")
+            self.db_connection = None
+            self.session_repository = None
+
     @property
     def is_charging(self):
         """返回当前是否正在充电（只读属性）"""
@@ -137,12 +184,19 @@ class EV_CP_E:
         return self.message_dispatcher.dispatch_message(message)
 
     def _handle_monitor_disconnect(self, client_id):
-        """处理Monitor断开连接"""
+        """
+        处理Monitor断开连接
+
+        Monitor断开意味着失去了通信和监控能力，必须立即停止充电并结束会话。
+        这与Engine断开不同 - Engine断开时会话可以等待恢复，但Monitor断开必须结束。
+        """
         self.logger.warning(f"Monitor {client_id} disconnected")
         if self.is_charging:
             self.logger.warning(
-                "Monitor disconnected during charging - stopping charging for safety"
+                "Monitor disconnected during charging - stopping charging and sending completion"
             )
+            # Monitor断开时，立即停止充电并发送ticket
+            # 这是正常的充电结束流程，不是挂起
             self._stop_charging_session()
 
         self._id_initialized = False
@@ -239,8 +293,12 @@ class EV_CP_E:
         self.logger.debug("Starting system shutdown...")
         self.running = False
 
+        # 如果正在充电,保存会话到数据库而不是停止
         if self.is_charging:
-            self._stop_charging_session()
+            self.logger.info("Charging session detected during shutdown - saving to database for recovery")
+            self._suspend_current_session_to_database()
+            # 清除当前会话但不发送完成通知
+            self.current_session = None
 
 
         if self.engine_cli:
@@ -514,6 +572,153 @@ class EV_CP_E:
             self.printer.print_warning(f"Driver {driver_id} notified about Engine failure")
         else:
             self.logger.error(f"Failed to send fault notification to Driver {driver_id}")
+
+    def _suspend_current_session_to_database(self):
+        """
+        将当前充电会话保存到数据库。
+
+        当Engine关闭时调用此方法。会话数据完全保存到数据库中，
+        下次Engine启动并连接Monitor时会自动恢复。
+        """
+        if not self.current_session:
+            self.logger.warning("No active session to suspend")
+            return
+
+        session_id = self.current_session["session_id"]
+        self.logger.info(f"💾 Saving charging session '{session_id}' to database...")
+
+        # 保存会话快照(包含当前充电进度)
+        session_snapshot = self.current_session.copy()
+
+        # 保存到数据库
+        if self.session_repository:
+            try:
+                # 更新或创建数据库记录
+                if self.session_repository.exists(session_id):
+                    # 更新现有记录
+                    self.session_repository.update(
+                        session_id=session_id,
+                        energy_consumed_kwh=session_snapshot["energy_consumed_kwh"],
+                        total_cost=session_snapshot["total_cost"],
+                        price_per_kwh=session_snapshot.get("price_per_kwh", 0.2),
+                        status="suspended"  # 标记为挂起状态
+                    )
+                    self.logger.info(f"✓ Session '{session_id}' updated in database (suspended)")
+                else:
+                    # 创建新记录
+                    self.session_repository.create(
+                        session_id=session_id,
+                        cp_id=self.cp_id if self.cp_id else "N/A",
+                        driver_id=session_snapshot["driver_id"],
+                        start_time=session_snapshot["start_time"],
+                        price_per_kwh=session_snapshot.get("price_per_kwh", 0.2)
+                    )
+                    self.session_repository.update(
+                        session_id=session_id,
+                        energy_consumed_kwh=session_snapshot["energy_consumed_kwh"],
+                        total_cost=session_snapshot["total_cost"],
+                        status="suspended"
+                    )
+                    self.logger.info(f"✓ Session '{session_id}' saved to database (suspended)")
+
+                self.logger.info(
+                    f"Session '{session_id}' persisted - "
+                    f"Energy: {session_snapshot['energy_consumed_kwh']:.3f} kWh, "
+                    f"Cost: €{session_snapshot['total_cost']:.2f}"
+                )
+                self.printer.print_warning(
+                    f"Session '{session_id}' saved to database. "
+                    f"Will resume when Engine restarts and Monitor reconnects."
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to save session to database: {e}")
+                self.printer.print_error(f"Could not save session to database: {e}")
+        else:
+            self.logger.error("Session repository not available - cannot save session!")
+            self.printer.print_error("Database not available - session will be lost!")
+
+
+    def _recover_suspended_session_on_reconnect(self):
+        """
+        当Monitor重连时恢复挂起的充电会话。
+
+        恢复流程:
+        1. 从数据库加载挂起的会话数据(status='suspended')
+        2. 恢复会话到current_session
+        3. 重启充电进程线程
+        """
+        if not self.session_repository or not self.cp_id:
+            self.logger.debug("Session repository or CP_ID not available - cannot recover sessions")
+            return
+
+        suspended_session = None
+
+        try:
+            # 从数据库查找此充电桩的挂起会话
+            all_sessions = self.session_repository.get_sessions_by_charging_point(self.cp_id)
+
+            # 查找状态为"suspended"的会话
+            for session in all_sessions:
+                if session.get("status") == "suspended":
+                    suspended_session = session
+                    self.logger.info(f"Found suspended session in database: {session['session_id']}")
+                    break
+        except Exception as e:
+            self.logger.error(f"Failed to query database for suspended sessions: {e}")
+            return
+
+        if not suspended_session:
+            self.logger.debug("No suspended session found to recover")
+            return
+
+        session_id = suspended_session["session_id"]
+        self.logger.info(f"🔄 Recovering suspended session '{session_id}'...")
+
+        # 从数据库恢复会话数据
+        energy = suspended_session.get("energy_consumed_kwh", 0.0)
+        cost = suspended_session.get("total_cost", 0.0)
+        # 优先使用数据库中保存的price_per_kwh,如果没有则从cost和energy反推,或使用默认值
+        price_per_kwh = suspended_session.get("price_per_kwh")
+        if price_per_kwh is None:
+            price_per_kwh = (cost / energy) if energy > 0 else 0.2  # 默认€0.2/kWh
+
+        # 恢复会话到current_session
+        self.current_session = {
+            "session_id": suspended_session["session_id"],
+            "driver_id": suspended_session["driver_id"],
+            "start_time": suspended_session["start_time"],
+            "energy_consumed_kwh": energy,
+            "total_cost": cost,
+            "price_per_kwh": price_per_kwh,
+        }
+
+        # 重启充电进程线程
+        charging_thread = threading.Thread(
+            target=self._charging_process,
+            args=(session_id,),
+            daemon=True,
+        )
+        charging_thread.start()
+
+        # 更新数据库状态为进行中
+        try:
+            self.session_repository.update(
+                session_id=session_id,
+                status="in_progress"  # 恢复为进行中
+            )
+            self.logger.info(f"✓ Database status updated to 'in_progress'")
+        except Exception as e:
+            self.logger.error(f"Failed to update session status in database: {e}")
+
+        self.logger.info(
+            f"✓ Session '{session_id}' recovered and resumed - "
+            f"Energy: {self.current_session['energy_consumed_kwh']:.3f} kWh, "
+            f"Cost: €{self.current_session['total_cost']:.2f}, "
+            f"Price: €{price_per_kwh:.2f}/kWh"
+        )
+        self.printer.print_success(
+            f"Session '{session_id}' resumed after Engine restart"
+        )
 
     def _resume_suspended_session(self):
         """

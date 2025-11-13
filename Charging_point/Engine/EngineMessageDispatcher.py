@@ -105,6 +105,12 @@ class EngineMessageDispatcher:
         # 设置CP_ID
         success = self.engine.set_cp_id(cp_id)
 
+        # 如果CP_ID设置成功或已初始化,检查是否有挂起的会话需要恢复
+        # 这发生在Monitor重连时
+        if self.engine.cp_id == cp_id:
+            self.logger.debug("Monitor reconnected - checking for suspended sessions to recover")
+            self.engine._recover_suspended_session_on_reconnect()
+
         return {
             MessageFields.TYPE: MessageTypes.COMMAND_RESPONSE,
             MessageFields.MESSAGE_ID: message.get(MessageFields.MESSAGE_ID),

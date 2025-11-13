@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `ChargingSessions` (
   `end_time` DATETIME,
   `energy_consumed_kwh` decimal(12, 2),
   `total_cost` decimal(12, 2),
+  `price_per_kwh` decimal(10, 4),
   `status` TEXT NOT NULL DEFAULT 'requested' CHECK (
     `status` IN (
       'requested',
@@ -35,7 +36,8 @@ CREATE TABLE IF NOT EXISTS `ChargingSessions` (
       'in_progress',
       'completed',
       'cancelled',
-      'failed'
+      'failed',
+      'suspended'
     )
   ),
   FOREIGN KEY (`cp_id`) REFERENCES `ChargingPoints` (`cp_id`),
