@@ -45,6 +45,7 @@ class KafkaManager:
                 acks="all",
                 retries=3,
                 max_in_flight_requests_per_connection=1,
+                metadata_max_age_ms=5000,
             )
             self.logger.debug(f"Kafka producer initialized successfully: {self.broker_address}")
             return True
@@ -110,6 +111,7 @@ class KafkaManager:
                 auto_offset_reset="earliest",
                 enable_auto_commit=True,
                 max_poll_records=100,
+                metadata_max_age_ms=5000,
             )
 
             self.consumers[topic] = consumer
