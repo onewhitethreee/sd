@@ -61,6 +61,7 @@ class MonitorMessageDispatcher:
             MessageTypes.STATUS_UPDATE_RESPONSE: self._handle_status_update_response,
             MessageTypes.CHARGING_DATA_RESPONSE: self._handle_charging_data_response,
             MessageTypes.CHARGE_COMPLETION_RESPONSE: self._handle_charging_data_response,
+            MessageTypes.FAULT_NOTIFICATION_RESPONSE: self._handle_fault_notification,
         }
 
         # 来自Engine的消息处理器（使用消息类型常量）
@@ -135,7 +136,7 @@ class MonitorMessageDispatcher:
             self.monitor._register_with_central()
         elif status == "pending":
             # 首次连接，等待管理员批准
-            reason = message.get(MessageFields.MESSAGE, "等待管理员批准")
+            reason = message.get(MessageFields.MESSAGE, "Waiting for approval")
             self.logger.info(f"⏳ Authentication pending: {reason}")
             self.logger.info(
                 "Waiting for administrator to authorize this charging point..."
@@ -168,7 +169,8 @@ class MonitorMessageDispatcher:
 
         status = message.get(MessageFields.STATUS)
         if status == ResponseStatus.SUCCESS:
-            self.logger.debug("Registration successful.")
+
+            self.logger.info(f"✓ Registration successful!")
             # 设置注册确认标志
             self.monitor._registration_confirmed = True
 
@@ -213,6 +215,13 @@ class MonitorMessageDispatcher:
 
         return True
 
+    def _handle_fault_notification(self, message):
+        """
+        处理来自Central的故障通知
+        """
+        self.logger.warning(f"Received fault notification from Central: {message}")
+        return True
+
     def _handle_start_charging_command(self, message):
         """处理来自Central的启动充电命令"""
         self.logger.debug("Received start charging command from Central.")
@@ -231,7 +240,9 @@ class MonitorMessageDispatcher:
         重要：Monitor在转发停止命令后应立即更新状态为ACTIVE，
         表示充电会话已结束，充电桩恢复到可用状态。
         """
-        self.logger.debug("Received stop charging session command from Central (Driver request).")
+        self.logger.debug(
+            "Received stop charging session command from Central (Driver request)."
+        )
 
         cp_id = message.get(MessageFields.CP_ID)
         session_id = message.get(MessageFields.SESSION_ID)
@@ -261,7 +272,9 @@ class MonitorMessageDispatcher:
             )
             return True
         else:
-            self.logger.error("Engine connection unavailable, cannot forward stop charging command")
+            self.logger.error(
+                "Engine connection unavailable, cannot forward stop charging command"
+            )
             return False
 
     def _handle_stop_cp_command(self, message):
@@ -296,12 +309,12 @@ class MonitorMessageDispatcher:
             from Common.Config.Status import Status
 
             self.monitor.update_cp_status(Status.STOPPED.value)
-            self.logger.info(
-                f"Monitor status updated to STOPPED (admin stop command)"
-            )
+            self.logger.info(f"Monitor status updated to STOPPED (admin stop command)")
             return True
         else:
-            self.logger.error("Engine connection unavailable, cannot forward stop CP command")
+            self.logger.error(
+                "Engine connection unavailable, cannot forward stop CP command"
+            )
             return False
 
     def _handle_resume_cp_command(self, message):
@@ -337,11 +350,15 @@ class MonitorMessageDispatcher:
                 and self.monitor.central_conn_mgr.is_connected
             ):
                 self.monitor.update_cp_status("ACTIVE")
-                self.logger.info(f"Monitor status updated to ACTIVE (Central resume command)")
+                self.logger.info(
+                    f"Monitor status updated to ACTIVE (Central resume command)"
+                )
 
             return True
         else:
-            self.logger.error("Engine connection unavailable, cannot forward resume command")
+            self.logger.error(
+                "Engine connection unavailable, cannot forward resume command"
+            )
             return False
 
     def _handle_status_update_response(self, message):
@@ -399,7 +416,13 @@ class MonitorMessageDispatcher:
         if engine_status == "FAULTY":
             # Monitor OK + Engine KO = FAULTY
             self.logger.warning("Engine reports FAULTY status.")
-            self.monitor.update_cp_status("FAULTY")
+            # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+            if self.monitor._current_status != Status.STOPPED.value:
+                self.monitor.update_cp_status("FAULTY")
+            else:
+                self.logger.warning(
+                    "CP is STOPPED by admin, ignoring Engine FAULTY status"
+                )
         elif engine_status == "CHARGING":
             # Engine está cargando - esto es normal y significa que está funcionando bien
             self.logger.debug("Engine reports CHARGING status.")
@@ -412,7 +435,13 @@ class MonitorMessageDispatcher:
             else:
                 # Si Central desconectado mientras carga, poner en FAULTY
                 self.logger.warning("Engine is CHARGING but Central is not connected")
-                self.monitor.update_cp_status("FAULTY")
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self.monitor._current_status != Status.STOPPED.value:
+                    self.monitor.update_cp_status("FAULTY")
+                else:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring Central disconnection"
+                    )
         elif engine_status == "ACTIVE":
             self.logger.debug("Engine reports ACTIVE status.")
             # Monitor OK + Engine OK = ACTIVE (solo si Central también conectado)
@@ -425,10 +454,22 @@ class MonitorMessageDispatcher:
             else:
                 # Monitor OK, Engine OK, pero Central desconectado
                 self.logger.warning("Engine is ACTIVE but Central is not connected")
-                self.monitor.update_cp_status("FAULTY")
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self.monitor._current_status != Status.STOPPED.value:
+                    self.monitor.update_cp_status("FAULTY")
+                else:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring Central disconnection"
+                    )
         else:
             self.logger.error(f"Unknown engine status received: {engine_status}")
-            self.monitor.update_cp_status("FAULTY")
+            # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+            if self.monitor._current_status != Status.STOPPED.value:
+                self.monitor.update_cp_status("FAULTY")
+            else:
+                self.logger.warning(
+                    "CP is STOPPED by admin, ignoring unknown Engine status"
+                )
         return True
 
     def _handle_charging_data_from_engine(self, message):
@@ -479,7 +520,9 @@ class MonitorMessageDispatcher:
                 + (f" (session: {session_id})" if session_id else "")
             )
         else:
-            self.logger.error(f"Engine returned unknown status: {status}, message: {msg}")
+            self.logger.error(
+                f"Engine returned unknown status: {status}, message: {msg}"
+            )
 
         return True
 

@@ -35,7 +35,7 @@ class MessageTypes:
     CHARGING_DATA_RESPONSE = "charging_data_response"
     STATUS_UPDATE_RESPONSE = "status_update_response"
     CHARGE_COMPLETION_RESPONSE = "charge_completion_response"
-
+    FAULT_NOTIFICATION_RESPONSE = "fault_notification_response"
     # Constante que son enviadas por el Central al Monitor
     STOP_CHARGING_SESSION_COMMAND = "stop_charging_session_command"  # Central -> Monitor (detener sesión de carga, estado→ACTIVE)
     STOP_CP_COMMAND = "stop_cp_command"  # Central -> Monitor (detener servicio del CP, estado→STOPPED)

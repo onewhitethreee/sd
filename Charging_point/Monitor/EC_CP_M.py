@@ -185,8 +185,14 @@ class EV_CP_M:
             elif status == "DISCONNECTED":
                 self.logger.warning("Engine is disconnected. Reporting failure.")
                 self._report_failure("EV_CP_E connection lost")
-                # Monitor OK pero Engine KO => FAULTY
-                self.update_cp_status(Status.FAULTY.value)
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self._current_status == Status.STOPPED.value:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring Engine disconnection (not changing to FAULTY)"
+                    )
+                else:
+                    # Monitor OK pero Engine KO => FAULTY
+                    self.update_cp_status(Status.FAULTY.value)
                 self._stop_engine_health_check_thread()  # 停止健康检查
 
     def _handle_central_disconnection(self):
@@ -199,6 +205,13 @@ class EV_CP_M:
         3. ConnectionManager会自动尝试重连
         """
         self.logger.warning("Handling Central disconnection...")
+
+        # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+        if self._current_status == Status.STOPPED.value:
+            self.logger.warning(
+                "CP is STOPPED by admin, ignoring Central disconnection (not changing to FAULTY)"
+            )
+            return
 
         # 检查是否正在充电
         if self._current_status == Status.CHARGING.value:
@@ -367,7 +380,13 @@ class EV_CP_M:
             ):
                 self.logger.error("EV_CP_E health check timeout. Reporting failure.")
                 self._report_failure("EV_CP_E health check timeout")
-                self.update_cp_status("FAULTY")
+                # 检查当前状态，如果是 STOPPED，不应该改为 FAULTY
+                if self._current_status != Status.STOPPED.value:
+                    self.update_cp_status("FAULTY")
+                else:
+                    self.logger.warning(
+                        "CP is STOPPED by admin, ignoring health check timeout (not changing to FAULTY)"
+                    )
                 # 标记为断开，让 ConnectionManager 去重连。
                 # 注意：此处更新CP status为FAULTY后，Engine CM会尝试重连，
                 # 重连成功后，_handle_connection_status_change会导致重新启动健康检查线程，
